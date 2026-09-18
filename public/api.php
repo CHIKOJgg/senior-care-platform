@@ -1,6 +1,5 @@
 <?php
 
-// Autoloader & Bootstrap
 spl_autoload_register(function ($class) {
     $prefix = 'App\\';
     $base_dir = __DIR__ . '/../app/';
@@ -24,6 +23,7 @@ use App\Controllers\HelpRequestController;
 use App\Controllers\AntiFraudController;
 use App\Controllers\EducationController;
 use App\Controllers\ChatController;
+use App\Controllers\CoordinatorController;
 
 $router = new Router();
 
@@ -49,11 +49,17 @@ $router->get('/api/education', [EducationController::class, 'index']);
 $router->get('/api/chat/{id}', [ChatController::class, 'messages']);
 $router->post('/api/chat/{id}', [ChatController::class, 'send']);
 
+// Coordinator & Gamification routes
+$router->get('/api/coordinator/stats', [CoordinatorController::class, 'stats']);
+$router->get('/api/coordinator/pending-volunteers', [CoordinatorController::class, 'pendingVolunteers']);
+$router->post('/api/coordinator/verify-volunteer/{id}', [CoordinatorController::class, 'verifyVolunteer']);
+$router->post('/api/coordinator/alerts', [CoordinatorController::class, 'createAlert']);
+$router->get('/api/volunteers/leaderboard', [CoordinatorController::class, 'leaderboard']);
+
 // Dispatch
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
-// Handle CORS preflight
 if ($method === 'OPTIONS') {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
