@@ -9,6 +9,8 @@
     <title>Платформа взаимной помощи «ЗаботаРядом»</title>
     <link rel="stylesheet" href="/css/accessibility.css">
     <style>
+        <?php include __DIR__ . '/css/accessibility.css'; ?>
+        
         .badge {
             display: inline-block;
             padding: 4px 10px;
