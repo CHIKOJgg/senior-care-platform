@@ -10,9 +10,6 @@ class SecurityService
         'Подснежник', 'Улыбка', 'Ручеёк', 'Янтарь', 'Дубрава'
     ];
 
-    /**
-     * Generate friendly secret verification code for elderly visit safety
-     */
     public static function generateSecretCode(): string
     {
         $idx = array_rand(self::$friendlyWords);
