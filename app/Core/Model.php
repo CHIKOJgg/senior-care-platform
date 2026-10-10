@@ -25,13 +25,24 @@ abstract class Model
         return $row ?: null;
     }
 
-    public static function where(string $column, mixed $value, string $operator = '='): array
-    {
-        $db = Database::getConnection();
-        $stmt = $db->prepare("SELECT * FROM " . static::$table . " WHERE {$column} {$operator} :value");
-        $stmt->execute(['value' => $value]);
-        return $stmt->fetchAll();
+    public static function where(string $column, mixed $value, string $operator = '='): array {
+    $allowedOperators = ['=', '!=', '<', '>', '<=', '>=', 'LIKE']; // белый список операторов (для предотвращения sql инъекций)
+    if (!preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $column)) { // + regex
+        throw new \InvalidArgumentException("Недопустимое имя колонки {$column}");
     }
+
+    $operator = strtoupper(trim($operator));
+    if (!in_array($operator, $allowedOperators, true)) {
+        throw new \InvalidArgumentException("Недопустимый оператор {$operator}");
+    }
+
+    $db = Database::getConnection();
+    $sql = "SELECT * FROM " . static::$table . " WHERE {$column} {$operator} :value";
+    $stmt = $db->prepare($sql);
+    $stmt->execute(['value' => $value]);
+
+    return $stmt->fetchAll();
+}
 
     public static function create(array $data): int|string
     {
