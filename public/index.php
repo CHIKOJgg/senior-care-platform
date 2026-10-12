@@ -1,4 +1,11 @@
 <?php
+// If request is targeting API, delegate to API router
+$requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
+if ($requestUri && str_starts_with($requestUri, '/api/')) {
+    require __DIR__ . '/api.php';
+    exit;
+}
+
 // Main Web Portal
 ?>
 <!DOCTYPE html>

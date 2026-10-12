@@ -1,9 +1,13 @@
-version: '3.8'
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      tags:
+        - senior-care
     container_name: senior_care_platform
+    command: php -S 0.0.0.0:8000 router.php
     ports:
       - "8000:8000"
     volumes:

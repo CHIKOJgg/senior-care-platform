@@ -12,4 +12,4 @@ php database/seed.php
 
 echo [3/3] Запуск локального веб-сервера на http://localhost:8000...
 echo Для остановки нажмите Ctrl+C
-php -S 0.0.0.0:8000 -t public
+php -S 0.0.0.0:8000 router.php

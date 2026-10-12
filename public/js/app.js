@@ -105,10 +105,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.success) {
                     showCreatedModal(data.secret_code);
                     helpForm.reset();
+                    loadVolunteerRequests();
+                } else {
+                    alert(data.error || 'Ошибка при создании заявки');
                 }
             } catch (err) {
                 console.error(err);
-                alert('Ошибка при создании заявки');
+                alert('Ошибка при создании заявки: ' + (err.message || 'Сбой сети'));
             }
         });
     }

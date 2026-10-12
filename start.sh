@@ -10,4 +10,4 @@ echo "[2/3] Наполнение данными..."
 php database/seed.php
 
 echo "[3/3] Запуск веб-сервера на http://localhost:8000..."
-php -S 0.0.0.0:8000 -t public
+php -S 0.0.0.0:8000 router.php
