@@ -1,7 +1,7 @@
 # Project: «ЗаботаРядом» (Senior Care Platform)
 
 ## Architecture
-- **Environment**: Containerized PHP 8.2 (CLI/Built-in server) on Alpine Linux (`senior_care_platform` Docker container, port 8000), mounting `c:\Users\Honor\Desktop\WYAP` to `/var/www/html`.
+- **Environment**: Containerized PHP 8.2. Development uses the built-in server (`senior_care_platform`, port 8000). Production runs Nginx + PHP-FPM behind Caddy, with MySQL 8, Prometheus, Grafana, Loki and Promtail (`docker-compose.prod.yml`).
 - **Backend Architecture**: Lightweight, PSR-4 compliant MVC in `app/` without external Composer dependencies.
   - `app/Core/`: Router, Database (SQLite PDO with foreign keys), Model, Controller.
   - `app/Controllers/`: Auth, HelpRequest, Elderly, Volunteer, Admin, SosAlert, Privacy, Identity.

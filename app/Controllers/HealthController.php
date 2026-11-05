@@ -6,7 +6,10 @@ namespace App\Controllers;
 
 use App\Core\Router;
 use App\Core\Database;
+use App\Services\AuthService;
+use App\Services\CryptoService;
 use Exception;
+use Throwable;
 
 class HealthController
 {
@@ -33,6 +36,30 @@ class HealthController
 
         $storageWritable = is_writable(__DIR__ . '/../../database');
 
+        $cryptoStatus = 'ok';
+        try {
+            $probe = 'health-' . bin2hex(random_bytes(4));
+            if (CryptoService::decrypt(CryptoService::encrypt($probe)) !== $probe) {
+                $cryptoStatus = 'error: roundtrip mismatch';
+                $healthy = false;
+            }
+        } catch (Throwable $e) {
+            $cryptoStatus = 'error: ' . $e->getMessage();
+            $healthy = false;
+        }
+
+        $authStatus = 'ok';
+        try {
+            $probeToken = AuthService::createToken(['id' => 0, 'role_code' => 'system'], 60);
+            if (!AuthService::verifyToken($probeToken)) {
+                $authStatus = 'error: token verification failed';
+                $healthy = false;
+            }
+        } catch (Throwable $e) {
+            $authStatus = 'error: ' . $e->getMessage();
+            $healthy = false;
+        }
+
         $status = $healthy ? 'ok' : 'degraded';
         $httpCode = $healthy ? 200 : 503;
 
@@ -49,6 +76,12 @@ class HealthController
                 ],
                 'storage' => [
                     'database_writable' => $storageWritable
+                ],
+                'crypto' => [
+                    'status' => $cryptoStatus
+                ],
+                'auth' => [
+                    'status' => $authStatus
                 ]
             ],
             'error' => $errorMsg

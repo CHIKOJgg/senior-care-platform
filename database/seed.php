@@ -10,6 +10,7 @@ require_once __DIR__ . '/../app/Models/Category.php';
 require_once __DIR__ . '/../app/Models/HelpRequest.php';
 require_once __DIR__ . '/../app/Models/EducationalMaterial.php';
 require_once __DIR__ . '/../app/Models/FraudAlert.php';
+require_once __DIR__ . '/../app/Services/CryptoService.php';
 
 use App\Core\Database;
 use App\Models\Role;
@@ -58,18 +59,16 @@ $isProduction = (getenv('APP_ENV') ?: 'local') === 'production';
 $seedDemoUsers = !$isProduction || getenv('SEED_DEMO') === 'true';
 $password = password_hash('password123', PASSWORD_DEFAULT);
 
-if ($isProduction && !$seedDemoUsers) {
-    $adminPhone = getenv('ADMIN_PHONE') ?: '';
-    $adminPassword = getenv('ADMIN_PASSWORD') ?: '';
-    if ($adminPhone !== '' && $adminPassword !== '' && !User::findByPhone($adminPhone)) {
-        User::create([
-            'role_id' => 4,
-            'phone' => $adminPhone,
-            'name' => 'Администратор ТЦСОН',
-            'password_hash' => password_hash($adminPassword, PASSWORD_DEFAULT)
-        ]);
-        echo "[SEED] Production admin created from ADMIN_PHONE\n";
-    }
+$adminPhone = getenv('ADMIN_PHONE') ?: '';
+$adminPassword = getenv('ADMIN_PASSWORD') ?: '';
+if ($adminPhone !== '' && $adminPassword !== '' && !User::findByPhone($adminPhone)) {
+    User::create([
+        'role_id' => 4,
+        'phone' => $adminPhone,
+        'name' => 'Администратор ТЦСОН',
+        'password_hash' => password_hash($adminPassword, PASSWORD_DEFAULT)
+    ]);
+    echo "[SEED] Admin created from ADMIN_PHONE\n";
 }
 
 if ($seedDemoUsers && !User::findByPhone('+375291112233')) {

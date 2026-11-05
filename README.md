@@ -117,20 +117,30 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 | Сервис | Адрес | Назначение |
 |---|---|---|
-| Приложение | `http://localhost` | Пенсионеры: `/`, родственники: `/family` |
+| Caddy (edge) | `http://localhost` / `https://ваш-домен` | Единая точка входа, HTTP/HTTPS |
+| Приложение | внутри Docker `app:80` | Пенсионеры: `/`, родственники: `/family` |
 | Grafana | `http://localhost:3000` | Дашборды и логи (логин из `GRAFANA_ADMIN_*`) |
 | Prometheus | `http://localhost:9090` | Метрики и алерты (доступ только с localhost) |
 | Loki | `http://localhost:3100` | Хранилище логов (доступ только с localhost) |
 
+- **Секреты:** `APP_SECRET` (`openssl rand -hex 32`) и `APP_ENCRYPTION_KEY` (`echo "base64:$(openssl rand -base64 32)"`). Ключ шифрования нельзя менять после начала работы: старые медицинские заметки станут нечитаемыми. Healthcheck проверяет оба секрета.
+- **Edge-прокси:** Caddy — единственный контейнер, опубликованный наружу. Для локального HTTP оставьте `CADDY_DOMAIN=:80`; для домена укажите `CADDY_DOMAIN=care.example.org` — Caddy сам получит сертификат Let's Encrypt. Nginx доверяет `X-Forwarded-For` и `X-Forwarded-Proto` от Caddy.
 - **База:** MySQL 8, данные в томе `senior_care_mysql`. Миграции и создание администратора выполняются при старте.
+- **Бэкапы:** контейнер `backup` делает `mysqldump` при старте и каждые 24 часа в том `senior_care_backups`, хранит 7 дней (настраивается `BACKUP_RETENTION_DAYS`).
 - **Метрики:** `/api/metrics` в формате Prometheus, защищён `METRICS_TOKEN` и доступен только из внутренней сети.
-- **Логи:** файлы приложения и Nginx + stdout контейнеров собираются Promtail в Loki.
+- **Логи:** файлы приложения и Nginx + stdout контейнеров собираются Promtail в Loki. Docker-логи ограничены 10 МБ × 3 файла на контейнер.
 - **Дашборд:** «ЗаботаРядом — Production» появляется в Grafana автоматически: доступность, HTTP-ошибки, задержки, заявки, SOS, волонтёры, MySQL и логи.
 - **Алерты:** Prometheus-правила `monitoring/prometheus/alerts.yml` (приложение недоступно, БД недоступна, много 5xx, активный SOS, MySQL недоступен).
 
 Демо-пользователи (`password123`) в продакшене **не создаются**. Если они нужны для стенда, запустите с `SEED_DEMO=true`.
-Grafana и Prometheus намеренно опубликованы только на `127.0.0.1`. Для удалённого доступа используйте SSH-туннель или обратный прокси с HTTPS и авторизацией.
-Перед публикацией поставьте HTTPS (обратный прокси с сертификатом): без него браузер не сохранит долгую cookie, хотя вход через токен продолжит работать.
+Grafana, Prometheus и Loki намеренно опубликованы только на `127.0.0.1`. Для удалённого доступа используйте SSH-туннель или Caddy с HTTPS и авторизацией.
+
+Восстановление из бэкапа (ключ `APP_ENCRYPTION_KEY` храните отдельно от дампа — без него зашифрованные заметки не расшифруются):
+```bash
+docker cp senior_care_backup:/backups/<file>.sql.gz ./backup.sql.gz
+gzip -d backup.sql.gz
+docker exec -i senior_care_mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" senior_care < backup.sql
+```
 
 ---
 

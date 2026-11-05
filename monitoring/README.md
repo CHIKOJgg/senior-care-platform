@@ -6,11 +6,13 @@
 
 | Компонент | Роль |
 |---|---|
+| Caddy | Единая точка входа, HTTP/HTTPS, реальный IP клиента |
 | Prometheus | Сбор метрик `/api/metrics`, MySQL-экспортёра и самого себя |
 | Grafana | Дашборд «ЗаботаРядом — Production» и просмотр логов |
 | Loki | Хранилище логов (7 дней) |
 | Promtail | Сбор файлов приложения/Nginx и stdout контейнеров |
 | mysqld-exporter | Метрики MySQL |
+| backup | Ежедневный `mysqldump` в том `senior_care_backups` |
 
 ## Метрики приложения
 
@@ -48,7 +50,20 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" http://localhost/api/metrics
 curl http://localhost:9090/-/ready
 curl http://localhost:3100/ready
 curl http://localhost:3000/api/health
+docker exec senior_care_backup ls -la /backups
 ```
+
+## HTTPS
+
+Для домена задайте в `.env.prod`:
+
+```dotenv
+CADDY_DOMAIN=care.example.org
+HTTP_PORT=80
+HTTPS_PORT=443
+```
+
+Caddy автоматически выпустит сертификат. Для локальной проверки оставьте `CADDY_DOMAIN=:80`.
 
 ## Алерты
 

@@ -1,5 +1,5 @@
 -- Схема базы данных платформы помощи пожилым людям (Senior Care Platform)
--- Совместимо с SQLite 3 и MySQL 8.0+
+-- SQLite 3 (development / test). Production MySQL schema: database/schema.mysql.sql
 
 CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
