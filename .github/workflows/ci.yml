@@ -40,7 +40,18 @@ jobs:
           php -S 127.0.0.1:8000 router.php > /dev/null 2>&1 &
           sleep 2
           php tests/test_api_requests.php
+          php tests/test_frontend_wcag.php
+          php tests/test_e2e_comprehensive.php
 
-      - name: Verify Production Docker Build
+      - name: Verify Production Docker Build & Health
         run: |
-          docker build -t senior-care:ci -f Dockerfile .
+          docker build -t senior-care:ci -f Dockerfile.prod .
+          docker run -d --name senior-care-ci -p 8080:80 \
+            -e APP_ENV=production \
+            -e APP_SECRET=ci_test_secret_0123456789abcdef \
+            -e ADMIN_PHONE=+375290000001 \
+            -e ADMIN_PASSWORD=CiTestPassword1 \
+            senior-care:ci
+          sleep 8
+          curl -fsS http://localhost:8080/api/health
+          docker rm -f senior-care-ci
