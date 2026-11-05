@@ -39,7 +39,7 @@ jobs:
         run: |
           php tests/run_tests.php
 
-      - name: Execute End-to-End REST API Tests
+      - name: Execute REST API Tests
         run: |
           php -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &
           APP_PID=$!
@@ -52,7 +52,22 @@ jobs:
           done
           curl -fsS http://127.0.0.1:8000/api/health
           php tests/test_api_requests.php
-          php tests/test_frontend_wcag.php
+
+      - name: Execute Frontend WCAG Tests
+        run: php tests/test_frontend_wcag.php
+
+      - name: Execute Comprehensive E2E Tests
+        run: |
+          php -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/api/health
           php tests/test_e2e_comprehensive.php
 
       - name: Verify Production Docker Build & Health
