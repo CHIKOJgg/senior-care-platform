@@ -28,6 +28,7 @@ use App\Controllers\ChatController;
 use App\Controllers\CoordinatorController;
 use App\Controllers\VolunteerController;
 use App\Controllers\HealthController;
+use App\Controllers\MetricsController;
 use App\Controllers\PrivacyController;
 use App\Controllers\SosController;
 
@@ -35,6 +36,7 @@ $router = new Router();
 
 // Healthcheck & System routes
 $router->get('/api/health', [HealthController::class, 'check']);
+$router->get('/api/metrics', [MetricsController::class, 'index']);
 
 // Auth routes
 $router->post('/api/auth/login', [AuthController::class, 'login']);

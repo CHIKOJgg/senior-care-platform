@@ -1,0 +1,47 @@
+groups:
+  - name: care-platform
+    rules:
+      - alert: CareAppDown
+        expr: up{job="care-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ЗаботаРядом недоступен"
+          description: "Prometheus не может опросить /api/metrics приложения более 1 минуты."
+
+      - alert: CareDatabaseDown
+        expr: app_db_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "База данных приложения недоступна"
+          description: "Приложение работает, но не может подключиться к MySQL."
+
+      - alert: CareHigh5xx
+        expr: sum(rate(app_http_requests_total{status=~"5.."}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Много ошибок 5xx"
+          description: "Более 0.05 ошибок 5xx в секунду за последние 5 минут."
+
+      - alert: CareActiveSOS
+        expr: app_sos_alerts{status="ACTIVE"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Есть активный сигнал SOS"
+          description: "В системе есть необработанный сигнал SOS (приоритет 0). Проверьте панель координатора."
+
+      - alert: CareMysqlDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL недоступен"
+          description: "mysqld-exporter не может подключиться к MySQL."

@@ -7,6 +7,7 @@ namespace App\Core;
 class Router
 {
     private array $routes = [];
+    private static string $currentRoute = 'unmatched';
 
     public function get(string $path, callable|array $handler): void
     {
@@ -34,6 +35,7 @@ class Router
         $pattern = '#^' . $pattern . '$#';
         $this->routes[] = [
             'method' => $method,
+            'path' => $path,
             'pattern' => $pattern,
             'handler' => $handler
         ];
@@ -52,6 +54,7 @@ class Router
             if ($route['method'] === $method && preg_match($route['pattern'], $path, $matches)) {
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
                 $handler = $route['handler'];
+                self::$currentRoute = $route['method'] . ' ' . $route['path'];
 
                 if (is_array($handler)) {
                     [$class, $action] = $handler;
@@ -65,11 +68,19 @@ class Router
             }
         }
 
+        self::$currentRoute = 'unmatched';
         self::json(['error' => 'Not Found', 'path' => $path], 404);
     }
 
     public static function json(mixed $data, int $status = 200): void
     {
+        try {
+            $duration = microtime(true) - (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
+            MetricsService::recordRequest(self::$currentRoute, $status, $duration);
+        } catch (\Throwable $e) {
+            // Never let metrics break a response
+        }
+
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
         header('Access-Control-Allow-Origin: *');

@@ -6,7 +6,7 @@ RUN apk add --no-cache \
     sqlite \
     sqlite-dev \
     curl \
-    && docker-php-ext-install pdo pdo_sqlite
+    && docker-php-ext-install pdo pdo_mysql pdo_sqlite
 
 WORKDIR /var/www/html
 

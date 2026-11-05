@@ -105,18 +105,31 @@ docker compose up --build
 
 ---
 
-### Вариант 3. Production Docker (Nginx + PHP-FPM 8.2)
-Для развёртывания на боевом сервере с Nginx, сжатием gzip, кэшированием статики и персистентными томами задайте обязательные переменные:
-```bash
-export APP_SECRET="$(openssl rand -hex 32)"   # обязателен, без него сервер не стартует
-export ADMIN_PHONE="+37529..."                 # первый администратор
-export ADMIN_PASSWORD="надёжный-пароль"
+### Вариант 3. Production Docker: MySQL + мониторинг
 
-docker compose -f docker-compose.prod.yml up --build -d
+Полный стек: приложение (Nginx + PHP-FPM), MySQL 8, Prometheus, Grafana, Loki, Promtail и экспортёр MySQL.
+
+```bash
+cp .env.prod.example .env.prod
+# отредактируйте .env.prod: все пароли, APP_SECRET, ADMIN_PHONE, ADMIN_PASSWORD, METRICS_TOKEN
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
-Сервис поднимется на порту **80** с автоматическим прохождением Healthcheck (`/api/health`).
+
+| Сервис | Адрес | Назначение |
+|---|---|---|
+| Приложение | `http://localhost` | Пенсионеры: `/`, родственники: `/family` |
+| Grafana | `http://localhost:3000` | Дашборды и логи (логин из `GRAFANA_ADMIN_*`) |
+| Prometheus | `http://localhost:9090` | Метрики и алерты (доступ только с localhost) |
+| Loki | `http://localhost:3100` | Хранилище логов (доступ только с localhost) |
+
+- **База:** MySQL 8, данные в томе `senior_care_mysql`. Миграции и создание администратора выполняются при старте.
+- **Метрики:** `/api/metrics` в формате Prometheus, защищён `METRICS_TOKEN` и доступен только из внутренней сети.
+- **Логи:** файлы приложения и Nginx + stdout контейнеров собираются Promtail в Loki.
+- **Дашборд:** «ЗаботаРядом — Production» появляется в Grafana автоматически: доступность, HTTP-ошибки, задержки, заявки, SOS, волонтёры, MySQL и логи.
+- **Алерты:** Prometheus-правила `monitoring/prometheus/alerts.yml` (приложение недоступно, БД недоступна, много 5xx, активный SOS, MySQL недоступен).
 
 Демо-пользователи (`password123`) в продакшене **не создаются**. Если они нужны для стенда, запустите с `SEED_DEMO=true`.
+Grafana и Prometheus намеренно опубликованы только на `127.0.0.1`. Для удалённого доступа используйте SSH-туннель или обратный прокси с HTTPS и авторизацией.
 Перед публикацией поставьте HTTPS (обратный прокси с сертификатом): без него браузер не сохранит долгую cookie, хотя вход через токен продолжит работать.
 
 ---

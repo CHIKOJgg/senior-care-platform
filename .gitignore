@@ -1,5 +1,7 @@
 # Environment and local config
 .env
+.env.prod
+.env.production
 *.env.local
 
 # Database
@@ -7,10 +9,12 @@ database/*.sqlite
 database/*.db
 *.sqlite-journal
 
-# Logs & Cache
+# Logs, metrics & runtime data
 logs/
 *.log
 cache/
+storage/metrics/
+storage/data/
 
 # Vendor & Dependencies
 vendor/

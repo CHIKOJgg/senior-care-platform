@@ -4,7 +4,7 @@ set -e
 echo "[STARTUP] Initializing Senior Care Platform..."
 
 # Ensure storage directories exist and are writable by PHP-FPM (www-data)
-mkdir -p /var/www/html/database /var/www/html/storage/data /var/www/html/storage/logs /var/www/html/storage/cache
+mkdir -p /var/www/html/database /var/www/html/storage/data /var/www/html/storage/logs /var/www/html/storage/cache /var/www/html/storage/metrics
 chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 
 # Run database migrations and seeders

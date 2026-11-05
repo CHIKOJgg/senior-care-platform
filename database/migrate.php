@@ -10,12 +10,12 @@ use App\Services\CryptoService;
 
 echo "[MIGRATE] Running non-destructive schema migrations...\n";
 
-$schemaFile = __DIR__ . '/schema.sql';
-if (!file_exists($schemaFile)) {
-    die("[MIGRATE] Error: schema.sql not found at {$schemaFile}\n");
-}
-
 $pdo = Database::getConnection();
+$driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+$schemaFile = __DIR__ . ($driver === 'mysql' ? '/schema.mysql.sql' : '/schema.sql');
+if (!file_exists($schemaFile)) {
+    die("[MIGRATE] Error: schema file not found at {$schemaFile}\n");
+}
 
 try {
     // Хелпер проверки существования таблицы
@@ -103,8 +103,18 @@ try {
 
     // 2. Применение базовой схемы таблиц (CREATE TABLE IF NOT EXISTS & CREATE INDEX IF NOT EXISTS)
     $sql = file_get_contents($schemaFile);
-    $pdo->exec($sql);
-    echo "[MIGRATE] Base schema, new tables & indexes verified successfully.\n";
+    if ($driver === 'mysql') {
+        // PDO MySQL needs statements executed one by one for predictable errors
+        $statements = array_filter(array_map('trim', explode(';', $sql)));
+        foreach ($statements as $statement) {
+            if ($statement !== '') {
+                $pdo->exec($statement);
+            }
+        }
+    } else {
+        $pdo->exec($sql);
+    }
+    echo "[MIGRATE] Base schema, new tables & indexes verified successfully ({$driver}).\n";
 
     // 3. Проверка колонки revoked_at в user_consents
     if ($tableExists('user_consents')) {
@@ -115,8 +125,8 @@ try {
         }
     }
 
-    // 4. Гарантия создания индексов (идемпотентно)
-    $indices = [
+    // 4. Гарантия создания индексов (идемпотентно, только SQLite: в MySQL-схеме индексы описаны в таблицах)
+    $indices = $driver === 'mysql' ? [] : [
         "CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);",
         "CREATE INDEX IF NOT EXISTS idx_password_resets_expires_at ON password_resets(expires_at);",
         "CREATE INDEX IF NOT EXISTS idx_user_consents_user_id ON user_consents(user_id);",

@@ -55,3 +55,54 @@ jobs:
           sleep 8
           curl -fsS http://localhost:8080/api/health
           docker rm -f senior-care-ci
+
+  mysql-smoke:
+    name: MySQL Migration & Login Smoke
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: senior_care_test
+          MYSQL_USER: senior
+          MYSQL_PASSWORD: seniorpass
+          MYSQL_ROOT_PASSWORD: rootpass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpass"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: senior_care_test
+      DB_USERNAME: senior
+      DB_PASSWORD: seniorpass
+      APP_ENV: local
+      SEED_DEMO: "true"
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2 with MySQL driver
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, pdo_sqlite, curl, json, mbstring
+
+      - name: Migrate and seed MySQL
+        run: |
+          php database/migrate.php
+          php database/seed.php
+
+      - name: Start app and verify health + login
+        run: |
+          php -S 127.0.0.1:8080 router.php > /dev/null 2>&1 &
+          sleep 2
+          curl -fsS http://127.0.0.1:8080/api/health
+          curl -fsS -X POST -H "Content-Type: application/json" \
+            -d '{"phone":"+375291112233","password":"password123","remember":true}' \
+            http://127.0.0.1:8080/api/auth/login | grep -q '"success":true'

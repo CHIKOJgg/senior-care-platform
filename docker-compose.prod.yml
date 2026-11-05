@@ -6,33 +6,193 @@ services:
     container_name: senior_care_prod
     restart: always
     ports:
-      - "80:80"
+      - "${APP_PORT:-80}:80"
     environment:
       - APP_ENV=production
+      - APP_URL=${APP_URL:-http://localhost}
       - APP_DEBUG=false
       - APP_SECRET=${APP_SECRET:?APP_SECRET must be set (openssl rand -hex 32)}
       - ADMIN_PHONE=${ADMIN_PHONE:?ADMIN_PHONE must be set}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
       - SEED_DEMO=false
-      - DB_CONNECTION=sqlite
-      - DB_DATABASE=storage/data/database.sqlite
+      - METRICS_TOKEN=${METRICS_TOKEN:?METRICS_TOKEN must be set}
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_DATABASE:-senior_care}
+      - DB_USERNAME=${MYSQL_USER:-senior}
+      - DB_PASSWORD=${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
+    depends_on:
+      mysql:
+        condition: service_healthy
     volumes:
-      - senior_care_data:/var/www/html/storage/data
       - senior_care_logs:/var/www/html/storage/logs
+      - senior_care_metrics:/var/www/html/storage/metrics
+      - nginx_logs:/var/log/nginx
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 512M
+    networks:
+      - backend
+
+  mysql:
+    image: mysql:8.0
+    container_name: senior_care_mysql
+    restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-senior_care}
+      - MYSQL_USER=${MYSQL_USER:-senior}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:?MYSQL_PASSWORD must be set}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}
+      - MYSQL_EXPORTER_PASSWORD=${MYSQL_EXPORTER_PASSWORD:?MYSQL_EXPORTER_PASSWORD must be set}
+    volumes:
+      - senior_care_mysql:/var/lib/mysql
+      - ./monitoring/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+    networks:
+      - backend
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: senior_care_mysql_exporter
+    restart: always
+    environment:
+      - MYSQL_EXPORTER_PASSWORD=${MYSQL_EXPORTER_PASSWORD:?MYSQL_EXPORTER_PASSWORD must be set}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '[client]\nuser=exporter\npassword=%s\nhost=mysql\nport=3306\n' "$$MYSQL_EXPORTER_PASSWORD" > /tmp/.my.cnf
+        exec /bin/mysqld_exporter --config.my-cnf=/tmp/.my.cnf
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - backend
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: senior_care_prometheus
+    restart: always
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    environment:
+      - METRICS_TOKEN=${METRICS_TOKEN:?METRICS_TOKEN must be set}
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml.template:/etc/prometheus/prometheus.yml.template:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - senior_care_prometheus:/prometheus
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        sed "s|__METRICS_TOKEN__|$$METRICS_TOKEN|g" /etc/prometheus/prometheus.yml.template > /tmp/prometheus.yml
+        exec /bin/prometheus --config.file=/tmp/prometheus.yml --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d --web.enable-lifecycle
+    depends_on:
+      - app
+      - mysqld-exporter
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - backend
+
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: senior_care_loki
+    restart: always
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - senior_care_loki:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - backend
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: senior_care_promtail
+    restart: always
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - senior_care_logs:/var/log/care:ro
+      - nginx_logs:/var/log/nginx:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+    networks:
+      - backend
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: senior_care_grafana
+    restart: always
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+    volumes:
+      - senior_care_grafana:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - backend
 
 volumes:
-  senior_care_data:
-    driver: local
+  senior_care_mysql:
   senior_care_logs:
-    driver: local
+  senior_care_metrics:
+  nginx_logs:
+  senior_care_prometheus:
+  senior_care_loki:
+  senior_care_grafana:
+
+networks:
+  backend:
+    driver: bridge

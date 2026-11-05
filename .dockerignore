@@ -1,7 +1,10 @@
 .git
 .gitignore
 .env
+.env.prod
+.env.production
 *.env.*
+monitoring/
 *.docx
 *.pdf
 test_out.docx
@@ -10,6 +13,7 @@ logs/
 storage/logs/
 storage/*.sqlite
 storage/tmp_*
+storage/metrics/
 cache/
 database/*.sqlite
 .agents/
