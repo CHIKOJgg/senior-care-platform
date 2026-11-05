@@ -452,14 +452,14 @@ class Tier4_RealWorldScenariosTest
             'sender_id' => 2,
             'message' => 'Здравствуйте, Анна Ивановна! Буду у вас через 20 минут с лампочкой.'
         ]);
-        $this->harness->assert('SC10-S3: Volunteer sends coordination message in task chat', in_array($resChat1['code'], [200, 201]), "Code: {$resChat1['code']}", 'Tier 4');
+        $this->harness->assert('SC10-S3: Volunteer sends coordination message in task chat', in_array($resChat1['code'], [200, 201]), "Code: {$resChat1['code']} Body: " . substr((string)$resChat1['raw'], 0, 600), 'Tier 4');
 
         // Step 4: Senior replies in chat
         $resChat2 = $this->harness->apiCall('POST', "/api/chat/{$reqId}", [
             'sender_id' => 1,
             'message' => 'Спасибо большое, Алексей! Жду вас.'
         ]);
-        $this->harness->assert('SC10-S4: Elderly replies in task chat', in_array($resChat2['code'], [200, 201]), "Code: {$resChat2['code']}", 'Tier 4');
+        $this->harness->assert('SC10-S4: Elderly replies in task chat', in_array($resChat2['code'], [200, 201]), "Code: {$resChat2['code']} Body: " . substr((string)$resChat2['raw'], 0, 600), 'Tier 4');
 
         // Step 5: Task completed and points awarded
         $resComp = $this->harness->apiCall('POST', "/api/requests/{$reqId}/complete", [
