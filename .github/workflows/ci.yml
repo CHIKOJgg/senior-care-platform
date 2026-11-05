@@ -10,6 +10,10 @@ jobs:
   test-and-audit:
     name: Automated Tests & Security Audit
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: local
+      APP_SECRET: ci_test_secret_0123456789abcdef
+      APP_ENCRYPTION_KEY: ci_test_encryption_key_2026
 
     steps:
       - name: Checkout Code
@@ -37,8 +41,16 @@ jobs:
 
       - name: Execute End-to-End REST API Tests
         run: |
-          php -S 127.0.0.1:8000 router.php > /dev/null 2>&1 &
-          sleep 2
+          php -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/api/health
           php tests/test_api_requests.php
           php tests/test_frontend_wcag.php
           php tests/test_e2e_comprehensive.php
@@ -49,6 +61,7 @@ jobs:
           docker run -d --name senior-care-ci -p 8080:80 \
             -e APP_ENV=production \
             -e APP_SECRET=ci_test_secret_0123456789abcdef \
+            -e APP_ENCRYPTION_KEY=ci_test_encryption_key_2026 \
             -e ADMIN_PHONE=+375290000001 \
             -e ADMIN_PASSWORD=CiTestPassword1 \
             senior-care:ci
@@ -82,6 +95,8 @@ jobs:
       DB_USERNAME: senior
       DB_PASSWORD: seniorpass
       APP_ENV: local
+      APP_SECRET: ci_test_secret_0123456789abcdef
+      APP_ENCRYPTION_KEY: ci_test_encryption_key_2026
       SEED_DEMO: "true"
     steps:
       - name: Checkout Code
@@ -100,9 +115,16 @@ jobs:
 
       - name: Start app and verify health + login
         run: |
-          php -S 127.0.0.1:8080 router.php > /dev/null 2>&1 &
-          sleep 2
+          php -S 127.0.0.1:8080 router.php > /tmp/care-app-mysql.log 2>&1 &
+          APP_PID=$!
+          trap 'kill $APP_PID 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
           curl -fsS http://127.0.0.1:8080/api/health
           curl -fsS -X POST -H "Content-Type: application/json" \
             -d '{"phone":"+375291112233","password":"password123","remember":true}' \
-            http://127.0.0.1:8080/api/auth/login | grep -q '"success":true'
+            http://127.0.0.1:8080/api/auth/login | grep -Eq '"success"[[:space:]]*:[[:space:]]*true'
