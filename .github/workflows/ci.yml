@@ -68,7 +68,19 @@ jobs:
             sleep 1
           done
           curl -fsS http://127.0.0.1:8000/api/health
-          php tests/test_e2e_comprehensive.php
+          set +e
+          php tests/test_e2e_comprehensive.php > /tmp/e2e.log 2>&1
+          status=$?
+          cat /tmp/e2e.log
+          if [ "$status" -ne 0 ]; then
+            fails=$(grep -a '\[FAIL\]' /tmp/e2e.log || true)
+            if [ -n "$fails" ]; then
+              echo "$fails" | while IFS= read -r line; do echo "::error::$line"; done
+            else
+              echo "::error::E2E suite exited with code $status"
+            fi
+            exit "$status"
+          fi
 
       - name: Verify Production Docker Build & Health
         run: |
