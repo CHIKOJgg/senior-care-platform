@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Core;
 
 class Router
@@ -73,8 +75,10 @@ class Router
         header('Access-Control-Allow-Origin: *');
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
         header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: SAMEORIGIN');
         $output = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        header('Content-Length: ' . strlen($output));
+        header('Content-Length: ' . (string)strlen($output));
         echo $output;
         exit;
     }
@@ -82,6 +86,10 @@ class Router
     public static function getJsonInput(): array
     {
         $raw = file_get_contents('php://input');
-        return json_decode($raw, true) ?: [];
+        if (!$raw) {
+            return [];
+        }
+        $data = json_decode($raw, true);
+        return is_array($data) ? $data : [];
     }
 }

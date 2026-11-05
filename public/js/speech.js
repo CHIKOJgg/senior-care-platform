@@ -19,6 +19,10 @@ const SpeechHelper = {
 
         this.recognition.onresult = (event) => {
             const transcript = event.results[0][0].transcript;
+            if (this.checkEmergencyVoiceCommand(transcript)) {
+                if (onEndCallback) onEndCallback();
+                return;
+            }
             if (onResultCallback) onResultCallback(transcript);
         };
 
@@ -77,5 +81,20 @@ const SpeechHelper = {
         const content = document.querySelector('main')?.innerText || document.body.innerText;
         const cleanText = content.substring(0, 600); // Read first meaningful paragraph
         this.speak('Читаю страницу: ' + cleanText);
+    },
+
+    checkEmergencyVoiceCommand(transcript) {
+        if (!transcript) return false;
+        const clean = transcript.toLowerCase();
+        const emergencyRegex = /(?:^|[^\p{L}\p{N}])(помощь|помогите|тревога|сос|sos|спасите|срочно помощь|вызовите помощь)(?=$|[^\p{L}\p{N}])/ui;
+        if (emergencyRegex.test(clean)) {
+            console.warn('Voice SOS command detected:', transcript);
+            this.speak('Обнаружена голосовая команда тревоги. Передаю сигнал SOS координаторам и в службу 112!');
+            if (typeof window.triggerSos === 'function') {
+                window.triggerSos('Голосовой вызов тревоги: ' + transcript);
+                return true;
+            }
+        }
+        return false;
     }
 };

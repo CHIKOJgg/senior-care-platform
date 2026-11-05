@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Core;
 
 use PDO;
+use InvalidArgumentException;
 
 abstract class Model
 {
@@ -12,14 +15,18 @@ abstract class Model
     public static function all(): array
     {
         $db = Database::getConnection();
-        $stmt = $db->query("SELECT * FROM " . static::$table . " ORDER BY " . static::$primaryKey . " DESC");
+        $table = static::$table;
+        $pk = static::$primaryKey;
+        $stmt = $db->query("SELECT * FROM {$table} ORDER BY {$pk} DESC");
         return $stmt->fetchAll();
     }
 
     public static function find(int|string $id): ?array
     {
         $db = Database::getConnection();
-        $stmt = $db->prepare("SELECT * FROM " . static::$table . " WHERE " . static::$primaryKey . " = :id LIMIT 1");
+        $table = static::$table;
+        $pk = static::$primaryKey;
+        $stmt = $db->prepare("SELECT * FROM {$table} WHERE {$pk} = :id LIMIT 1");
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -27,8 +34,19 @@ abstract class Model
 
     public static function where(string $column, mixed $value, string $operator = '='): array
     {
+        // Sanitize column name to allow only safe identifier characters
+        if (!preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
+            throw new InvalidArgumentException("Invalid column name: {$column}");
+        }
+
+        $allowedOperators = ['=', '!=', '<>', '<', '<=', '>', '>=', 'LIKE'];
+        if (!in_array(strtoupper($operator), $allowedOperators, true)) {
+            throw new InvalidArgumentException("Invalid operator: {$operator}");
+        }
+
         $db = Database::getConnection();
-        $stmt = $db->prepare("SELECT * FROM " . static::$table . " WHERE {$column} {$operator} :value");
+        $table = static::$table;
+        $stmt = $db->prepare("SELECT * FROM {$table} WHERE {$column} {$operator} :value");
         $stmt->execute(['value' => $value]);
         return $stmt->fetchAll();
     }
@@ -36,12 +54,26 @@ abstract class Model
     public static function create(array $data): int|string
     {
         $db = Database::getConnection();
-        $columns = implode(', ', array_keys($data));
-        $placeholders = ':' . implode(', :', array_keys($data));
+        $table = static::$table;
+        $columns = [];
+        $placeholders = [];
+        $params = [];
 
-        $sql = "INSERT INTO " . static::$table . " ({$columns}) VALUES ({$placeholders})";
+        foreach ($data as $key => $val) {
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $key)) {
+                continue;
+            }
+            $columns[] = $key;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $val;
+        }
+
+        $colsStr = implode(', ', $columns);
+        $placeStr = implode(', ', $placeholders);
+
+        $sql = "INSERT INTO {$table} ({$colsStr}) VALUES ({$placeStr})";
         $stmt = $db->prepare($sql);
-        $stmt->execute($data);
+        $stmt->execute($params);
 
         return $db->lastInsertId();
     }
@@ -49,23 +81,35 @@ abstract class Model
     public static function update(int|string $id, array $data): bool
     {
         $db = Database::getConnection();
+        $table = static::$table;
+        $pk = static::$primaryKey;
         $fields = '';
+        $params = ['primary_id' => $id];
+
         foreach ($data as $key => $val) {
+            if (!preg_match('/^[a-zA-Z0-9_]+$/', $key)) {
+                continue;
+            }
             $fields .= "{$key} = :{$key}, ";
+            $params[$key] = $val;
         }
         $fields = rtrim($fields, ', ');
 
-        $sql = "UPDATE " . static::$table . " SET {$fields} WHERE " . static::$primaryKey . " = :primary_id";
-        $data['primary_id'] = $id;
+        if (empty($fields)) {
+            return false;
+        }
 
+        $sql = "UPDATE {$table} SET {$fields} WHERE {$pk} = :primary_id";
         $stmt = $db->prepare($sql);
-        return $stmt->execute($data);
+        return $stmt->execute($params);
     }
 
     public static function delete(int|string $id): bool
     {
         $db = Database::getConnection();
-        $stmt = $db->prepare("DELETE FROM " . static::$table . " WHERE " . static::$primaryKey . " = :id");
+        $table = static::$table;
+        $pk = static::$primaryKey;
+        $stmt = $db->prepare("DELETE FROM {$table} WHERE {$pk} = :id");
         return $stmt->execute(['id' => $id]);
     }
 

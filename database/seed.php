@@ -38,22 +38,41 @@ foreach ($roles as $r) {
 }
 
 $categories = [
-    ['code' => 'groceries', 'title' => 'Покупка продуктов', 'icon' => '🛒', 'description' => 'Доставка базового набора продуктов из магазина'],
-    ['code' => 'pharmacy', 'title' => 'Лекарства из аптеки', 'icon' => '💊', 'description' => 'Покупка и доставка лекарств по рецепту или списку'],
-    ['code' => 'household', 'title' => 'Бытовая помощь', 'icon' => '🧹', 'description' => 'Вынос мусора, замена лампочки, мелкая помощь по дому'],
-    ['code' => 'tech', 'title' => 'Помощь с телефоном', 'icon' => '📱', 'description' => 'Настройка смартфона, звонки близким, оплата услуг ЖКХ'],
-    ['code' => 'escort', 'title' => 'Сопровождение', 'icon' => '🚶', 'description' => 'Сопровождение в поликлинику, банк или на прогулку'],
-    ['code' => 'chat', 'title' => 'Душевное общение', 'icon' => '☕', 'description' => 'Беседа за чаем, чтение книг, социальная поддержка']
+    ['code' => 'groceries', 'title' => 'Покупка продуктов', 'icon' => 'shopping-bag', 'description' => 'Доставка базового набора продуктов из магазина'],
+    ['code' => 'pharmacy', 'title' => 'Лекарства из аптеки', 'icon' => 'pill', 'description' => 'Покупка и доставка лекарств по рецепту или списку'],
+    ['code' => 'household', 'title' => 'Бытовая помощь', 'icon' => 'broom', 'description' => 'Вынос мусора, замена лампочки, мелкая помощь по дому'],
+    ['code' => 'tech', 'title' => 'Помощь с телефоном', 'icon' => 'phone', 'description' => 'Настройка смартфона, звонки близким, оплата услуг ЖКХ'],
+    ['code' => 'escort', 'title' => 'Сопровождение', 'icon' => 'walking', 'description' => 'Сопровождение в поликлинику, банк или на прогулку'],
+    ['code' => 'chat', 'title' => 'Душевное общение', 'icon' => 'coffee', 'description' => 'Беседа за чаем, чтение книг, социальная поддержка']
 ];
 foreach ($categories as $c) {
-    if (!Category::where('code', $c['code'])) {
+    $existing = Category::where('code', $c['code']);
+    if (!$existing) {
         Category::create($c);
+    } else {
+        Category::update($existing[0]['id'], ['icon' => $c['icon']]);
     }
 }
 
+$isProduction = (getenv('APP_ENV') ?: 'local') === 'production';
+$seedDemoUsers = !$isProduction || getenv('SEED_DEMO') === 'true';
 $password = password_hash('password123', PASSWORD_DEFAULT);
 
-if (!User::findByPhone('+375291112233')) {
+if ($isProduction && !$seedDemoUsers) {
+    $adminPhone = getenv('ADMIN_PHONE') ?: '';
+    $adminPassword = getenv('ADMIN_PASSWORD') ?: '';
+    if ($adminPhone !== '' && $adminPassword !== '' && !User::findByPhone($adminPhone)) {
+        User::create([
+            'role_id' => 4,
+            'phone' => $adminPhone,
+            'name' => 'Администратор ТЦСОН',
+            'password_hash' => password_hash($adminPassword, PASSWORD_DEFAULT)
+        ]);
+        echo "[SEED] Production admin created from ADMIN_PHONE\n";
+    }
+}
+
+if ($seedDemoUsers && !User::findByPhone('+375291112233')) {
     $uid = User::create([
         'role_id' => 1,
         'phone' => '+375291112233',
@@ -71,7 +90,7 @@ if (!User::findByPhone('+375291112233')) {
     ]);
 }
 
-if (!User::findByPhone('+375292223344')) {
+if ($seedDemoUsers && !User::findByPhone('+375292223344')) {
     $vid = User::create([
         'role_id' => 2,
         'phone' => '+375292223344',
@@ -91,7 +110,7 @@ if (!User::findByPhone('+375292223344')) {
     ]);
 }
 
-if (!User::findByPhone('+375295556677')) {
+if ($seedDemoUsers && !User::findByPhone('+375295556677')) {
     User::create([
         'role_id' => 3,
         'phone' => '+375295556677',
@@ -100,7 +119,7 @@ if (!User::findByPhone('+375295556677')) {
     ]);
 }
 
-if (!User::findByPhone('+375299999999')) {
+if ($seedDemoUsers && !User::findByPhone('+375299999999')) {
     User::create([
         'role_id' => 4,
         'phone' => '+375299999999',
@@ -109,7 +128,7 @@ if (!User::findByPhone('+375299999999')) {
     ]);
 }
 
-if (empty(HelpRequest::all())) {
+if ($seedDemoUsers && empty(HelpRequest::all())) {
     HelpRequest::create([
         'elderly_id' => 1,
         'category_id' => 1,

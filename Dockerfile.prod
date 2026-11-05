@@ -1,0 +1,34 @@
+FROM php:8.2-fpm-alpine
+
+# Install Nginx, SQLite, and system dependencies
+RUN apk add --no-cache \
+    nginx \
+    sqlite \
+    sqlite-dev \
+    curl \
+    && docker-php-ext-install pdo pdo_sqlite
+
+WORKDIR /var/www/html
+
+# Copy application files
+COPY . /var/www/html
+
+# Copy Nginx configuration
+COPY docker/nginx.conf /etc/nginx/http.d/default.conf
+
+# Setup permissions
+RUN mkdir -p /var/www/html/database \
+    /var/www/html/storage/data \
+    /var/www/html/storage/logs \
+    /var/www/html/storage/cache \
+    /run/nginx \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod +x /var/www/html/docker/entrypoint.sh
+
+# Run healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost/api/health || exit 1
+
+EXPOSE 80
+
+ENTRYPOINT ["/bin/sh", "/var/www/html/docker/entrypoint.sh"]

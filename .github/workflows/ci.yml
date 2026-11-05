@@ -1,0 +1,46 @@
+name: CI/CD Quality & Security Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-audit:
+    name: Automated Tests & Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_sqlite, curl, json, mbstring
+          coverage: none
+
+      - name: Check PHP Syntax & Lint
+        run: |
+          find app public tests -type f -name "*.php" -exec php -l {} +
+
+      - name: Run Database Migrations & Seeds
+        run: |
+          php database/migrate.php
+          php database/seed.php
+
+      - name: Execute Unit, Integration & Security Tests
+        run: |
+          php tests/run_tests.php
+
+      - name: Execute End-to-End REST API Tests
+        run: |
+          php -S 127.0.0.1:8000 router.php > /dev/null 2>&1 &
+          sleep 2
+          php tests/test_api_requests.php
+
+      - name: Verify Production Docker Build
+        run: |
+          docker build -t senior-care:ci -f Dockerfile .
