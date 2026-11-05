@@ -8,6 +8,13 @@
 database/*.sqlite
 database/*.db
 *.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Generated reports & agent workspace
+.agents/
+test_out.docx
+tests/e2e_report.json
 
 # Logs, metrics & runtime data
 logs/
