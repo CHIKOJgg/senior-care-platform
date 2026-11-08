@@ -191,12 +191,24 @@ function initSessionGate() {
         const phone = document.getElementById('gatePhone').value.trim();
         const password = document.getElementById('gatePassword').value;
         const remember = document.getElementById('gateRemember').checked;
+        const isSetup = new URLSearchParams(location.search).get('setup') === '1';
         const errorBox = document.getElementById('gateError');
+
+        if (isSetup && !remember) {
+            errorBox.textContent = 'Поставьте галочку «Запомнить на этом телефоне», чтобы подопечный открывал сайт без входа.';
+            errorBox.style.display = 'block';
+            return;
+        }
+
         const result = await loginWithPhone(phone, password, true, remember);
         if (result === true) {
             errorBox.style.display = 'none';
             form.reset();
             hideSessionGate();
+            if (isSetup && currentUser && currentUser.role_code === 'elderly') {
+                window.location.href = '/';
+                return;
+            }
             activateRole(roleFromUser(currentUser), false);
         } else {
             errorBox.textContent = result;
@@ -233,7 +245,7 @@ function showSessionGate(role, message = '') {
         const roleNames = { user: 'подопечного', volunteer: 'волонтёра', admin: 'администратора' };
         const fallback = APP_CONFIG.mode === 'family'
             ? `Войдите под аккаунтом ${roleNames[role] || ''}.`
-            : 'Сайт уже настроен. Если он не открывается, позвоните родственникам.';
+            : 'Этот телефон ещё не настроен. Попросите родственника один раз войти на этом устройстве — дальше сайт будет открываться без входа.';
         text.textContent = message || fallback;
     }
     const errorBox = document.getElementById('gateError');

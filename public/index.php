@@ -27,7 +27,7 @@ if ($mode === 'family') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Платформа взаимной помощи «ЗаботаРядом»</title>
-    <link rel="stylesheet" href="/css/accessibility.css">
+    <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
 </head>
 <body data-initial-role="<?php echo htmlspecialchars($initialRole); ?>" data-mode="<?php echo $mode; ?>">
 
@@ -912,14 +912,21 @@ if ($mode === 'family') {
             </form>
         </div>
         <?php else: ?>
-        <a href="tel:112" class="btn btn-danger" style="width: 100%; min-height: 60px; font-size: 1.2em; text-decoration: none; display: flex; align-items: center; justify-content: center;">Позвонить 112</a>
-        <p style="text-align: center; font-size: 0.9em; color: var(--text-muted); margin-top: 16px;">Вводить ничего не нужно.</p>
+        <p style="text-align: center; font-size: 0.95em; color: var(--text-muted); margin-bottom: 16px;">
+            Настройка нужна один раз. После входа родственника телефон будет открываться сразу, без пароля.
+        </p>
+        <a href="/family?setup=1" class="btn btn-primary" style="width: 100%; min-height: 56px; font-size: 1.1em; text-decoration: none; display: flex; align-items: center; justify-content: center;">
+            Настроить телефон
+        </a>
+        <a href="tel:112" class="btn btn-danger" style="width: 100%; min-height: 56px; font-size: 1.1em; text-decoration: none; display: flex; align-items: center; justify-content: center; margin-top: 10px;">
+            Позвонить 112
+        </a>
         <?php endif; ?>
     </div>
 </div>
 
 <script>window.APP_CONFIG = <?php echo json_encode(['mode' => $mode, 'demoAutologin' => $demoAutologin], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
-<script src="/js/speech.js"></script>
-<script src="/js/app.js"></script>
+<script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
+<script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
 </body>
 </html>
