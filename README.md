@@ -76,6 +76,7 @@
 * **Мониторинг:** эндпоинт проверки жизнеспособности `/api/health` (Healthcheck) с замером задержки СУБД.
 * **Frontend:** Семантический HTML5, CSS3 переменные (High Contrast), JavaScript ES6+, Web Speech API.
 * **Контейнеризация:** Docker (Dev & Multi-stage Production Nginx + PHP-FPM).
+* **Архитектурные решения (ADR):** обоснование выбора БД, фреймворков, библиотек и интеграций — в [`docs/adr/README.md`](docs/adr/README.md).
 
 ---
 
