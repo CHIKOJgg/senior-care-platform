@@ -21,7 +21,7 @@ services:
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY must be set (base64:...)}
       - ADMIN_PHONE=${ADMIN_PHONE:?ADMIN_PHONE must be set}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD must be set}
-      - SEED_DEMO=false
+      - SEED_DEMO=${SEED_DEMO:-false}
       - METRICS_TOKEN=${METRICS_TOKEN:?METRICS_TOKEN must be set}
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
