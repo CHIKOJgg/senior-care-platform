@@ -31,8 +31,8 @@ class HealthController
             }
         } catch (Exception $e) {
             $healthy = false;
-            $dbStatus = 'error';
-            $errorMsg = null;
+            $dbStatus = 'error: ' . $e->getMessage();
+            $errorMsg = $e->getMessage();
             Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
