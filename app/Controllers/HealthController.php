@@ -33,6 +33,7 @@ class HealthController
             $healthy = false;
             $dbStatus = 'error: ' . $e->getMessage();
             $errorMsg = $e->getMessage();
+            error_log('HEALTH DB ERROR: ' . $e->getMessage());
             Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
