@@ -9,10 +9,16 @@ chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 
 # Ensure PHP-FPM listens on TCP 9000 for Nginx
 if [ -f /usr/local/etc/php-fpm.d/www.conf ]; then
-    echo "[STARTUP] www.conf exists: $(test -f /usr/local/etc/php-fpm.d/www.conf && echo yes || echo no)"
-    echo "[STARTUP] listen lines: $(grep -i 'listen' /usr/local/etc/php-fpm.d/www.conf || echo none)"
+    echo "[STARTUP] www.conf exists: yes"
     sed -i 's|^[;[:space:]]*listen[[:space:]]*=.*|listen = 127.0.0.1:9000|' /usr/local/etc/php-fpm.d/www.conf
-    echo "[STARTUP] listen lines after: $(grep -i 'listen' /usr/local/etc/php-fpm.d/www.conf || echo none)"
+    # Allow PHP-FPM workers to inherit container environment variables (DB, APP_*, etc.)
+    if grep -qE '^[;[:space:]]*clear_env' /usr/local/etc/php-fpm.d/www.conf; then
+        sed -i 's|^[;[:space:]]*clear_env[[:space:]]*=.*|clear_env = no|' /usr/local/etc/php-fpm.d/www.conf
+    else
+        echo 'clear_env = no' >> /usr/local/etc/php-fpm.d/www.conf
+    fi
+    echo "[STARTUP] listen: $(grep -i '^listen' /usr/local/etc/php-fpm.d/www.conf)"
+    echo "[STARTUP] clear_env: $(grep -i '^clear_env' /usr/local/etc/php-fpm.d/www.conf)"
 else
     echo "[STARTUP] www.conf not found!"
 fi
