@@ -1,6 +1,7 @@
 FROM php:8.2-fpm-alpine
 
-# Install Nginx, SQLite, and system dependencies
+# Install Nginx, SQLite, and system dependencies (prod)
+
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
     nginx \
