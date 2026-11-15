@@ -31,18 +31,13 @@ class PrivacyController
         }
 
         $input = Router::getJsonInput();
-        $currentUser = AuthService::getCurrentUser();
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['HTTP_X_AUTH_TOKEN'])
+            || !empty($_COOKIE['auth_token']);
 
-        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) || 
-                           !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ||
-                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) || 
-                           !empty($_COOKIE['auth_token']) || 
-                           !empty($_SERVER['HTTP_X_DEMO_USER']);
-
-        $userId = $hasExplicitAuth && $currentUser 
-            ? (int)($currentUser['user_id'] ?? $currentUser['id'] ?? 0)
-            : (int)($input['user_id'] ?? 0);
-
+        $currentUser = $hasExplicitAuth ? AuthService::getCurrentUser() : null;
+        $userId = $currentUser ? (int)($currentUser['user_id'] ?? $currentUser['id'] ?? 0) : 0;
         if ($userId <= 0) {
             Router::json(['error' => 'Требуется авторизация в системе для фиксации согласия'], 401);
         }

@@ -10,6 +10,11 @@ class AntiFraudController
 {
     public function check(): void
     {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!\App\Core\RateLimiter::check("antifraud_check:{$ip}", 30, 60)) {
+            \App\Core\Router::json(['error' => 'Слишком много запросов. Подождите минуту.'], 429);
+        }
+
         $input = Router::getJsonInput();
         $text = trim($input['text'] ?? '');
 
@@ -27,6 +32,7 @@ class AntiFraudController
 
     public function alerts(): void
     {
+        // Public advisory feed: active anti-fraud warnings shown on the senior's home screen.
         $alerts = FraudAlert::getActiveAlerts();
         Router::json([
             'success' => true,

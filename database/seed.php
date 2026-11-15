@@ -141,13 +141,12 @@ if ($seedDemoUsers && empty(HelpRequest::all())) {
     ]);
 }
 
-if (empty(EducationalMaterial::all())) {
-    EducationalMaterial::create([
-        'title' => 'Как распознать звонок лже-банковского работника',
-        'type' => 'memo',
-        'category' => 'Безопасность',
-        'content' => 'Запомните главное правило: сотрудники банка НИКОГДА не звонят через мессенджеры (Вайбер, Телеграм) и НИКОГДА не спрашивают три цифры с оборота карты или код из СМС!'
-    ]);
+$materials = require __DIR__ . '/materials_catalog.php';
+
+foreach ($materials as $m) {
+    if (!EducationalMaterial::where('title', $m['title'])) {
+        EducationalMaterial::create($m);
+    }
 }
 
 if (empty(FraudAlert::all())) {

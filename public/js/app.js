@@ -104,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSecurityControls();
     initPasswordRecovery();
     initResetCodeForm();
+    loadCategoryCards();
 
     // Initial session bootstrap
     bootstrapSession().then((ok) => {
@@ -527,6 +528,7 @@ function activateRole(role, autoLogin = true) {
             loadVolunteerRequests();
             loadVolunteerActiveTasks();
             loadLeaderboard();
+            loadVolunteerKnowledge();
         }
     };
 
@@ -586,25 +588,26 @@ function initUserFunctions() {
         '6': 'Например: попить вместе чай, почитать свежую газету и пообщаться...'
     };
 
-    const catCards = document.querySelectorAll('.category-card');
-    const selectedCatInput = document.getElementById('selectedCategory');
-    const reqDescInput = document.getElementById('requestDescription');
-
-    catCards.forEach(card => {
-        card.addEventListener('click', () => {
-            catCards.forEach(c => c.classList.remove('selected'));
+    // Category cards: delegated handler so categories added via the admin panel work too
+    const catGrid = document.getElementById('categoryGrid');
+    if (catGrid && catGrid.dataset.bound !== '1') {
+        catGrid.dataset.bound = '1';
+        catGrid.addEventListener('click', (ev) => {
+            const card = ev.target.closest('.category-card');
+            if (!card) return;
+            catGrid.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             const catId = card.getAttribute('data-id');
-            if (selectedCatInput) {
-                selectedCatInput.value = catId;
-            }
-            if (reqDescInput && catPlaceholders[catId]) {
-                reqDescInput.placeholder = catPlaceholders[catId];
+            const selInput = document.getElementById('selectedCategory');
+            if (selInput) selInput.value = catId;
+            const descInput = document.getElementById('requestDescription');
+            if (descInput && catPlaceholders[catId]) {
+                descInput.placeholder = catPlaceholders[catId];
             }
             const title = card.querySelector('.category-title')?.innerText || '';
             SpeechHelper.speak('Выбрана категория: ' + title);
         });
-    });
+    }
 
     // Voice dictation for request
     const micBtn = document.getElementById('micBtn');
@@ -628,6 +631,29 @@ function initUserFunctions() {
                 SpeechHelper.speak('Записано: ' + transcript);
             });
         });
+    }
+}
+
+// Load request types from the API so admin-added categories appear for seniors
+async function loadCategoryCards() {
+    const grid = document.getElementById('categoryGrid');
+    if (!grid) return;
+    try {
+        const res = await fetch('/api/categories', { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return;
+        const json = await res.json();
+        const list = Array.isArray(json.data) ? json.data : [];
+        if (list.length === 0) return;
+        grid.innerHTML = list.map((c, index) => `
+            <div class="category-card${index === 0 ? ' selected' : ''}" data-id="${Number(c.id)}">
+                <span class="category-icon">${Icons.category(c.id)}</span>
+                <div class="category-title">${escapeHtml(c.title)}</div>
+            </div>
+        `).join('');
+        const selected = document.getElementById('selectedCategory');
+        if (selected && list[0]) selected.value = String(list[0].id);
+    } catch (e) {
+        console.error('Failed to load request categories', e);
     }
 }
 
@@ -702,6 +728,7 @@ function initAdminSubnav() {
             if (targetId === 'admin-requests') loadAdminRequests();
             if (targetId === 'admin-alerts') loadAdminAlerts();
             if (targetId === 'admin-watchdog') loadWatchdogTasks();
+            if (targetId === 'admin-content') loadAdminContent();
         });
     });
 }
@@ -772,12 +799,42 @@ async function loadAdminAnalytics() {
 }
 
 // Volunteer Verification Queue
-async function loadAllVolunteers(filter = 'all') {
+let volunteerFilterState = { filter: 'all', minRating: null };
+
+function applyRatingFilter() {
+    const input = document.getElementById('volunteerMinRating');
+    const raw = input ? input.value.trim() : '';
+    const value = raw === '' ? null : Number(raw);
+    if (value !== null && (Number.isNaN(value) || value < 0 || value > 5)) {
+        alert('Рейтинг должен быть числом от 0 до 5');
+        return;
+    }
+    loadAllVolunteers(volunteerFilterState.filter || 'all', value);
+}
+
+function resetRatingFilter() {
+    const input = document.getElementById('volunteerMinRating');
+    if (input) input.value = '';
+    loadAllVolunteers('all', null);
+}
+
+async function loadAllVolunteers(filter = 'all', minRating = null) {
     const tbody = document.getElementById('volunteersTableBody');
     if (!tbody) return;
+    volunteerFilterState = { filter, minRating };
+
+    const hint = document.getElementById('ratingFilterHint');
+    if (hint) {
+        hint.textContent = (minRating === null || minRating === '')
+            ? 'Показаны все волонтёры'
+            : `Показаны волонтёры с рейтингом не ниже ${minRating}`;
+    }
 
     try {
-        const res = await authFetch('/api/coordinator/volunteers');
+        const query = (minRating === null || minRating === '')
+            ? ''
+            : `?min_rating=${encodeURIComponent(minRating)}`;
+        const res = await authFetch('/api/coordinator/volunteers' + query);
         const json = await res.json();
         if (json.data) {
             let list = json.data;
@@ -794,6 +851,7 @@ async function loadAllVolunteers(filter = 'all') {
 
             tbody.innerHTML = list.map(v => {
                 const status = parseInt(v.is_verified);
+                const rating = parseFloat(v.rating || 0);
                 let badge = '';
                 let actions = '';
 
@@ -813,9 +871,18 @@ async function loadAllVolunteers(filter = 'all') {
                     actions = `<button class="btn btn-success btn-xs" onclick="verifyVolunteer(${v.user_id})">${Icons.check} Верифицировать</button>`;
                 }
 
+                // Low rating -> offer the rehabilitation track (training + re-verification)
+                if (rating < 3.5) {
+                    actions += `
+                        <button class="btn btn-danger btn-xs" style="margin-left: 6px;" onclick="rehabilitateVolunteer(${v.user_id})">
+                            ${Icons.alert} Реабилитация
+                        </button>
+                    `;
+                }
+
                 const docStatus = v.masked_passport ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>` : '<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>';
-                const policeStatus = (v.police_clearance_status === 'CLEAN') 
-                    ? `<span class="badge badge-success" style="font-size: 0.8em;">МВД: Проверено</span>` 
+                const policeStatus = (v.police_clearance_status === 'CLEAN')
+                    ? `<span class="badge badge-success" style="font-size: 0.8em;">МВД: Проверено</span>`
                     : `<span class="badge badge-warning" style="font-size: 0.8em;">МВД: Ожидает справку</span>`;
 
                 return `
@@ -870,6 +937,231 @@ async function rejectVolunteer(id) {
         }
     } catch (e) {
         alert('Сбой сети');
+    }
+}
+
+// Rehabilitation track for volunteers with a low rating
+async function rehabilitateVolunteer(id) {
+    if (!confirm('Направить волонтёра на реабилитацию? При низком рейтинге будет назначен набор обучающих материалов, рейтинг сброшен на 4.0, а доступ к заявкам приостановлен до повторной проверки.')) return;
+    try {
+        const res = await authFetch(`/api/coordinator/volunteers/${id}/rehabilitate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const json = await res.json();
+        if (json.success) {
+            const materials = Array.isArray(json.training_materials) ? json.training_materials.length : 0;
+            alert(json.message + `\nНазначено обучающих материалов: ${materials}.`);
+            loadAllVolunteers(volunteerFilterState.filter || 'all', volunteerFilterState.minRating);
+            loadAdminAnalytics();
+        } else {
+            alert(json.error || 'Ошибка реабилитации');
+        }
+    } catch (e) {
+        alert('Сбой сети при запуске реабилитации');
+    }
+}
+
+// =========================================================================
+// 4b. Admin: request types (categories) and educational materials
+// =========================================================================
+let adminCategoriesCache = [];
+
+function showFormMessage(elementId, text, ok) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'alert-banner ' + (ok ? 'alert-banner-success' : 'alert-banner-danger');
+    el.style.display = 'block';
+}
+
+function loadAdminContent() {
+    loadAdminCategories();
+    loadAdminEducation();
+}
+
+async function loadAdminCategories() {
+    const tbody = document.getElementById('categoriesTableBody');
+    if (!tbody) return;
+    try {
+        const res = await authFetch('/api/categories');
+        const json = await res.json();
+        adminCategoriesCache = Array.isArray(json.data) ? json.data : [];
+        if (adminCategoriesCache.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 18px;">Видов заявок пока нет</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = adminCategoriesCache.map(c => `
+            <tr>
+                <td>#${c.id}</td>
+                <td><code>${escapeHtml(c.code)}</code></td>
+                <td><strong>${escapeHtml(c.title)}</strong>
+                    <div style="font-size: 0.85em; color: var(--text-muted);">${escapeHtml(c.description || '')}</div>
+                </td>
+                <td>${Number(c.requests_count || 0)}</td>
+                <td>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button class="btn btn-outline btn-xs" onclick="editCategory(${c.id})">Изменить</button>
+                        <button class="btn btn-danger btn-xs" onclick="deleteCategory(${c.id})">Удалить</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = `<tr><td colspan="5" style="color: red; text-align: center;">Ошибка загрузки видов заявок</td></tr>`;
+    }
+}
+
+function resetCategoryForm() {
+    const form = document.getElementById('categoryForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('catId');
+    if (idInput) idInput.value = '';
+    const icon = document.getElementById('catIcon');
+    if (icon) icon.value = 'help-circle';
+    const btn = document.getElementById('catSubmitBtn');
+    if (btn) btn.textContent = 'Добавить вид заявки';
+    const msg = document.getElementById('categoryFormMessage');
+    if (msg) msg.style.display = 'none';
+}
+
+function editCategory(id) {
+    const cat = adminCategoriesCache.find(c => Number(c.id) === Number(id));
+    if (!cat) return;
+    document.getElementById('catId').value = cat.id;
+    document.getElementById('catCode').value = cat.code || '';
+    document.getElementById('catTitle').value = cat.title || '';
+    document.getElementById('catIcon').value = cat.icon || 'help-circle';
+    document.getElementById('catDescription').value = cat.description || '';
+    const btn = document.getElementById('catSubmitBtn');
+    if (btn) btn.textContent = 'Сохранить изменения';
+}
+
+async function submitCategoryForm(event) {
+    if (event) event.preventDefault();
+    const id = document.getElementById('catId').value;
+    const payload = {
+        code: document.getElementById('catCode').value.trim(),
+        title: document.getElementById('catTitle').value.trim(),
+        icon: document.getElementById('catIcon').value.trim() || 'help-circle',
+        description: document.getElementById('catDescription').value.trim()
+    };
+    if (!payload.code || !payload.title) {
+        showFormMessage('categoryFormMessage', 'Укажите код и название вида заявки', false);
+        return false;
+    }
+    try {
+        const url = id ? `/api/coordinator/categories/${id}` : '/api/coordinator/categories';
+        const method = id ? 'PUT' : 'POST';
+        const res = await authFetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            showFormMessage('categoryFormMessage', id ? 'Вид заявки обновлён' : 'Вид заявки добавлен', true);
+            resetCategoryForm();
+            loadAdminCategories();
+        } else {
+            showFormMessage('categoryFormMessage', json.error || 'Не удалось сохранить вид заявки', false);
+        }
+    } catch (e) {
+        showFormMessage('categoryFormMessage', 'Сбой сети при сохранении', false);
+    }
+    return false;
+}
+
+async function deleteCategory(id) {
+    if (!confirm('Удалить этот вид заявки? Если по нему уже есть заявки, удаление будет заблокировано.')) return;
+    try {
+        const res = await authFetch(`/api/coordinator/categories/${id}`, { method: 'DELETE' });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            showFormMessage('categoryFormMessage', 'Вид заявки удалён', true);
+            loadAdminCategories();
+        } else {
+            showFormMessage('categoryFormMessage', json.error || 'Не удалось удалить вид заявки', false);
+        }
+    } catch (e) {
+        showFormMessage('categoryFormMessage', 'Сбой сети при удалении', false);
+    }
+}
+
+async function loadAdminEducation() {
+    const tbody = document.getElementById('adminEducationTableBody');
+    if (!tbody) return;
+    try {
+        const res = await authFetch('/api/education');
+        const json = await res.json();
+        const list = Array.isArray(json.data) ? json.data : [];
+        if (list.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 18px;">Материалов пока нет</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = list.map(m => `
+            <tr>
+                <td>#${m.id}</td>
+                <td><strong>${escapeHtml(m.title)}</strong></td>
+                <td>${escapeHtml(m.type || 'memo')}</td>
+                <td>${escapeHtml(m.category || 'Общее')}</td>
+                <td><button class="btn btn-danger btn-xs" onclick="deleteEducationMaterial(${m.id})">Удалить</button></td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error(e);
+        tbody.innerHTML = `<tr><td colspan="5" style="color: red; text-align: center;">Ошибка загрузки материалов</td></tr>`;
+    }
+}
+
+async function submitEducationForm(event) {
+    if (event) event.preventDefault();
+    const payload = {
+        title: document.getElementById('eduTitle').value.trim(),
+        type: document.getElementById('eduType').value,
+        category: document.getElementById('eduCategory').value.trim() || 'Общее',
+        content: document.getElementById('eduContent').value.trim()
+    };
+    if (!payload.title || !payload.content) {
+        showFormMessage('educationFormMessage', 'Укажите заголовок и текст материала', false);
+        return false;
+    }
+    try {
+        const res = await authFetch('/api/education', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            showFormMessage('educationFormMessage', 'Обучающий материал добавлен', true);
+            const form = document.getElementById('educationForm');
+            if (form) form.reset();
+            loadAdminEducation();
+        } else {
+            showFormMessage('educationFormMessage', json.error || 'Не удалось добавить материал', false);
+        }
+    } catch (e) {
+        showFormMessage('educationFormMessage', 'Сбой сети при сохранении', false);
+    }
+    return false;
+}
+
+async function deleteEducationMaterial(id) {
+    if (!confirm('Удалить этот обучающий материал?')) return;
+    try {
+        const res = await authFetch(`/api/education/${id}`, { method: 'DELETE' });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            showFormMessage('educationFormMessage', 'Материал удалён', true);
+            loadAdminEducation();
+        } else {
+            showFormMessage('educationFormMessage', json.error || 'Не удалось удалить материал', false);
+        }
+    } catch (e) {
+        showFormMessage('educationFormMessage', 'Сбой сети при удалении', false);
     }
 }
 
@@ -1487,6 +1779,73 @@ function showCreatedModal(secretCode) {
     }
 }
 
+let allEducationMaterialsCache = [];
+let selectedEducationCategory = 'all';
+let educationSearchQuery = '';
+
+function handleEducationSearch(query) {
+    educationSearchQuery = query || '';
+    renderEducationCards(selectedEducationCategory);
+}
+
+function clearEducationSearch() {
+    educationSearchQuery = '';
+    const input = document.getElementById('educationSearchInput');
+    if (input) input.value = '';
+    renderEducationCards(selectedEducationCategory);
+}
+
+function renderEducationCards(category = 'all') {
+    const container = document.getElementById('educationList');
+    if (!container) return;
+    selectedEducationCategory = category;
+
+    // Render category filter tabs
+    const tabsContainer = document.getElementById('educationCategoryTabs');
+    if (tabsContainer) {
+        const categories = ['all', ...Array.from(new Set(allEducationMaterialsCache.map(m => m.category || 'Общее')))];
+        tabsContainer.innerHTML = categories.map(cat => {
+            const isSelected = cat === selectedEducationCategory;
+            const count = cat === 'all'
+                ? allEducationMaterialsCache.length
+                : allEducationMaterialsCache.filter(m => (m.category || 'Общее') === cat).length;
+            const label = cat === 'all' ? `Все (${count})` : `${escapeHtml(cat)} (${count})`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 38px; padding: 6px 12px;" onclick="renderEducationCards('${escapeJs(cat)}')">${label}</button>`;
+        }).join('');
+    }
+
+    let filtered = (category === 'all')
+        ? allEducationMaterialsCache
+        : allEducationMaterialsCache.filter(m => (m.category || 'Общее') === category);
+
+    if (educationSearchQuery.trim() !== '') {
+        const q = educationSearchQuery.trim().toLowerCase();
+        filtered = filtered.filter(m =>
+            (m.title && m.title.toLowerCase().includes(q)) ||
+            (m.content && m.content.toLowerCase().includes(q)) ||
+            (m.category && m.category.toLowerCase().includes(q))
+        );
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалов по вашему запросу не найдено. Попробуйте изменить поисковый запрос или выбрать категорию «Все».</div>';
+        return;
+    }
+
+    container.innerHTML = filtered.map(item => `
+        <div class="card" style="margin-bottom: 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+                <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
+                <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
+            </div>
+            <p style="margin: 8px 0 12px 0; line-height: 1.5;">${escapeHtml(item.content)}</p>
+            <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak('${escapeJs(item.title)}. ${escapeJs(item.content)}')">
+                ${Icons.volume} Прослушать памятку
+            </button>
+        </div>
+    `).join('');
+}
+
 async function loadEducation() {
     const container = document.getElementById('educationList');
     if (!container) return;
@@ -1494,20 +1853,75 @@ async function loadEducation() {
     try {
         const res = await authFetch('/api/education');
         const json = await res.json();
-        if (json.data) {
-            container.innerHTML = json.data.map(item => `
-                <div class="card" style="margin-bottom: 14px;">
-                    <h3 style="display: flex; align-items: center; gap: 8px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
-                    <p style="margin: 10px 0;">${escapeHtml(item.content)}</p>
-                    <button class="btn btn-outline" onclick="SpeechHelper.speak('${escapeJs(item.title)}. ${escapeJs(item.content)}')">
-                        ${Icons.volume} Прослушать памятку
-                    </button>
-                </div>
-            `).join('');
+        if (json.data && Array.isArray(json.data)) {
+            allEducationMaterialsCache = json.data;
+            renderEducationCards(selectedEducationCategory);
         }
     } catch (e) {
-        console.error(e);
+        console.error('Error loading education materials', e);
     }
+}
+
+let selectedVolunteerKnowledgeCategory = 'all';
+
+function renderVolunteerKnowledgeCards(category = 'all') {
+    const container = document.getElementById('volunteerKnowledgeList');
+    if (!container) return;
+    selectedVolunteerKnowledgeCategory = category;
+
+    // Filter relevant categories for volunteers
+    const volunteerCategories = ['Волонтёрство', 'Реабилитация', 'Безопасность', 'Здоровье', 'Бытовая безопасность', 'Социальная помощь'];
+    const relevantMaterials = allEducationMaterialsCache.filter(m => volunteerCategories.includes(m.category));
+
+    const tabsContainer = document.getElementById('volunteerKnowledgeCategoryTabs');
+    if (tabsContainer) {
+        const categories = ['all', ...Array.from(new Set(relevantMaterials.map(m => m.category || 'Общее')))];
+        tabsContainer.innerHTML = categories.map(cat => {
+            const isSelected = cat === selectedVolunteerKnowledgeCategory;
+            const count = cat === 'all'
+                ? relevantMaterials.length
+                : relevantMaterials.filter(m => (m.category || 'Общее') === cat).length;
+            const label = cat === 'all' ? `Все стандарты (${count})` : `${escapeHtml(cat)} (${count})`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 36px; padding: 4px 10px;" onclick="renderVolunteerKnowledgeCards('${escapeJs(cat)}')">${label}</button>`;
+        }).join('');
+    }
+
+    const filtered = (category === 'all')
+        ? relevantMaterials
+        : relevantMaterials.filter(m => (m.category || 'Общее') === category);
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалов в данной категории пока нет</div>';
+        return;
+    }
+
+    container.innerHTML = filtered.map(item => `
+        <div class="card" style="margin-bottom: 12px; background: var(--card-subtle); border-left: 4px solid var(--primary-color);">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+                <h4 style="display: flex; align-items: center; gap: 8px; margin: 0 0 6px 0; font-size: 1.05em;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h4>
+                <span class="badge badge-open" style="font-size: 0.75em;">${escapeHtml(item.category || 'Регламент')}</span>
+            </div>
+            <p style="margin: 6px 0 0 0; line-height: 1.45; font-size: 0.95em;">${escapeHtml(item.content)}</p>
+        </div>
+    `).join('');
+}
+
+async function loadVolunteerKnowledge() {
+    const container = document.getElementById('volunteerKnowledgeList');
+    if (!container) return;
+
+    if (allEducationMaterialsCache.length === 0) {
+        try {
+            const res = await authFetch('/api/education');
+            const json = await res.json();
+            if (json.data && Array.isArray(json.data)) {
+                allEducationMaterialsCache = json.data;
+            }
+        } catch (e) {
+            console.error('Error loading education materials for volunteer', e);
+        }
+    }
+    renderVolunteerKnowledgeCards(selectedVolunteerKnowledgeCategory);
 }
 
 async function loadAlerts() {
@@ -1777,8 +2191,8 @@ function toggleSirenMute() {
     isSirenMuted = !isSirenMuted;
     const btn = document.getElementById('btnToggleSirenSound') || document.getElementById('btnToggleSiren');
     if (btn) {
-        btn.innerHTML = isSirenMuted 
-            ? `${Icons.cross} Звук сирены выключен` 
+        btn.innerHTML = isSirenMuted
+            ? `${Icons.cross} Звук сирены выключен`
             : `${Icons.volume} Звук сирены включен`;
     }
     if (isSirenMuted) {
@@ -1813,8 +2227,8 @@ async function loadCoordinatorSosAlerts() {
                                 ПРИОРИТЕТ 0: ЭКСТРЕННЫЙ СИГНАЛ SOS (#${topAlert.id})
                             </div>
                             <div style="font-size: 0.95em; opacity: 0.95; margin-top: 2px;">
-                                Подопечный: <strong>${escapeHtml(topAlert.elderly_name || 'ID #' + topAlert.elderly_id)}</strong> | 
-                                Адрес: <strong>${escapeHtml(topAlert.address || 'Советский район')}</strong> | 
+                                Подопечный: <strong>${escapeHtml(topAlert.elderly_name || 'ID #' + topAlert.elderly_id)}</strong> |
+                                Адрес: <strong>${escapeHtml(topAlert.address || 'Советский район')}</strong> |
                                 Талон 112: <code>${escapeHtml(topAlert.emercom_ticket_id || 'Оповещен')}</code>
                             </div>
                         </div>

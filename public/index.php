@@ -187,7 +187,7 @@ if ($mode === 'family') {
                 <h2 style="margin-bottom: 16px;">Какая помощь вам требуется?</h2>
                 
                 <input type="hidden" id="selectedCategory" value="1">
-                <div class="category-grid">
+                <div class="category-grid" id="categoryGrid">
                     <div class="category-card selected" data-id="1">
                         <span class="category-icon">
                             <svg class="ui-icon ui-icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
@@ -339,7 +339,14 @@ if ($mode === 'family') {
                     <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
                     <span>Памятки и уроки безопасности</span>
                 </h2>
-                <p style="margin-bottom: 20px;">Простые правила, которые защитят вас от телефонных и бытовых мошенников:</p>
+                <p style="margin-bottom: 16px;">Простые правила, которые защитят вас от телефонных и бытовых мошенников, подскажут как пользоваться телефоном и оказывать первую помощь:</p>
+                <div style="margin-bottom: 14px; display: flex; gap: 8px;">
+                    <input type="text" id="educationSearchInput" class="form-control" placeholder="Поиск по памяткам (например: мошенники, давление, ЕРИП, перелом, лекарства)..." oninput="handleEducationSearch(this.value)">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="clearEducationSearch()" title="Сбросить поиск">
+                        Сброс
+                    </button>
+                </div>
+                <div id="educationCategoryTabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;"></div>
                 <div id="educationList"></div>
             </div>
         </section>
@@ -414,6 +421,10 @@ if ($mode === 'family') {
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     Доступ и пароли
                 </button>
+                <button class="admin-subnav-btn" data-admin-tab="admin-content" id="btnAdminContent">
+                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    Виды заявок и обучение
+                </button>
             </div>
 
             <!-- Tab 1: Analytics & Reports -->
@@ -469,6 +480,19 @@ if ($mode === 'family') {
                         <button class="btn btn-outline btn-sm" onclick="loadAllVolunteers('all')">Все</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAllVolunteers('pending')">Ожидают проверки</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAllVolunteers('verified')">Верифицированные</button>
+                    </div>
+                </div>
+
+                <!-- Rating filter: only show volunteers at or above the chosen rating -->
+                <div class="card" style="margin-bottom: 16px; padding: 14px 18px;">
+                    <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;">
+                        <div class="form-group" style="margin-bottom: 0; min-width: 220px;">
+                            <label class="form-label" for="volunteerMinRating">Фильтр по рейтингу (не ниже):</label>
+                            <input type="number" id="volunteerMinRating" class="form-control" min="0" max="5" step="0.1" placeholder="например, 4.5">
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" style="min-height: 44px;" onclick="applyRatingFilter()">Применить</button>
+                        <button type="button" class="btn btn-outline btn-sm" style="min-height: 44px;" onclick="resetRatingFilter()">Сбросить</button>
+                        <span id="ratingFilterHint" style="color: var(--text-muted); font-size: 0.9em;"></span>
                     </div>
                 </div>
 
@@ -642,6 +666,109 @@ if ($mode === 'family') {
                     </div>
                 </div>
             </div>
+
+            <!-- Tab 7: Request types (categories) + educational materials -->
+            <div id="admin-content" class="admin-tab-pane" style="display: none;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
+                    <!-- Request types -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <h3>Виды заявок (категории помощи)</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
+                            Добавляйте новые виды помощи и редактируйте существующие. Категорию, по которой уже есть заявки, удалить нельзя.
+                        </p>
+                        <form id="categoryForm" onsubmit="return submitCategoryForm(event)">
+                            <input type="hidden" id="catId" value="">
+                            <div class="form-group">
+                                <label class="form-label" for="catCode">Код (латиницей, уникальный):</label>
+                                <input type="text" id="catCode" class="form-control" placeholder="cleaning" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="catTitle">Название для подопечных:</label>
+                                <input type="text" id="catTitle" class="form-control" placeholder="Помощь по дому" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="catIcon">Иконка (служебное имя):</label>
+                                <input type="text" id="catIcon" class="form-control" placeholder="broom" value="help-circle">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="catDescription">Описание:</label>
+                                <input type="text" id="catDescription" class="form-control" placeholder="Что входит в этот вид помощи">
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="submit" class="btn btn-primary" id="catSubmitBtn">Добавить вид заявки</button>
+                                <button type="button" class="btn btn-outline" onclick="resetCategoryForm()">Очистить</button>
+                            </div>
+                        </form>
+                        <div id="categoryFormMessage" class="alert-banner" style="display: none; margin-top: 14px;"></div>
+
+                        <div class="data-table-container" style="margin-top: 18px;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Код</th>
+                                        <th>Название</th>
+                                        <th>Заявок</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="categoriesTableBody">
+                                    <tr><td colspan="5" style="text-align: center;">Загрузка видов заявок...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Educational materials -->
+                    <div class="card" style="margin-bottom: 0;">
+                        <h3>Набор обучающих материалов</h3>
+                        <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
+                            Памятки по безопасности, здоровью и волонтёрству. Материалы также используются при реабилитации волонтёров с низким рейтингом.
+                        </p>
+                        <form id="educationForm" onsubmit="return submitEducationForm(event)">
+                            <div class="form-group">
+                                <label class="form-label" for="eduTitle">Заголовок:</label>
+                                <input type="text" id="eduTitle" class="form-control" placeholder="Как распознать телефонных мошенников" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="eduType">Тип материала:</label>
+                                <select id="eduType" class="form-control">
+                                    <option value="memo">Памятка (текст)</option>
+                                    <option value="audio">Аудио</option>
+                                    <option value="video">Видео</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="eduCategory">Категория:</label>
+                                <input type="text" id="eduCategory" class="form-control" placeholder="Безопасность" value="Безопасность">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" for="eduContent">Текст материала:</label>
+                                <textarea id="eduContent" class="form-control" rows="3" placeholder="Короткий и понятный текст памятки" required></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Добавить материал</button>
+                        </form>
+                        <div id="educationFormMessage" class="alert-banner" style="display: none; margin-top: 14px;"></div>
+
+                        <div class="data-table-container" style="margin-top: 18px;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Заголовок</th>
+                                        <th>Тип</th>
+                                        <th>Категория</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminEducationTableBody">
+                                    <tr><td colspan="5" style="text-align: center;">Загрузка материалов...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -719,6 +846,27 @@ if ($mode === 'family') {
             </h2>
             <p style="margin-bottom: 16px; color: var(--text-muted);">За каждую выполненную заявку начисляется +50 очков опыта и растёт социальный рейтинг:</p>
             <div id="leaderboardList"></div>
+        </div>
+
+        <!-- Volunteer Knowledge Base & Standards Card -->
+        <div class="card" id="volunteerKnowledgeCard">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2 style="display: flex; align-items: center; gap: 8px;">
+                        <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+                        <span>База знаний и регламент волонтёра</span>
+                    </h2>
+                    <p style="color: var(--text-muted);">Стандарты помощи, правила этики, Закон № 99-З и методические материалы для работы с подопечными:</p>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="loadVolunteerKnowledge()">
+                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+                    Обновить
+                </button>
+            </div>
+            <div id="volunteerKnowledgeCategoryTabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;"></div>
+            <div id="volunteerKnowledgeList">
+                <p>Загрузка стандартов...</p>
+            </div>
         </div>
     </div>
 </main>

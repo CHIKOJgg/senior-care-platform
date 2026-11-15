@@ -60,9 +60,16 @@ class HelpRequestController
     public function myRequests(): void
     {
         $currentUser = AuthService::getCurrentUser();
-        $elderlyId = ($currentUser && $currentUser['role_code'] === 'elderly') 
-            ? (int)$currentUser['user_id'] 
-            : (isset($_GET['elderly_id']) ? (int)$_GET['elderly_id'] : 1);
+        $elderlyId = null;
+        if ($currentUser && $currentUser['role_code'] === 'elderly') {
+            $elderlyId = (int)$currentUser['user_id'];
+        } elseif (getenv('APP_ENV') !== 'production' && isset($_GET['elderly_id'])) {
+            $elderlyId = (int)$_GET['elderly_id'];
+        }
+        if ($elderlyId === null) {
+            AuthService::requireAuth(['elderly']);
+            return;
+        }
 
         $requests = HelpRequest::getByElderly($elderlyId);
 
@@ -76,9 +83,16 @@ class HelpRequestController
     public function volunteerTasks(): void
     {
         $currentUser = AuthService::getCurrentUser();
-        $volunteerId = ($currentUser && $currentUser['role_code'] === 'volunteer')
-            ? (int)$currentUser['user_id']
-            : (isset($_GET['volunteer_id']) ? (int)$_GET['volunteer_id'] : 2);
+        $volunteerId = null;
+        if ($currentUser && $currentUser['role_code'] === 'volunteer') {
+            $volunteerId = (int)$currentUser['user_id'];
+        } elseif (getenv('APP_ENV') !== 'production' && isset($_GET['volunteer_id'])) {
+            $volunteerId = (int)$_GET['volunteer_id'];
+        }
+        if ($volunteerId === null) {
+            AuthService::requireAuth(['volunteer']);
+            return;
+        }
 
         $status = $_GET['status'] ?? 'in_progress';
         $requests = HelpRequest::getByVolunteer($volunteerId, $status);
@@ -119,9 +133,16 @@ class HelpRequestController
 
         $input = Router::getJsonInput();
         $currentUser = AuthService::getCurrentUser();
-        $elderlyId = ($currentUser && $currentUser['role_code'] === 'elderly') 
-            ? (int)$currentUser['user_id'] 
-            : (int)($input['elderly_id'] ?? 1);
+        $elderlyId = null;
+        if ($currentUser && $currentUser['role_code'] === 'elderly') {
+            $elderlyId = (int)$currentUser['user_id'];
+        } elseif (getenv('APP_ENV') !== 'production') {
+            $elderlyId = (int)($input['elderly_id'] ?? 1);
+        }
+        if ($elderlyId === null) {
+            AuthService::requireAuth(['elderly']);
+            return;
+        }
 
         $categoryId = (int)($input['category_id'] ?? 1);
         $title = trim($input['title'] ?? '');
@@ -129,6 +150,13 @@ class HelpRequestController
         $address = trim($input['address'] ?? 'г. Минск, пр-т Независимости, 45, кв. 12');
         $lat = (float)($input['latitude'] ?? 53.9168);
         $lon = (float)($input['longitude'] ?? 27.5862);
+
+        if (!is_numeric($input['latitude'] ?? 53.9168) || !is_numeric($input['longitude'] ?? 27.5862)) {
+            Router::json(['error' => 'GPS-координаты (latitude/longitude) должны быть числами'], 400);
+        }
+        if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+            Router::json(['error' => 'GPS-координаты вне допустимого диапазона (latitude: -90..90, longitude: -180..180)'], 400);
+        }
 
         if (!$title && !$description) {
             Router::json(['error' => 'Укажите или надиктуйте, какая помощь требуется'], 400);
@@ -173,9 +201,16 @@ class HelpRequestController
     {
         $input = Router::getJsonInput();
         $currentUser = AuthService::getCurrentUser();
-        $volunteerId = ($currentUser && $currentUser['role_code'] === 'volunteer') 
-            ? (int)$currentUser['user_id'] 
-            : (int)($input['volunteer_id'] ?? 2);
+        $volunteerId = null;
+        if ($currentUser && $currentUser['role_code'] === 'volunteer') {
+            $volunteerId = (int)$currentUser['user_id'];
+        } elseif (getenv('APP_ENV') !== 'production') {
+            $volunteerId = (int)($input['volunteer_id'] ?? 2);
+        }
+        if ($volunteerId === null) {
+            AuthService::requireAuth(['volunteer']);
+            return;
+        }
 
         $req = HelpRequest::find((int)$id);
         if (!$req) {
@@ -220,6 +255,17 @@ class HelpRequestController
             Router::json(['error' => 'Заявка не найдена'], 404);
         }
 
+        $currentUser = AuthService::getCurrentUser();
+        if ($currentUser) {
+            $role = $currentUser['role_code'] ?? '';
+            $uid = (int)$currentUser['user_id'];
+            if ($role === 'volunteer' && (int)($req['volunteer_id'] ?? 0) !== $uid) {
+                Router::json(['error' => 'Доступ запрещён: завершить можно только свою заявку'], 403);
+            }
+        } elseif (getenv('APP_ENV') === 'production') {
+            AuthService::requireAuth();
+        }
+
         if ($req['status'] !== 'in_progress') {
             Router::json(['error' => 'Завершить можно только заявку, находящуюся в работе'], 400);
         }
@@ -239,7 +285,7 @@ class HelpRequestController
         if (!SecurityService::verifyCode($secretWord, (string)$req['secret_code'])) {
             $failedAttempts++;
             HelpRequest::update((int)$id, ['failed_attempts' => $failedAttempts]);
-            Logger::security("Invalid secret code '{$secretWord}' entered for request #{$id}. Attempt {$failedAttempts}/5");
+            Logger::security("Invalid secret code entered for request #{$id}. Attempt {$failedAttempts}/5");
 
             if ($failedAttempts >= 5) {
                 Router::json([
@@ -337,6 +383,20 @@ class HelpRequestController
         $req = HelpRequest::find($reqId);
         if (!$req) {
             Router::json(['error' => 'Заявка не найдена'], 404);
+        }
+
+        $currentUser = AuthService::getCurrentUser();
+        if ($currentUser) {
+            $role = $currentUser['role_code'] ?? '';
+            $uid = (int)$currentUser['user_id'];
+            $allowed = in_array($role, ['admin', 'coordinator'], true)
+                || ($role === 'elderly' && (int)$req['elderly_id'] === $uid)
+                || ($role === 'volunteer' && (int)($req['volunteer_id'] ?? 0) === $uid);
+            if (!$allowed) {
+                Router::json(['error' => 'Доступ запрещён: нельзя отменить чужую заявку'], 403);
+            }
+        } elseif (getenv('APP_ENV') === 'production') {
+            AuthService::requireAuth();
         }
 
         HelpRequest::updateStatus($reqId, 'cancelled');

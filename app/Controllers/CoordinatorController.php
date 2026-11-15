@@ -12,6 +12,7 @@ use App\Models\VolunteerProfile;
 use App\Models\FraudAlert;
 use App\Models\SosAlert;
 use App\Models\Category;
+use App\Models\EducationalMaterial;
 use App\Services\TaskWatchdogService;
 
 class CoordinatorController
@@ -53,19 +54,19 @@ class CoordinatorController
             }
         }
 
-        // Category breakdown
-        $categories = Category::all();
-        $categoryStats = [];
-        foreach ($categories as $cat) {
-            $catRequests = HelpRequest::where('category_id', $cat['id']);
-            $categoryStats[] = [
-                'id' => $cat['id'],
-                'code' => $cat['code'],
-                'title' => $cat['title'],
-                'icon' => $cat['icon'],
-                'count' => count($catRequests)
-            ];
+        // Category breakdown: single query to prevent N+1 overhead
+        $categoryStats = Category::query(
+            "SELECT c.id, c.code, c.title, c.icon, COUNT(r.id) AS count
+             FROM categories c
+             LEFT JOIN help_requests r ON r.category_id = c.id
+             GROUP BY c.id, c.code, c.title, c.icon
+             ORDER BY c.title ASC"
+        );
+        foreach ($categoryStats as &$cs) {
+            $cs['id'] = (int)$cs['id'];
+            $cs['count'] = (int)$cs['count'];
         }
+        unset($cs);
 
         $activeAlerts = count(FraudAlert::getActiveAlerts());
 
@@ -112,11 +113,145 @@ class CoordinatorController
     public function allVolunteers(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $minRating = (isset($_GET['min_rating']) && is_numeric($_GET['min_rating'])) ? (float)$_GET['min_rating'] : null;
         $list = VolunteerProfile::getAllWithDetails();
+        if ($minRating !== null) {
+            $list = array_values(array_filter($list, function ($v) use ($minRating) {
+                return (float)($v['rating'] ?? 0) >= $minRating;
+            }));
+        }
+        Router::json([
+            'success' => true,
+            'count' => count($list),
+            'data' => $list,
+            'filter' => ['min_rating' => $minRating]
+        ]);
+    }
+
+    // --- Category management (admin adds types of help requests) ---
+    /**
+     * Public catalogue of help-request types, used by the request form and admin UI.
+     */
+    public function categories(): void
+    {
+        $list = Category::query(
+            "SELECT c.*, (SELECT COUNT(*) FROM help_requests r WHERE r.category_id = c.id) AS requests_count
+             FROM categories c
+             ORDER BY c.title ASC"
+        );
         Router::json([
             'success' => true,
             'count' => count($list),
             'data' => $list
+        ]);
+    }
+
+    public function createCategory(): void
+    {
+        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $input = Router::getJsonInput();
+        $code = trim((string)($input['code'] ?? ''));
+        $title = trim((string)($input['title'] ?? ''));
+        $icon = trim((string)($input['icon'] ?? 'help-circle'));
+        $description = trim((string)($input['description'] ?? ''));
+
+        if ($code === '' || $title === '') {
+            Router::json(['error' => 'Укажите code и title категории'], 400);
+        }
+        if (Category::where('code', $code)) {
+            Router::json(['error' => 'Категория с таким кодом уже существует'], 409);
+        }
+
+        $id = Category::create([
+            'code' => $code,
+            'title' => $title,
+            'icon' => $icon,
+            'description' => $description
+        ]);
+        Logger::info("Category '{$code}' created by Admin #{$admin['user_id']}");
+        Router::json(['success' => true, 'category_id' => $id], 201);
+    }
+
+    public function updateCategory(string $id): void
+    {
+        AuthService::requireAuth(['admin', 'coordinator']);
+        $catId = (int)$id;
+        $cat = Category::find($catId);
+        if (!$cat) {
+            Router::json(['error' => 'Категория не найдена'], 404);
+        }
+        $input = Router::getJsonInput();
+        $data = [];
+        foreach (['code', 'title', 'icon', 'description'] as $f) {
+            if (isset($input[$f])) {
+                $data[$f] = trim((string)$input[$f]);
+            }
+        }
+        if (empty($data)) {
+            Router::json(['error' => 'Нет данных для обновления'], 400);
+        }
+        Category::update($catId, $data);
+        Router::json(['success' => true, 'message' => 'Категория обновлена']);
+    }
+
+    public function deleteCategory(string $id): void
+    {
+        AuthService::requireAuth(['admin', 'coordinator']);
+        $catId = (int)$id;
+        $cat = Category::find($catId);
+        if (!$cat) {
+            Router::json(['error' => 'Категория не найдена'], 404);
+        }
+        // Prevent deleting categories in use (efficient single-row check)
+        $inUse = HelpRequest::query("SELECT 1 FROM help_requests WHERE category_id = :cat_id LIMIT 1", ['cat_id' => $catId]);
+        if (!empty($inUse)) {
+            Router::json(['error' => 'Нельзя удалить категорию, используемую в заявках'], 409);
+        }
+        Category::delete($catId);
+        Router::json(['success' => true, 'message' => 'Категория удалена']);
+    }
+
+    // --- Rehabilitation for low-rated volunteers ---
+    public function rehabilitateVolunteer(string $id): void
+    {
+        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $uid = (int)$id;
+        $vp = VolunteerProfile::find($uid);
+        if (!$vp) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+        $threshold = 3.5;
+        $currentRating = (float)($vp['rating'] ?? 5.0);
+        $needsRehab = $currentRating < $threshold;
+
+        // Assign educational materials set for retraining
+        $materials = EducationalMaterial::all();
+        $rehabMaterials = array_slice($materials, 0, 5);
+
+        // Reset rating to baseline and mark as pending re-verification if low
+        if ($needsRehab) {
+            VolunteerProfile::update($uid, [
+                'rating' => 4.0,
+                'verification_status' => 'REHABILITATION',
+                'is_verified' => 0
+            ]);
+        } else {
+            VolunteerProfile::update($uid, [
+                'verification_status' => 'ACTIVE'
+            ]);
+        }
+
+        Logger::info("Volunteer #{$uid} rehabilitation initiated by Admin #{$admin['user_id']}. Rating was {$currentRating}");
+        Router::json([
+            'success' => true,
+            'volunteer_id' => $uid,
+            'previous_rating' => $currentRating,
+            'needs_rehabilitation' => $needsRehab,
+            'new_status' => $needsRehab ? 'REHABILITATION' : 'ACTIVE',
+            'training_materials' => $rehabMaterials,
+            'message' => $needsRehab
+                ? 'Волонтёр направлен на переобучение (реабилитация). Назначены обучающие материалы.'
+                : 'Рейтинг в норме. Волонтёр остаётся активным.'
         ]);
     }
 

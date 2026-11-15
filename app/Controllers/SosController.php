@@ -38,10 +38,13 @@ class SosController
         $role = $currentUser['role_code'] ?? '';
         if ($role === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
-        } elseif (in_array($role, ['admin', 'coordinator'], true) && !empty($input['elderly_id'])) {
+        } elseif (in_array($role, ['admin', 'coordinator'], true)) {
+            if (empty($input['elderly_id'])) {
+                Router::json(['error' => 'Укажите идентификатор подопечного'], 400);
+            }
             $elderlyId = (int)$input['elderly_id'];
         } else {
-            $elderlyId = (int)($input['elderly_id'] ?? $currentUser['user_id']);
+            Router::json(['error' => 'Вызов SOS доступен только подопечным, администраторам и координаторам'], 403);
         }
 
         // Fetch elderly profile defaults if coordinates or address omitted

@@ -170,12 +170,12 @@ class AuthController
 
         $user = User::findByPhone($phone);
         if (!$user) {
-            Router::json(['error' => 'Пользователь с таким номером не найден'], 404);
+            Router::json(['error' => 'Пользователь не найден или восстановление недоступно'], 404);
         }
 
         $profile = User::getWithProfile((int)$user['id']);
         if (!in_array($profile['role_code'] ?? '', ['elderly', 'volunteer'], true)) {
-            Router::json(['error' => 'Для этой роли восстановление через координатора недоступно'], 403);
+            Router::json(['error' => 'Пользователь не найден или восстановление недоступно'], 404);
         }
 
         $issued = PasswordResetService::createCode((int)$user['id'], $adminId);
@@ -228,14 +228,27 @@ class AuthController
 
     public function register(): void
     {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!RateLimiter::check("register:{$ip}", 50, 300)) {
+            Router::json(['error' => 'Слишком много попыток регистрации. Подождите 5 минут.'], 429);
+        }
+
         $input = Router::getJsonInput();
         $phone = trim($input['phone'] ?? '');
         $name = trim($input['name'] ?? '');
         $password = trim($input['password'] ?? '');
         $roleId = (int)($input['role_id'] ?? 1); // 1 = elderly, 2 = volunteer
+        // Security: prevent self-registration as coordinator/admin
+        if (!in_array($roleId, [1, 2], true)) {
+            $roleId = 1;
+        }
 
         if (!$phone || !$name || !$password) {
             Router::json(['error' => 'Заполните все обязательные поля'], 400);
+        }
+
+        if (mb_strlen($password) < 8) {
+            Router::json(['error' => 'Пароль должен содержать не менее 8 символов'], 400);
         }
 
         if (User::findByPhone($phone)) {

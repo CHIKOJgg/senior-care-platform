@@ -14,8 +14,7 @@ class SecurityService
 
     public static function generateSecretCode(): string
     {
-        $idx = array_rand(self::$friendlyWords);
-        return self::$friendlyWords[$idx];
+        return self::$friendlyWords[random_int(0, count(self::$friendlyWords) - 1)];
     }
 
     /**

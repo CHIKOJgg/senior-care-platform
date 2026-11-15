@@ -482,8 +482,10 @@ function scanDirectoryForEmojis(string $dir, string $regex, array $excludeFiles 
     return $hits;
 }
 
+$baseDir = is_dir('/var/www/html') ? '/var/www/html' : dirname(__DIR__);
+
 // 2.1 Backend MVC (app/)
-$appHits = scanDirectoryForEmojis('/var/www/html/app', $standardEmojiRegex);
+$appHits = scanDirectoryForEmojis("{$baseDir}/app", $standardEmojiRegex);
 assertTest(
     'R2-CH-EMOJI-APP',
     'Strict Zero-Emoji compliance across all files in app/ MVC core',
@@ -492,7 +494,7 @@ assertTest(
 );
 
 // 2.2 Frontend assets (public/)
-$publicHits = scanDirectoryForEmojis('/var/www/html/public', $standardEmojiRegex);
+$publicHits = scanDirectoryForEmojis("{$baseDir}/public", $standardEmojiRegex);
 assertTest(
     'R2-CH-EMOJI-PUBLIC',
     'Strict Zero-Emoji compliance across all files in public/ (WCAG 2.1 AAA)',
@@ -501,7 +503,7 @@ assertTest(
 );
 
 // 2.3 Database schema and seed files (database/)
-$dbHits = scanDirectoryForEmojis('/var/www/html/database', $standardEmojiRegex, ['database.sqlite', 'database.sqlite-wal', 'database.sqlite-shm']);
+$dbHits = scanDirectoryForEmojis("{$baseDir}/database", $standardEmojiRegex, ['database.sqlite', 'database.sqlite-wal', 'database.sqlite-shm']);
 assertTest(
     'R2-CH-EMOJI-DBFILES',
     'Strict Zero-Emoji compliance across all database/ source scripts',
@@ -531,7 +533,7 @@ assertTest(
 );
 
 // 2.5 Tests suite (tests/)
-$testHits = scanDirectoryForEmojis('/var/www/html/tests', $standardEmojiRegex, [
+$testHits = scanDirectoryForEmojis("{$baseDir}/tests", $standardEmojiRegex, [
     'test_challenger_m5_r2.php',
     'test_challenger_m5_1.php'
 ]);
@@ -543,7 +545,7 @@ assertTest(
 );
 
 // 2.6 Architecture documentation (plan/)
-$planHits = scanDirectoryForEmojis('/var/www/html/plan', $standardEmojiRegex);
+$planHits = scanDirectoryForEmojis("{$baseDir}/plan", $standardEmojiRegex);
 assertTest(
     'R2-CH-EMOJI-PLAN',
     'Strict Zero-Emoji compliance across all architectural documentation in plan/',
@@ -553,10 +555,10 @@ assertTest(
 
 // 2.7 Root Markdown Documentation
 $rootDocs = [
-    '/var/www/html/README.md',
-    '/var/www/html/PROJECT.md',
-    '/var/www/html/TEST_INFRA.md',
-    '/var/www/html/TEST_READY.md'
+    "{$baseDir}/README.md",
+    "{$baseDir}/PROJECT.md",
+    "{$baseDir}/TEST_INFRA.md",
+    "{$baseDir}/TEST_READY.md"
 ];
 $rootDocHits = [];
 foreach ($rootDocs as $doc) {
@@ -610,7 +612,10 @@ assertTest(
 // -----------------------------------------------------------------------------
 echo PHP_EOL . "--- [PART 4] Authentic SOS Priority 0 Assertion in Tier 2 ---" . PHP_EOL;
 
-$tier2Path = '/var/www/html/tests/e2e_suite/Tier2_BoundaryCornerTest.php';
+$tier2Path = __DIR__ . '/../tests/e2e_suite/Tier2_BoundaryCornerTest.php';
+if (!file_exists($tier2Path)) {
+    $tier2Path = '/var/www/html/tests/e2e_suite/Tier2_BoundaryCornerTest.php';
+}
 $tier2Content = file_exists($tier2Path) ? (string)file_get_contents($tier2Path) : '';
 $hasStaticPass = str_contains($tier2Content, "'pass' => true, 'details' => 'Priority 0 default configured'");
 $hasDynamicSosPost = str_contains($tier2Content, "POST', '/api/sos'") && str_contains($tier2Content, "sos_alerts");

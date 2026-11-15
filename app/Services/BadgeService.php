@@ -38,7 +38,10 @@ class BadgeService
 
         $secret = getenv('BADGE_HMAC_SECRET') ?: getenv('APP_SECRET') ?: '';
         if ($secret === '') {
-            $secret = 'senior_care_platform_badge_hmac_secret_2026';
+            if ((getenv('APP_ENV') ?: 'local') === 'production') {
+                throw new \RuntimeException('BADGE_HMAC_SECRET (or APP_SECRET) must be set in production');
+            }
+            $secret = 'local_dev_only_badge_secret_' . md5(__DIR__);
         }
 
         return $secret;

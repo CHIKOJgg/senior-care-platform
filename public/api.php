@@ -65,6 +65,10 @@ $router->get('/api/antifraud/alerts', [AntiFraudController::class, 'alerts']);
 
 // Educational materials
 $router->get('/api/education', [EducationController::class, 'index']);
+$router->get('/api/education/{id}', [EducationController::class, 'show']);
+$router->post('/api/education', [EducationController::class, 'create']);
+$router->put('/api/education/{id}', [EducationController::class, 'update']);
+$router->delete('/api/education/{id}', [EducationController::class, 'delete']);
 
 // Chat routes
 $router->get('/api/chat/{id}', [ChatController::class, 'messages']);
@@ -74,6 +78,12 @@ $router->post('/api/chat/{id}', [ChatController::class, 'send']);
 $router->get('/api/coordinator/stats', [CoordinatorController::class, 'stats']);
 $router->get('/api/coordinator/volunteers', [CoordinatorController::class, 'allVolunteers']);
 $router->get('/api/coordinator/volunteers/pending', [CoordinatorController::class, 'pendingVolunteers']);
+$router->get('/api/categories', [CoordinatorController::class, 'categories']);
+$router->get('/api/coordinator/categories', [CoordinatorController::class, 'categories']);
+$router->post('/api/coordinator/categories', [CoordinatorController::class, 'createCategory']);
+$router->put('/api/coordinator/categories/{id}', [CoordinatorController::class, 'updateCategory']);
+$router->delete('/api/coordinator/categories/{id}', [CoordinatorController::class, 'deleteCategory']);
+$router->post('/api/coordinator/volunteers/{id}/rehabilitate', [CoordinatorController::class, 'rehabilitateVolunteer']);
 $router->post('/api/coordinator/volunteers/{id}/verify', [CoordinatorController::class, 'verifyVolunteer']);
 $router->post('/api/coordinator/volunteers/{id}/reject', [CoordinatorController::class, 'rejectVolunteer']);
 $router->get('/api/coordinator/pending-volunteers', [CoordinatorController::class, 'pendingVolunteers']);
@@ -120,7 +130,10 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
 if ($method === 'OPTIONS') {
-    header('Access-Control-Allow-Origin: *');
+    $corsOrigin = getenv('APP_CORS_ORIGIN') ?: (getenv('APP_ENV') === 'production' ? '' : '*');
+    if ($corsOrigin !== '') {
+        header('Access-Control-Allow-Origin: ' . $corsOrigin);
+    }
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-Demo-User');
     exit(0);

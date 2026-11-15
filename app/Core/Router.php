@@ -83,9 +83,12 @@ class Router
 
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
-        header('Access-Control-Allow-Origin: *');
+        $corsOrigin = getenv('APP_CORS_ORIGIN') ?: (getenv('APP_ENV') === 'production' ? '' : '*');
+        if ($corsOrigin !== '') {
+            header('Access-Control-Allow-Origin: ' . $corsOrigin);
+        }
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization');
+        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-Demo-User');
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
         $output = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

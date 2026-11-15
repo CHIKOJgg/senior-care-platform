@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Router;
 use App\Core\Database;
+use App\Core\Logger;
 use App\Services\AuthService;
 use App\Services\CryptoService;
 use Exception;
@@ -30,8 +31,9 @@ class HealthController
             }
         } catch (Exception $e) {
             $healthy = false;
-            $dbStatus = 'error: ' . $e->getMessage();
-            $errorMsg = $e->getMessage();
+            $dbStatus = 'error';
+            $errorMsg = null;
+            Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
         $storageWritable = is_writable(__DIR__ . '/../../database');
@@ -44,8 +46,9 @@ class HealthController
                 $healthy = false;
             }
         } catch (Throwable $e) {
-            $cryptoStatus = 'error: ' . $e->getMessage();
+            $cryptoStatus = 'error';
             $healthy = false;
+            Logger::error('Health check crypto failure', ['error' => $e->getMessage()]);
         }
 
         $authStatus = 'ok';
@@ -56,8 +59,9 @@ class HealthController
                 $healthy = false;
             }
         } catch (Throwable $e) {
-            $authStatus = 'error: ' . $e->getMessage();
+            $authStatus = 'error';
             $healthy = false;
+            Logger::error('Health check auth failure', ['error' => $e->getMessage()]);
         }
 
         $status = $healthy ? 'ok' : 'degraded';

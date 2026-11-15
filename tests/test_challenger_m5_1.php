@@ -386,9 +386,11 @@ echo PHP_EOL . "--- [SECTION 4] Exhaustive Codebase Zero-Emoji Audit ---" . PHP_
 
 $emojiRegex = '/[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}]/u';
 
+$baseDir = is_dir('/var/www/html') ? '/var/www/html' : dirname(__DIR__);
+
 // 4.1 Frontend UI files (public/) and Architecture documentation (plan/)
 $frontendFiles = [];
-$frontendDirs = ['/var/www/html/public', '/var/www/html/plan'];
+$frontendDirs = ["{$baseDir}/public", "{$baseDir}/plan"];
 foreach ($frontendDirs as $d) {
     if (!is_dir($d)) continue;
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($d, RecursiveDirectoryIterator::SKIP_DOTS));
@@ -412,7 +414,7 @@ assertChallenge(
 
 // 4.2 Backend MVC Source Code (app/)
 $appFiles = [];
-$itApp = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/var/www/html/app', RecursiveDirectoryIterator::SKIP_DOTS));
+$itApp = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$baseDir}/app", RecursiveDirectoryIterator::SKIP_DOTS));
 foreach ($itApp as $f) {
     if ($f->isFile()) $appFiles[] = $f->getPathname();
 }
@@ -431,7 +433,7 @@ assertChallenge(
 );
 
 // 4.3 Database DDL & Seed (database/)
-$dbFiles = ['/var/www/html/database/schema.sql', '/var/www/html/database/migrate.php', '/var/www/html/database/seed.php'];
+$dbFiles = ["{$baseDir}/database/schema.sql", "{$baseDir}/database/migrate.php", "{$baseDir}/database/seed.php"];
 $dbEmojiHits = [];
 foreach ($dbFiles as $fp) {
     if (file_exists($fp)) {
@@ -450,7 +452,7 @@ assertChallenge(
 
 // 4.4 Test Suites (tests/)
 $testFiles = [];
-$itTests = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/var/www/html/tests', RecursiveDirectoryIterator::SKIP_DOTS));
+$itTests = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$baseDir}/tests", RecursiveDirectoryIterator::SKIP_DOTS));
 foreach ($itTests as $f) {
     if ($f->isFile() && $f->getFilename() !== 'test_challenger_m5_1.php') {
         $testFiles[] = $f->getPathname();
@@ -471,7 +473,7 @@ assertChallenge(
 );
 
 // 4.5 Root Project Documentation (README.md, TEST_INFRA.md, etc.)
-$rootDocs = ['/var/www/html/README.md', '/var/www/html/TEST_INFRA.md', '/var/www/html/PROJECT.md', '/var/www/html/TEST_READY.md'];
+$rootDocs = ["{$baseDir}/README.md", "{$baseDir}/TEST_INFRA.md", "{$baseDir}/PROJECT.md", "{$baseDir}/TEST_READY.md"];
 $docEmojiHits = [];
 foreach ($rootDocs as $fp) {
     if (file_exists($fp)) {
