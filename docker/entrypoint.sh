@@ -9,9 +9,10 @@ chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 
 # Ensure PHP-FPM listens on TCP 9000 for Nginx
 if [ -f /usr/local/etc/php-fpm.d/www.conf ]; then
-    echo "[STARTUP] php-fpm listen before: $(grep '^listen' /usr/local/etc/php-fpm.d/www.conf)"
-    sed -i 's|^listen = .*|listen = 127.0.0.1:9000|' /usr/local/etc/php-fpm.d/www.conf
-    echo "[STARTUP] php-fpm listen after: $(grep '^listen' /usr/local/etc/php-fpm.d/www.conf)"
+    echo "[STARTUP] www.conf exists: $(test -f /usr/local/etc/php-fpm.d/www.conf && echo yes || echo no)"
+    echo "[STARTUP] listen lines: $(grep -i 'listen' /usr/local/etc/php-fpm.d/www.conf || echo none)"
+    sed -i 's|^[;[:space:]]*listen[[:space:]]*=.*|listen = 127.0.0.1:9000|' /usr/local/etc/php-fpm.d/www.conf
+    echo "[STARTUP] listen lines after: $(grep -i 'listen' /usr/local/etc/php-fpm.d/www.conf || echo none)"
 else
     echo "[STARTUP] www.conf not found!"
 fi
