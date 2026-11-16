@@ -27,25 +27,11 @@ chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 find /var/www/html/database /var/www/html/storage -type d -exec chmod 775 {} \;
 find /var/www/html/database /var/www/html/storage -type f -exec chmod 664 {} \;
 
-echo "[STARTUP] Testing Nginx config..."
-nginx -t
-
-echo "[STARTUP] Starting PHP-FPM..."
-php-fpm -D
-sleep 1
-echo "[STARTUP] Processes before nginx:"
-ps aux | grep -E 'nginx|php-fpm' | grep -v grep || true
-
-echo "[STARTUP] Starting Nginx..."
-nginx -g 'daemon off;' &
-NGINX_PID=$!
-sleep 3
-if kill -0 $NGINX_PID 2>/dev/null; then
-    echo "[STARTUP] Nginx running (pid $NGINX_PID)"
-else
-    echo "[STARTUP] Nginx failed to start"
-    echo "[STARTUP] nginx error log:"
-    cat /var/log/nginx/error.log 2>/dev/null || true
+# Start Nginx only when explicitly requested (local prod). On Railway we use the PHP dev server via startCommand.
+if [ "${USE_NGINX:-0}" = "1" ]; then
+    echo "[STARTUP] Testing Nginx config..."
+    nginx -t
+    echo "[STARTUP] Starting PHP-FPM and Nginx..."
+    php-fpm -D
+    exec nginx -g "daemon off;"
 fi
-wait $NGINX_PID
-echo "[STARTUP] Nginx exited with code $?"
