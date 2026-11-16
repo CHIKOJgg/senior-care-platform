@@ -4,7 +4,7 @@ set -e
 echo "[STARTUP] Initializing Senior Care Platform..."
 
 # Ensure storage directories exist and are writable by PHP-FPM (www-data)
-mkdir -p /var/www/html/database /var/www/html/storage/data /var/www/html/storage/logs /var/www/html/storage/cache /var/www/html/storage/metrics
+mkdir -p /var/www/html/database /var/www/html/storage/data /var/www/html/storage/logs /var/www/html/storage/cache /var/www/html/storage/metrics /run/nginx /var/log/nginx
 chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 
 # Ensure PHP-FPM listens on TCP 9000 for Nginx
