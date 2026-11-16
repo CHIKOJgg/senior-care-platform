@@ -1,8 +1,8 @@
 FROM php:8.2-cli-alpine
 
 # Install SQLite and PDO dependencies
-RUN apk add --no-cache sqlite-dev sqlite \
-    && docker-php-ext-install pdo pdo_sqlite
+RUN apk add --no-cache sqlite-dev sqlite mysql-client mariadb-connector-c-dev \
+    && docker-php-ext-install pdo pdo_sqlite pdo_mysql
 
 WORKDIR /var/www/html
 
