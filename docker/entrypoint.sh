@@ -37,5 +37,15 @@ echo "[STARTUP] Processes before nginx:"
 ps aux | grep -E 'nginx|php-fpm' | grep -v grep || true
 
 echo "[STARTUP] Starting Nginx..."
-nginx -g 'daemon off;'
+nginx -g 'daemon off;' &
+NGINX_PID=$!
+sleep 3
+if kill -0 $NGINX_PID 2>/dev/null; then
+    echo "[STARTUP] Nginx running (pid $NGINX_PID)"
+else
+    echo "[STARTUP] Nginx failed to start"
+    echo "[STARTUP] nginx error log:"
+    cat /var/log/nginx/error.log 2>/dev/null || true
+fi
+wait $NGINX_PID
 echo "[STARTUP] Nginx exited with code $?"
