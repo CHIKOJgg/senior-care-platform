@@ -9,6 +9,7 @@ use App\Core\Logger;
 use App\Core\RateLimiter;
 use App\Services\AuthService;
 use App\Services\PasswordResetService;
+use App\Services\RegionService;
 use App\Models\User;
 use App\Models\ElderlyProfile;
 use App\Models\VolunteerProfile;
@@ -47,15 +48,15 @@ class AuthController
         $remember = !empty($input['remember']) && ($withProfile['role_code'] ?? '') === 'elderly';
         $ttl = $remember ? AuthService::TTL_DEVICE : AuthService::TTL_SESSION;
         $token = AuthService::createToken($withProfile, $ttl);
-        if ($remember) {
-            @setcookie('auth_token', $token, [
-                'expires' => time() + $ttl,
-                'path' => '/',
-                'httponly' => true,
-                'secure' => !empty($_SERVER['HTTPS']),
-                'samesite' => 'Lax'
-            ]);
-        }
+        // Always establish the HttpOnly auth cookie: the server uses it to render only
+        // this account's role workspace. "Remember" merely extends the TTL for seniors.
+        @setcookie('auth_token', $token, [
+            'expires' => time() + $ttl,
+            'path' => '/',
+            'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']),
+            'samesite' => 'Lax'
+        ]);
 
         Logger::info("User #{$user['id']} ({$user['name']}) logged in successfully");
 
@@ -105,15 +106,15 @@ class AuthController
         $remember = !empty($input['remember']) && ($withProfile['role_code'] ?? '') === 'elderly';
         $ttl = $remember ? AuthService::TTL_DEVICE : AuthService::TTL_SESSION;
         $token = AuthService::createToken($withProfile, $ttl);
-        if ($remember) {
-            @setcookie('auth_token', $token, [
-                'expires' => time() + $ttl,
-                'path' => '/',
-                'httponly' => true,
-                'secure' => !empty($_SERVER['HTTPS']),
-                'samesite' => 'Lax'
-            ]);
-        }
+        // Always establish the HttpOnly auth cookie: the server uses it to render only
+        // this account's role workspace. "Remember" merely extends the TTL for seniors.
+        @setcookie('auth_token', $token, [
+            'expires' => time() + $ttl,
+            'path' => '/',
+            'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']),
+            'samesite' => 'Lax'
+        ]);
 
         Logger::info("User #{$userId} changed password; other sessions revoked");
 
@@ -139,6 +140,7 @@ class AuthController
             'expires' => time() - 3600,
             'path' => '/',
             'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']),
             'samesite' => 'Lax'
         ]);
 
@@ -229,7 +231,9 @@ class AuthController
     public function register(): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        if (!RateLimiter::check("register:{$ip}", 50, 300)) {
+        $env = getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'local');
+        $maxAttempts = in_array($env, ['local', 'testing'], true) ? 1000 : 50;
+        if (!RateLimiter::check("register:{$ip}", $maxAttempts, 300)) {
             Router::json(['error' => 'Слишком много попыток регистрации. Подождите 5 минут.'], 429);
         }
 
@@ -262,12 +266,25 @@ class AuthController
             'password_hash' => password_hash($password, PASSWORD_DEFAULT)
         ]);
 
+        // Country-wide: region is explicit or derived from coordinates (nearest regional centre).
+        $profileLat = isset($input['latitude']) ? (float)$input['latitude'] : null;
+        $profileLon = isset($input['longitude']) ? (float)$input['longitude'] : null;
+        $regionCode = RegionService::normalize(
+            isset($input['region_code']) ? (string)$input['region_code'] : null,
+            $profileLat,
+            $profileLon
+        );
+        $regionCenter = RegionService::center($regionCode);
+        $profileLat = $profileLat ?? $regionCenter['lat'];
+        $profileLon = $profileLon ?? $regionCenter['lon'];
+
         if ($roleId === 1) { // Elderly
             ElderlyProfile::create([
                 'user_id' => (int)$userId,
-                'address' => $input['address'] ?? 'г. Минск, пр-т Независимости, 45, кв. 12',
-                'latitude' => (float)($input['latitude'] ?? 53.9168),
-                'longitude' => (float)($input['longitude'] ?? 27.5862),
+                'address' => $input['address'] ?? ('Республика Беларусь, ' . RegionService::name($regionCode)),
+                'latitude' => $profileLat,
+                'longitude' => $profileLon,
+                'region_code' => $regionCode,
                 'birth_year' => (int)($input['birth_year'] ?? 1950),
                 'mobility_notes' => $input['mobility_notes'] ?? '',
                 'emergency_contact' => $input['emergency_contact'] ?? ''
@@ -278,8 +295,9 @@ class AuthController
                 'is_verified' => 0, // Pending verification
                 'rating' => 5.0,
                 'points' => 0,
-                'latitude' => (float)($input['latitude'] ?? 53.9180),
-                'longitude' => (float)($input['longitude'] ?? 27.5900),
+                'latitude' => $profileLat,
+                'longitude' => $profileLon,
+                'region_code' => $regionCode,
                 'radius_km' => (float)($input['radius_km'] ?? 5.0),
                 'skills' => $input['skills'] ?? 'помощь по дому, покупка продуктов',
                 'completed_tasks_count' => 0
@@ -296,6 +314,7 @@ class AuthController
             'expires' => time() + 86400 * 7,
             'path' => '/',
             'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']),
             'samesite' => 'Lax'
         ]);
 
@@ -333,6 +352,7 @@ class AuthController
             'expires' => time() - 3600,
             'path' => '/',
             'httponly' => true,
+            'secure' => !empty($_SERVER['HTTPS']),
             'samesite' => 'Lax'
         ]);
 

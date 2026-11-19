@@ -30,13 +30,24 @@ class TestHarness
     private ?string $volunteerToken = null;
     private ?string $elderlyToken = null;
 
-    private function __construct(string $baseUrl = 'http://127.0.0.1:8000')
+    private function __construct(?string $baseUrl = null)
     {
+        $baseUrl = $baseUrl ?? self::defaultBaseUrl();
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->startTime = microtime(true);
     }
 
-    public static function getInstance(string $baseUrl = 'http://127.0.0.1:8000'): self
+    /**
+     * Base URL can be overridden with TEST_BASE_URL (used when tests run inside a container,
+     * e.g. against the production Nginx/PHP-FPM stack on port 80).
+     */
+    private static function defaultBaseUrl(): string
+    {
+        $env = getenv('TEST_BASE_URL');
+        return ($env !== false && $env !== '') ? $env : 'http://127.0.0.1:8000';
+    }
+
+    public static function getInstance(?string $baseUrl = null): self
     {
         if (self::$instance === null) {
             self::$instance = new self($baseUrl);

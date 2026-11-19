@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS elderly_profiles (
     address TEXT NOT NULL,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
+    region_code VARCHAR(32) DEFAULT 'MINSK_CITY',
     birth_year INTEGER,
     mobility_notes TEXT,
     emergency_contact VARCHAR(100),
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS volunteer_profiles (
     points INTEGER DEFAULT 0,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
+    region_code VARCHAR(32) DEFAULT 'MINSK_CITY',
     radius_km REAL DEFAULT 5.0,
     skills TEXT,
     completed_tasks_count INTEGER DEFAULT 0,
@@ -44,7 +46,7 @@ CREATE TABLE IF NOT EXISTS volunteer_profiles (
     id_provider_user_id VARCHAR(100) NULL,
     passport_masked VARCHAR(50) NULL,
     police_clearance_status VARCHAR(50) DEFAULT 'NOT_SUBMITTED',
-    badge_token VARCHAR(64) NULL,
+    badge_token VARCHAR(255) NULL,
     badge_expires_at DATETIME NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
@@ -66,6 +68,7 @@ CREATE TABLE IF NOT EXISTS help_requests (
     description TEXT,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
+    region_code VARCHAR(32) DEFAULT 'MINSK_CITY',
     address TEXT NOT NULL,
     secret_code VARCHAR(50) NOT NULL,
     status VARCHAR(50) DEFAULT 'open', -- open, in_progress, completed, cancelled

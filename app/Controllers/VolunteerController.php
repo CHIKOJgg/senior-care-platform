@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Router;
 use App\Core\Logger;
+use App\Core\RateLimiter;
 use App\Services\AuthService;
 use App\Services\BadgeService;
 use App\Services\Identity\IdentityProviderFactory;
@@ -66,11 +67,18 @@ class VolunteerController
 
         $appUrl = getenv('APP_URL') ?: 'http://127.0.0.1:8000';
         $verificationUrl = rtrim($appUrl, '/') . '/api/volunteers/badge/' . $token;
+        $vp = \App\Models\VolunteerProfile::find($userId);
+        $badgeNumber = $payload['bid'] ?? sprintf(
+            'BY-%s-%s-%04d',
+            \App\Services\RegionService::short($vp['region_code'] ?? null),
+            date('Y'),
+            $userId
+        );
 
         Router::json([
             'success' => true,
             'badge_token' => $token,
-            'badge_number' => $payload['bid'] ?? sprintf('BY-MSK-SOV-%s-%04d', date('Y'), $userId),
+            'badge_number' => $badgeNumber,
             'expires_at' => $payload['exp'] ?? (time() + BadgeService::DEFAULT_TTL),
             'ttl_seconds' => BadgeService::DEFAULT_TTL,
             'verification_url' => $verificationUrl,
@@ -85,6 +93,11 @@ class VolunteerController
      */
     public function verifyPublicBadge(string $token): void
     {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!RateLimiter::check("badge_verify:{$ip}", 60, 60)) {
+            Router::json(['valid' => false, 'error' => 'Слишком много запросов проверки. Подождите минуту.'], 429);
+        }
+
         $result = BadgeService::verifyVolunteerBadge($token);
 
         if (!($result['valid'] ?? false)) {

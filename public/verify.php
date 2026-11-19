@@ -33,7 +33,7 @@ if ($token !== '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Официальная проверка волонтёра — ТЦСОН Советского района г. Минска</title>
+    <title>Официальная проверка волонтёра — Республика Беларусь</title>
     <link rel="stylesheet" href="/css/accessibility.css">
     <style>
         .verify-card {
@@ -99,7 +99,7 @@ if ($token !== '') {
                     <path d="M42 62 L48 68 L60 54" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
                 <h1 style="font-size: 1.35rem; font-weight: 800; color: #000000; margin-bottom: 4px;">
-                    ТЦСОН Советского района г. Минска
+                    ТЦСОН Республики Беларусь
                 </h1>
                 <p style="color: #334155; font-size: 0.95rem; font-weight: 600;">
                     Государственный реестр аккредитации волонтёров
@@ -134,7 +134,7 @@ if ($token !== '') {
                     </div>
                     <div class="data-row">
                         <span class="data-label">Организация:</span>
-                        <span class="data-val"><?php echo htmlspecialchars($v['organization'] ?? 'ТЦСОН Советского района г. Минска'); ?></span>
+                        <span class="data-val"><?php echo htmlspecialchars($v['organization'] ?? 'ТЦСОН Республики Беларусь'); ?></span>
                     </div>
                     <div class="data-row">
                         <span class="data-label">Статус проверки:</span>
@@ -142,7 +142,7 @@ if ($token !== '') {
                     </div>
                     <div class="data-row">
                         <span class="data-label">Номер бейджа:</span>
-                        <span class="data-val" style="font-family: monospace;"><?php echo htmlspecialchars($badgeData['badge_number'] ?? 'BY-MSK-SOV-2026'); ?></span>
+                        <span class="data-val" style="font-family: monospace;"><?php echo htmlspecialchars($badgeData['badge_number'] ?? 'BY-2026'); ?></span>
                     </div>
                     <div class="data-row" style="border-bottom: 2px solid #000000;">
                         <span class="data-label">Действителен до:</span>
@@ -175,10 +175,13 @@ if ($token !== '') {
             <!-- Hotline Support Footer -->
             <div style="margin-top: 30px; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 20px;">
                 <p style="font-size: 0.95rem; color: #334155; margin-bottom: 6px;">
-                    Горячая линия ТЦСОН Советского района г. Минска:
+                    Дежурная служба ТЦСОН: <strong>+375 (17) 377-00-00</strong>
                 </p>
-                <a href="tel:+375173770000" style="font-size: 1.25rem; font-weight: 800; color: #004085; text-decoration: none;">
-                    +375 (17) 377-00-00
+                <p style="font-size: 0.95rem; color: #334155; margin-bottom: 6px;">
+                    Единая горячая линия Республики Беларусь:
+                </p>
+                <a href="tel:8801100801" style="font-size: 1.25rem; font-weight: 800; color: #004085; text-decoration: none;">
+                    8-801-100-8-801
                 </a>
                 <p style="font-size: 0.85rem; color: #64748b; margin-top: 8px;">
                     В экстренных ситуациях звоните по телефону <strong>102</strong> или <strong>112</strong>

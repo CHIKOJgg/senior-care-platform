@@ -11,6 +11,8 @@ use DomainException;
 use Throwable;
 use PDO;
 
+require_once __DIR__ . '/RegionService.php';
+
 class PrivacyService
 {
     // Текущая актуальная версия Политики обработки персональных данных ТЦСОН
@@ -21,10 +23,10 @@ class PrivacyService
     public const CONSENT_HEALTH_DATA     = 'SENSITIVE_HEALTH_DATA';
     public const CONSENT_GEOLOCATION     = 'GEOLOCATION_TRACKING';
 
-    // Центроид Советского района г. Минска (для гео-загрубления)
+    // Гео-загрубление по всей стране: координаты берутся из региона пользователя.
     public const SOVETSKY_CENTROID_LAT = 53.9168;
     public const SOVETSKY_CENTROID_LON = 27.5862;
-    public const ANONYMIZED_ADDRESS    = 'Советский район, г. Минск';
+    public const ANONYMIZED_ADDRESS    = 'Республика Беларусь';
 
     /**
      * Supported consent types list
@@ -234,6 +236,25 @@ class PrivacyService
             $anonName = "Анонимизированный пользователь #{$userId}";
             $unmatchableHash = 'ANON_' . bin2hex(random_bytes(16));
 
+            // Country-wide: coarsen coordinates to the user's regional centre.
+            $regionCode = 'MINSK_CITY';
+            try {
+                $regionStmt = $pdo->prepare("SELECT region_code FROM elderly_profiles WHERE user_id = :id");
+                $regionStmt->execute(['id' => $userId]);
+                $foundRegion = $regionStmt->fetchColumn();
+                if (!$foundRegion) {
+                    $regionStmt = $pdo->prepare("SELECT region_code FROM volunteer_profiles WHERE user_id = :id");
+                    $regionStmt->execute(['id' => $userId]);
+                    $foundRegion = $regionStmt->fetchColumn();
+                }
+                if ($foundRegion) {
+                    $regionCode = (string)$foundRegion;
+                }
+            } catch (\Throwable $e) {
+                $regionCode = 'MINSK_CITY';
+            }
+            $regionCenter = RegionService::center($regionCode);
+
             // 1. Update users table
             $stmtUser = $pdo->prepare("
                 UPDATE users 
@@ -261,8 +282,8 @@ class PrivacyService
             ");
             $stmtElderly->execute([
                 'address' => self::ANONYMIZED_ADDRESS,
-                'lat' => self::SOVETSKY_CENTROID_LAT,
-                'lon' => self::SOVETSKY_CENTROID_LON,
+                'lat' => $regionCenter['lat'],
+                'lon' => $regionCenter['lon'],
                 'id' => $userId
             ]);
 
@@ -281,8 +302,8 @@ class PrivacyService
                 WHERE user_id = :id
             ");
             $stmtVol->execute([
-                'lat' => self::SOVETSKY_CENTROID_LAT,
-                'lon' => self::SOVETSKY_CENTROID_LON,
+                'lat' => $regionCenter['lat'],
+                'lon' => $regionCenter['lon'],
                 'id' => $userId
             ]);
 
@@ -309,8 +330,8 @@ class PrivacyService
             ");
             $stmtSos->execute([
                 'address' => self::ANONYMIZED_ADDRESS,
-                'lat' => self::SOVETSKY_CENTROID_LAT,
-                'lon' => self::SOVETSKY_CENTROID_LON,
+                'lat' => $regionCenter['lat'],
+                'lon' => $regionCenter['lon'],
                 'id' => $userId
             ]);
 

@@ -86,7 +86,7 @@
         "first_name": "Алексей",
         "patronymic": "Сергеевич",
         "last_initial": "С.",
-        "organization": "ТЦСОН Советского района г. Минска",
+        "organization": "ТЦСОН Республики Беларусь",
         "verification_status": "VERIFIED",
         "badge_issued_at": 1730732400,
         "expires_at": 1730736000

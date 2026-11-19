@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Router;
 use App\Core\Logger;
+use App\Core\RateLimiter;
 use App\Services\AuthService;
 use App\Services\Emergency\MchsEmergencyAdapter;
 use App\Models\SosAlert;
@@ -20,11 +21,19 @@ class SosController
      */
     public function trigger(): void
     {
-        // Enforce strict Authorization header presence (prevents local dev fallback for unauthenticated requests)
-        $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-        $xAuthToken = $_SERVER['HTTP_X_AUTH_TOKEN'] ?? '';
-        if (empty($authHeader) && empty($xAuthToken)) {
-            Router::json(['error' => 'Требуется авторизация (Bearer токен) для вызова экстренной помощи'], 401);
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!RateLimiter::check("sos_trigger:{$ip}", 30, 60)) {
+            Router::json(['error' => 'Слишком много экстренных запросов. Пожалуйста, подождите минуту.'], 429);
+        }
+
+        // Require a real session (HttpOnly cookie from the web UI, or an explicit bearer token).
+        // This still blocks the local demo fallback for truly anonymous requests.
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['HTTP_X_AUTH_TOKEN'])
+            || !empty($_COOKIE['auth_token']);
+        if (!$hasExplicitAuth) {
+            Router::json(['error' => 'Требуется авторизация для вызова экстренной помощи'], 401);
         }
 
         $currentUser = AuthService::getCurrentUser();
@@ -66,7 +75,7 @@ class SosController
 
         $address = !empty($input['address'])
             ? (string)$input['address']
-            : (string)($profile['address'] ?? 'г. Минск, Советский район');
+            : (string)($profile['address'] ?? 'Республика Беларусь');
 
         $reason = !empty($input['reason'])
             ? (string)$input['reason']

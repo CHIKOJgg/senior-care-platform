@@ -90,6 +90,33 @@ class PrivacyController
         ]);
     }
 
+    public function revokeConsent(): void
+    {
+        $user = AuthService::requireAuth();
+        $userId = (int)($user['user_id'] ?? $user['id'] ?? 0);
+        $input = Router::getJsonInput();
+
+        $consentType = trim((string)($input['consent_type'] ?? ''));
+        if ($consentType === '') {
+            Router::json(['error' => 'Укажите обязательный тип согласия (consent_type) для отзыва'], 400);
+        }
+
+        if (!in_array($consentType, PrivacyService::getSupportedConsentTypes(), true)) {
+            Router::json(['error' => "Недопустимый тип согласия: {$consentType}"], 400);
+        }
+
+        $revoked = $this->privacyService->revokeConsent($userId, $consentType);
+
+        Router::json([
+            'success' => true,
+            'message' => $revoked 
+                ? "Согласие [{$consentType}] успешно отозвано" 
+                : "Активное согласие данного типа не найдено",
+            'revoked' => $revoked,
+            'consent_type' => $consentType
+        ], 200);
+    }
+
     public function anonymize(): void
     {
         $user = AuthService::requireAuth();
@@ -113,7 +140,13 @@ class PrivacyController
 
             // Если пользователь обезличил сам себя — сбрасываем куки сессии
             if ($userId === (int)($user['user_id'] ?? $user['id'] ?? 0)) {
-                @setcookie('auth_token', '', ['expires' => time() - 3600, 'path' => '/']);
+                @setcookie('auth_token', '', [
+                    'expires' => time() - 3600,
+                    'path' => '/',
+                    'httponly' => true,
+                    'secure' => !empty($_SERVER['HTTPS']),
+                    'samesite' => 'Lax'
+                ]);
             }
 
             Router::json($result, 200);

@@ -1,25 +1,248 @@
 <?php
+declare(strict_types=1);
+
 // If request is targeting API, delegate to API router
-$requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
-if ($requestUri && str_starts_with($requestUri, '/api/')) {
+$requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '/';
+$requestUri = rtrim($requestUri, '/');
+if ($requestUri === '') {
+    $requestUri = '/';
+}
+
+// Never serve a stale authenticated/staff page from cache or bfcache.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Vary: Cookie');
+if (str_starts_with($requestUri, '/api/')) {
     require __DIR__ . '/api.php';
     exit;
 }
 
-// Two modes: "pensioner" (default, no login UI) and "family" (/family or ?mode=family)
-$mode = ($requestUri === '/family' || ($_GET['mode'] ?? '') === 'family') ? 'family' : 'pensioner';
-$demoAutologin = (getenv('APP_ENV') ?: 'local') === 'local';
+// Autoload application classes so the server can resolve the authenticated role
+// from the HttpOnly session cookie before rendering any markup.
+spl_autoload_register(function (string $class): void {
+    $prefix = 'App\\';
+    if (!str_starts_with($class, $prefix)) {
+        return;
+    }
+    $file = __DIR__ . '/../app/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+    if (is_file($file)) {
+        require $file;
+    }
+});
 
-$initialRole = 'user';
-if ($mode === 'family') {
-    if (isset($_GET['role'])) {
-        $initialRole = in_array($_GET['role'], ['admin', 'volunteer', 'user'], true) ? $_GET['role'] : 'user';
-    } elseif ($requestUri === '/admin') {
-        $initialRole = 'admin';
-    } elseif ($requestUri === '/volunteer') {
-        $initialRole = 'volunteer';
+$sessionUser = null;
+$authToken = $_COOKIE['auth_token'] ?? '';
+$hasAuthCookie = is_string($authToken) && $authToken !== '';
+if ($hasAuthCookie) {
+    try {
+        // Cookie-based resolution validates token_version (revocation) as well as signature.
+        $sessionUser = \App\Services\AuthService::getCurrentUser();
+    } catch (\Throwable $e) {
+        $sessionUser = null;
     }
 }
+
+// Expired/revoked cookie must not block the senior entrance: clear it and
+// let the device re-provision itself on "/".
+if ($hasAuthCookie && $sessionUser === null) {
+    setcookie('auth_token', '', [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'httponly' => true,
+        'secure' => !empty($_SERVER['HTTPS']),
+        'samesite' => 'Lax',
+    ]);
+    unset($_COOKIE['auth_token']);
+    $hasAuthCookie = false;
+}
+
+// Senior entrance: a fresh device opening "/" goes straight to the elderly workspace,
+// no password. Enabled outside production by default; in production opt in with
+// ELDERLY_AUTO_LOGIN=true (kiosk / demo stands). Staff areas still require /login.
+if ($sessionUser === null && !$hasAuthCookie && $requestUri === '/') {
+    $autoFlag = getenv('ELDERLY_AUTO_LOGIN');
+    $autoEnabled = ($autoFlag !== false)
+        ? ($autoFlag === 'true')
+        : ((getenv('APP_ENV') ?: 'local') !== 'production');
+
+    if ($autoEnabled) {
+        $elderlyPhone = getenv('ELDERLY_DEMO_PHONE') ?: '+375291112233';
+        try {
+            $elderly = \App\Models\User::findByPhone($elderlyPhone);
+            if ($elderly) {
+                $profile = \App\Models\User::getWithProfile((int)$elderly['id']);
+                if (($profile['role_code'] ?? '') === 'elderly') {
+                    $deviceToken = \App\Services\AuthService::createToken($profile, \App\Services\AuthService::TTL_DEVICE);
+                    setcookie('auth_token', $deviceToken, [
+                        'expires' => time() + \App\Services\AuthService::TTL_DEVICE,
+                        'path' => '/',
+                        'httponly' => true,
+                        'secure' => !empty($_SERVER['HTTPS']),
+                        'samesite' => 'Lax',
+                    ]);
+                    $sessionUser = $profile;
+                }
+            }
+        } catch (\Throwable $e) {
+            $sessionUser = null;
+        }
+    }
+}
+
+$roleCode = (string)($sessionUser['role_code'] ?? '');
+$viewRole = match ($roleCode) {
+    'elderly' => 'user',
+    'volunteer' => 'volunteer',
+    'admin', 'coordinator' => 'admin',
+    default => null,
+};
+$isAuthed = $viewRole !== null;
+
+$homeByRole = [
+    'elderly' => '/',
+    'volunteer' => '/volunteer',
+    'admin' => '/admin',
+    'coordinator' => '/admin',
+];
+$homeUrl = $homeByRole[$roleCode] ?? '/login';
+$regionsList = \App\Services\RegionService::all();
+$profileRegion = (string)($sessionUser['profile']['region_code'] ?? 'MINSK_CITY');
+if (!\App\Services\RegionService::exists($profileRegion)) {
+    $profileRegion = 'MINSK_CITY';
+}
+
+// One URL per role: staff cannot open another role's workspace. "/login" is always
+// available (so staff can sign in from a device that is already senior-signed-in).
+if ($isAuthed) {
+    $guardedPaths = ['/', '/admin', '/volunteer'];
+    if (in_array($requestUri, $guardedPaths, true) && $requestUri !== $homeUrl) {
+        header('Location: ' . $homeUrl);
+        exit;
+    }
+} elseif ($requestUri === '/admin' || $requestUri === '/volunteer') {
+    header('Location: /login');
+    exit;
+}
+
+// -------------------------------------------------------------------------
+// Dedicated staff/volunteer login page (seniors never see it: "/" auto-opens)
+// -------------------------------------------------------------------------
+if (!$isAuthed || $requestUri === '/login') {
+    $loginNotice = isset($_GET['expired'])
+        ? 'Сессия истекла. Войдите снова.'
+        : 'Вход для сотрудников ТЦСОН и волонтёров.';
+    ?>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>Вход — ЗаботаРядом</title>
+    <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
+</head>
+<body data-initial-role="guest" data-mode="app" class="login-body">
+<div class="login-shell">
+    <header class="login-header">
+        <a href="/" class="brand" aria-label="ЗаботаРядом — на главную">
+            <svg class="ui-icon ui-icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+            </svg>
+            ЗаботаРядом
+        </a>
+        <div class="a11y-controls">
+            <span id="a11yModeBadge" class="badge badge-verified" style="display: none;">Режим доступности</span>
+            <button id="speakPageBtn" class="btn btn-outline" title="Озвучить страницу">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                Озвучить
+            </button>
+            <button id="toggleNarrationBtn" class="btn btn-outline" aria-pressed="true" title="Включить или выключить озвучку">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <span id="toggleNarrationLabel">Озвучка: вкл</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="login-main">
+        <section class="login-card" aria-labelledby="loginTitle">
+            <h1 id="loginTitle">Вход в систему</h1>
+            <p class="login-sub">Для координаторов, администраторов и волонтёров</p>
+            <p id="gateMessage" class="login-notice"><?php echo htmlspecialchars($loginNotice); ?></p>
+
+            <form id="sessionGateForm" autocomplete="on" novalidate>
+                <div class="form-group">
+                    <label class="form-label" for="gatePhone">Номер телефона</label>
+                    <input type="tel" id="gatePhone" name="phone" class="form-control" placeholder="+375 29 123-45-67" inputmode="tel" autocomplete="username" autofocus required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="gatePassword">Пароль</label>
+                    <div class="password-wrap">
+                        <input type="password" id="gatePassword" name="password" class="form-control" autocomplete="current-password" required>
+                        <button type="button" class="password-toggle" id="togglePassword" aria-label="Показать пароль">Показать</button>
+                    </div>
+                </div>
+                <div id="gateError" class="alert-banner alert-banner-danger" style="display: none; margin-bottom: 14px;" role="alert"></div>
+                <button type="submit" class="btn btn-primary" id="loginSubmitBtn" style="width: 100%; min-height: 56px; font-size: 1.1em;">Войти</button>
+            </form>
+
+            <button type="button" id="showResetFormBtn" class="btn btn-outline" style="width: 100%; margin-top: 12px;">Забыли пароль?</button>
+
+            <div id="resetPasswordBox" style="display: none; margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                <p style="font-size: 0.92em; color: var(--text-muted); margin-bottom: 12px;">
+                    Позвоните координатору ТЦСОН и попросите одноразовый код. Код действует 30 минут.
+                </p>
+                <form id="resetPasswordForm" novalidate>
+                    <div class="form-group">
+                        <label class="form-label" for="resetPhone">Номер телефона</label>
+                        <input type="tel" id="resetPhone" class="form-control" placeholder="+375 29 123-45-67" inputmode="tel" autocomplete="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="resetCode">Код подтверждения</label>
+                        <input type="text" id="resetCode" class="form-control" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="6 цифр" autocomplete="one-time-code" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="resetNewPassword">Новый пароль (не менее 8 символов)</label>
+                        <input type="password" id="resetNewPassword" class="form-control" minlength="8" autocomplete="new-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="resetNewPasswordRepeat">Повторите новый пароль</label>
+                        <input type="password" id="resetNewPasswordRepeat" class="form-control" minlength="8" autocomplete="new-password" required>
+                    </div>
+                    <div id="resetPasswordMessage" class="alert-banner" style="display: none; margin-bottom: 14px;" role="alert"></div>
+                    <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 52px;">Сохранить новый пароль</button>
+                    <button type="button" id="cancelResetBtn" class="btn btn-outline" style="width: 100%; margin-top: 10px;">Вернуться ко входу</button>
+                </form>
+            </div>
+
+            <div class="login-note">
+                Вы подопечный? <a href="/">Откройте главную страницу</a> — вход не требуется.
+            </div>
+        </section>
+    </main>
+
+    <footer class="login-footer">
+        Платформа взаимной помощи «ЗаботаРядом» • ТЦСОН Республики Беларусь
+    </footer>
+</div>
+<div id="a11yLiveRegion" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => 'guest', 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
+<script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
+<script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
+</body>
+</html>
+    <?php
+    exit;
+}
+
+$mode = 'app';
+$roleNames = [
+    'elderly' => 'Подопечный',
+    'volunteer' => 'Волонтёр',
+    'coordinator' => 'Координатор',
+    'admin' => 'Администратор',
+];
+$sessionName = $isAuthed ? (string)($sessionUser['name'] ?? '') : '';
+$sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -29,18 +252,20 @@ if ($mode === 'family') {
     <title>Платформа взаимной помощи «ЗаботаРядом»</title>
     <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
 </head>
-<body data-initial-role="<?php echo htmlspecialchars($initialRole); ?>" data-mode="<?php echo $mode; ?>">
+<body data-initial-role="<?php echo htmlspecialchars($viewRole ?? 'guest'); ?>" data-mode="<?php echo $mode; ?>">
 
-<!-- Top Status Bar (без входа: подопечные работают сразу) -->
+<!-- Top Status Bar -->
 <div class="quick-auth-bar">
     <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
         <span id="currentUserDisplay" style="font-weight: 700; color: var(--primary-color); display: inline-flex; align-items: center; gap: 6px;">
             <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span>Загрузка профиля...</span>
+            <span><?php echo $isAuthed
+                ? htmlspecialchars($sessionName) . ' (' . htmlspecialchars($sessionRoleName) . ')'
+                : 'Вход в систему'; ?></span>
         </span>
-        <?php if ($mode === 'family'): ?>
+        <?php if ($isAuthed): ?>
         <button type="button" id="btnChangePassword" class="btn btn-outline btn-xs" style="height: 30px;">Сменить пароль</button>
-        <button type="button" id="btnLogout" class="btn btn-outline btn-xs" style="height: 30px;">Выйти с этого устройства</button>
+        <button type="button" id="btnLogout" class="btn btn-outline btn-xs" style="height: 30px;">Выйти</button>
         <?php endif; ?>
         <div class="live-indicator">
             <span class="pulse-dot"></span>
@@ -51,35 +276,22 @@ if ($mode === 'family') {
 
 <header>
     <div class="container header-inner">
-        <a href="/" class="brand">
+        <a href="<?php echo $isAuthed ? htmlspecialchars($homeUrl) : '/login'; ?>" class="brand">
             <svg class="ui-icon ui-icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
             </svg>
             ЗаботаРядом
         </a>
 
-        <!-- Main Role Switcher (family/staff mode only): User vs Admin vs Volunteer -->
-        <?php if ($mode === 'family'): ?>
-        <div class="role-switcher" role="navigation" aria-label="Выбор роли">
-            <button class="role-btn <?php echo $initialRole === 'user' ? 'active' : ''; ?>" data-role="user" id="roleBtnUser">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                Пользователь
-            </button>
-            <button class="role-btn <?php echo $initialRole === 'admin' ? 'active' : ''; ?>" data-role="admin" id="roleBtnAdmin">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Администратор
-            </button>
-            <button class="role-btn <?php echo $initialRole === 'volunteer' ? 'active' : ''; ?>" data-role="volunteer" id="roleBtnVolunteer">
-                <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                Волонтёр
-            </button>
-        </div>
-        <?php endif; ?>
-
         <div class="a11y-controls">
+            <span id="a11yModeBadge" class="badge badge-verified" style="display: none;">Режим доступности</span>
             <button id="speakPageBtn" class="btn btn-outline" title="Озвучить страницу">
                 <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
                 Озвучить
+            </button>
+            <button id="toggleNarrationBtn" class="btn btn-outline" aria-pressed="true" title="Включить или выключить озвучку">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <span id="toggleNarrationLabel">Озвучка: вкл</span>
             </button>
             <button id="toggleSeniorMode" class="btn btn-outline" title="Переключить крупный режим">
                 <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
@@ -108,7 +320,8 @@ if ($mode === 'family') {
     <!-- ========================================================================= -->
     <!-- 1. USER SECTION: STRICTLY 2 FUNCTIONS ONLY                               -->
     <!-- ========================================================================= -->
-    <div id="view-user" class="role-view" style="<?php echo $initialRole === 'user' ? 'display: block;' : 'display: none;'; ?>">
+    <?php if ($viewRole === 'user'): ?>
+    <div id="view-user" class="role-view" style="display: block;">
         <!-- Active Emergency SOS Banner (Displays EMERCOM-112-BY ticket) -->
         <div id="activeSosBanner" class="alert-banner alert-banner-danger sos-pulse-banner" style="display: none; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 12px;">
@@ -245,8 +458,16 @@ if ($mode === 'family') {
                         <textarea id="requestDescription" class="form-control" placeholder="Например: купите, пожалуйста, молоко и хлеб..."></textarea>
                     </div>
                     <div class="form-group">
+                        <label class="form-label" for="requestRegion">Регион Республики Беларусь:</label>
+                        <select id="requestRegion" class="form-control">
+                            <?php foreach ($regionsList as $rg): ?>
+                                <option value="<?php echo htmlspecialchars($rg['code']); ?>" data-lat="<?php echo htmlspecialchars((string)$rg['center_lat']); ?>" data-lon="<?php echo htmlspecialchars((string)$rg['center_lon']); ?>" <?php echo $rg['code'] === $profileRegion ? 'selected' : ''; ?>><?php echo htmlspecialchars($rg['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label class="form-label" for="requestAddress">Ваш адрес проживания:</label>
-                        <input type="text" id="requestAddress" class="form-control" value="г. Минск, пр-т Независимости, 45, кв. 12">
+                        <input type="text" id="requestAddress" class="form-control" placeholder="Город, улица, дом, квартира">
                     </div>
                     <div class="form-group consent-group" style="margin: 16px 0;">
                         <label class="checkbox-label" for="requestConsentCheckbox" style="display: flex; align-items: flex-start; gap: 12px; cursor: pointer;">
@@ -375,11 +596,13 @@ if ($mode === 'family') {
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
+    <?php if ($viewRole === 'admin'): ?>
     <!-- ========================================================================= -->
     <!-- 2. ADMIN SECTION: MANAGEMENT & ANALYTICS                                  -->
     <!-- ========================================================================= -->
-    <div id="view-admin" class="role-view" style="<?php echo $initialRole === 'admin' ? 'display: block;' : 'display: none;'; ?>">
+    <div id="view-admin" class="role-view" style="display: block;">
         <!-- Coordinator Priority 0 SOS Incident Console Banner -->
         <div id="coordinatorSosBannerContainer" style="display: none;"></div>
 
@@ -390,9 +613,9 @@ if ($mode === 'family') {
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M16 14h.01"/></svg>
                         <span>Панель администратора ТЦСОН</span>
                     </h2>
-                    <p style="color: var(--text-muted);">Управление заявками района, верификация волонтёров и аналитика социальной обстановки</p>
+                    <p style="color: var(--text-muted);">Управление заявками по всей Беларуси, верификация волонтёров и аналитика социальной обстановки</p>
                 </div>
-                <span class="admin-badge">СОВЕТСКИЙ РАЙОН МИНСКА</span>
+                <span class="admin-badge">РЕСПУБЛИКА БЕЛАРУСЬ</span>
             </div>
 
             <!-- Admin Sub-Navigation -->
@@ -461,7 +684,7 @@ if ($mode === 'family') {
                     <div class="card" style="margin-bottom: 0;">
                         <h3 style="display: flex; align-items: center; gap: 8px;">
                             <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-                            <span>Лидеры волонтёрского движения района</span>
+                            <span>Лидеры волонтёрского движения Беларуси</span>
                         </h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 12px;">Рейтинг формируется на основе подтверждённых визитов и отзывов:</p>
                         <div id="adminLeaderboardList"></div>
@@ -520,7 +743,7 @@ if ($mode === 'family') {
             <div id="admin-requests" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
-                        <h3>Реестр заявок района</h3>
+                        <h3>Реестр заявок Республики Беларусь</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em;">Полный контроль исполнения обращений граждан</p>
                     </div>
                     <div style="display: flex; gap: 8px;">
@@ -528,6 +751,12 @@ if ($mode === 'family') {
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('open')">Открытые</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('in_progress')">В работе</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('completed')">Выполненные</button>
+                        <select id="adminRegionFilter" class="form-control" style="max-width: 240px; min-height: 38px;" onchange="loadAdminRequests('all', this.value)">
+                            <option value="">Вся Беларусь</option>
+                            <?php foreach ($regionsList as $rg): ?>
+                                <option value="<?php echo htmlspecialchars($rg['code']); ?>"><?php echo htmlspecialchars($rg['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
                     </div>
                 </div>
 
@@ -587,7 +816,7 @@ if ($mode === 'family') {
                     </div>
 
                     <div>
-                        <h3>Активные предупреждения в районе</h3>
+                        <h3>Активные предупреждения по всей стране</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 16px;">Управление действующими оповещениями:</p>
                         <div id="activeAlertsAdminList">
                             <p>Загрузка оповещений...</p>
@@ -771,11 +1000,13 @@ if ($mode === 'family') {
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
+    <?php if ($viewRole === 'volunteer'): ?>
     <!-- ========================================================================= -->
-    <!-- 3. VOLUNTEER SECTION: FOR VOLUNTEER ACTIONS & VERIFICATION DEMO          -->
+    <!-- 3. VOLUNTEER SECTION: TASKS, VERIFICATION, BADGE & EDUCATION             -->
     <!-- ========================================================================= -->
-    <div id="view-volunteer" class="role-view" style="<?php echo $initialRole === 'volunteer' ? 'display: block;' : 'display: none;'; ?>">
+    <div id="view-volunteer" class="role-view" style="display: block;">
         <!-- Volunteer Verification Status Banner -->
         <div id="volunteerVerificationNotice" class="card card-accent-success">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
@@ -827,12 +1058,20 @@ if ($mode === 'family') {
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                         <span>Лента открытых заявок поблизости</span>
                     </h2>
-                    <p style="color: var(--text-muted);">ИИ автоматически рассчитал расстояние от вашей текущей геоточки в Советском районе Минска:</p>
+                    <p style="color: var(--text-muted);">ИИ автоматически рассчитал расстояние от вашей текущей геоточки:</p>
                 </div>
-                <button class="btn btn-outline btn-sm" onclick="loadVolunteerRequests()">
-                    <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
-                    Обновить ленту
-                </button>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <select id="volunteerRegionFilter" class="form-control" style="max-width: 230px; min-height: 38px;" onchange="loadVolunteerRequests()">
+                        <option value="">Все регионы</option>
+                        <?php foreach ($regionsList as $rg): ?>
+                            <option value="<?php echo htmlspecialchars($rg['code']); ?>"><?php echo htmlspecialchars($rg['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button class="btn btn-outline btn-sm" onclick="loadVolunteerRequests()">
+                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19"/></svg>
+                        Обновить ленту
+                    </button>
+                </div>
             </div>
             <div id="volunteerRequestList">
                 <p>Загрузка доступных заявок...</p>
@@ -842,7 +1081,7 @@ if ($mode === 'family') {
         <div class="card">
             <h2 style="display: flex; align-items: center; gap: 8px;">
                 <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
-                <span>Таблица лидеров волонтёров района</span>
+                <span>Таблица лидеров волонтёров Беларуси</span>
             </h2>
             <p style="margin-bottom: 16px; color: var(--text-muted);">За каждую выполненную заявку начисляется +50 очков опыта и растёт социальный рейтинг:</p>
             <div id="leaderboardList"></div>
@@ -869,6 +1108,7 @@ if ($mode === 'family') {
             </div>
         </div>
     </div>
+    <?php endif; ?>
 </main>
 
 <!-- Volunteer Geolocation Completion Modal (Proof-of-Presence) -->
@@ -975,8 +1215,8 @@ if ($mode === 'family') {
     </div>
 </div>
 
-<?php if ($mode === 'family'): ?>
-<!-- Family security: password change & remote logout -->
+<?php if ($isAuthed): ?>
+<!-- Account security: password change & remote logout -->
 <div id="passwordModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="modal-dialog" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1007,73 +1247,8 @@ if ($mode === 'family') {
 </div>
 <?php endif; ?>
 
-<!-- Session gate: pensioner sees only the status; family signs in once per device -->
-<div id="sessionGate" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="gateTitle">
-    <div class="modal-dialog" style="max-width: 480px;">
-        <h2 id="gateTitle" style="text-align: center; margin-bottom: 12px;">ЗаботаРядом</h2>
-        <p id="gateMessage" style="text-align: center; font-size: 1.1em; margin-bottom: 20px;"></p>
-        <?php if ($mode === 'family'): ?>
-        <form id="sessionGateForm" autocomplete="on">
-            <div class="form-group">
-                <label class="form-label" for="gatePhone">Номер телефона:</label>
-                <input type="tel" id="gatePhone" name="phone" class="form-control" placeholder="+375291112233" required autocomplete="username">
-            </div>
-            <div class="form-group">
-                <label class="form-label" for="gatePassword">Пароль:</label>
-                <input type="password" id="gatePassword" name="password" class="form-control" required autocomplete="current-password">
-            </div>
-            <div class="form-group" style="margin: 14px 0;">
-                <label class="checkbox-label" for="gateRemember" style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" id="gateRemember" checked style="width: 22px; height: 22px; min-width: 22px; margin-top: 2px;">
-                    <span>Запомнить на этом телефоне: подопечный будет открывать сайт без входа</span>
-                </label>
-            </div>
-            <div id="gateError" class="alert-banner alert-banner-danger" style="display: none; margin-bottom: 14px;"></div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 56px; font-size: 1.15em;">Войти</button>
-            <button type="button" class="btn btn-outline" style="width: 100%; margin-top: 10px;" onclick="hideSessionGate()">Отмена</button>
-        </form>
-        <button type="button" id="showResetFormBtn" class="btn btn-outline" style="width: 100%; margin-top: 10px;">Забыли пароль?</button>
-        <div id="resetPasswordBox" style="display: none; margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
-            <p style="font-size: 0.95em; color: var(--text-muted); margin-bottom: 12px;">
-                Позвоните координатору ТЦСОН и попросите одноразовый код. Код действует 30 минут.
-            </p>
-            <form id="resetPasswordForm">
-                <div class="form-group">
-                    <label class="form-label" for="resetPhone">Номер телефона:</label>
-                    <input type="tel" id="resetPhone" class="form-control" placeholder="+375291112233" required autocomplete="username">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="resetCode">Код подтверждения:</label>
-                    <input type="text" id="resetCode" class="form-control" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="6 цифр" required autocomplete="one-time-code">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="resetNewPassword">Новый пароль (не менее 8 символов):</label>
-                    <input type="password" id="resetNewPassword" class="form-control" minlength="8" required autocomplete="new-password">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="resetNewPasswordRepeat">Повторите новый пароль:</label>
-                    <input type="password" id="resetNewPasswordRepeat" class="form-control" minlength="8" required autocomplete="new-password">
-                </div>
-                <div id="resetPasswordMessage" class="alert-banner" style="display: none; margin-bottom: 14px;"></div>
-                <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 52px;">Сохранить новый пароль</button>
-                <button type="button" id="cancelResetBtn" class="btn btn-outline" style="width: 100%; margin-top: 10px;">Вернуться ко входу</button>
-            </form>
-        </div>
-        <?php else: ?>
-        <p style="text-align: center; font-size: 0.95em; color: var(--text-muted); margin-bottom: 16px;">
-            Настройка нужна один раз. После входа родственника телефон будет открываться сразу, без пароля.
-        </p>
-        <a href="/family?setup=1" class="btn btn-primary" style="width: 100%; min-height: 56px; font-size: 1.1em; text-decoration: none; display: flex; align-items: center; justify-content: center;">
-            Настроить телефон
-        </a>
-        <a href="tel:112" class="btn btn-danger" style="width: 100%; min-height: 56px; font-size: 1.1em; text-decoration: none; display: flex; align-items: center; justify-content: center; margin-top: 10px;">
-            Позвонить 112
-        </a>
-        <?php endif; ?>
-    </div>
-</div>
-
-<script>window.APP_CONFIG = <?php echo json_encode(['mode' => $mode, 'demoAutologin' => $demoAutologin], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
+<div id="a11yLiveRegion" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => $viewRole ?? 'guest', 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
 <script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
 <script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
 </body>

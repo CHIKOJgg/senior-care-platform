@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../app/Core/Database.php';
 require_once __DIR__ . '/../app/Services/CryptoService.php';
+require_once __DIR__ . '/../app/Services/RegionService.php';
 
 use App\Core\Database;
 use App\Services\CryptoService;
@@ -65,6 +66,7 @@ try {
             'is_overdue' => 'INTEGER DEFAULT 0',
             'assigned_at' => 'DATETIME NULL',
             'failed_attempts' => 'INTEGER DEFAULT 0',
+            'region_code' => "VARCHAR(32) DEFAULT 'MINSK_CITY'",
         ];
         foreach ($hrAdditions as $col => $typeDef) {
             if (!isset($hrCols[strtolower($col)])) {
@@ -82,6 +84,14 @@ try {
         }
     }
 
+    if ($tableExists('elderly_profiles')) {
+        $epCols = $getColumns('elderly_profiles');
+        if (!isset($epCols['region_code'])) {
+            $pdo->exec("ALTER TABLE elderly_profiles ADD COLUMN region_code VARCHAR(32) DEFAULT 'MINSK_CITY';");
+            echo "[MIGRATE] Added column: elderly_profiles.region_code\n";
+        }
+    }
+
     if ($tableExists('volunteer_profiles')) {
         $vpCols = $getColumns('volunteer_profiles');
         $vpAdditions = [
@@ -90,14 +100,19 @@ try {
             'id_provider_user_id' => 'VARCHAR(100) NULL',
             'passport_masked' => 'VARCHAR(50) NULL',
             'police_clearance_status' => "VARCHAR(50) DEFAULT 'NOT_SUBMITTED'",
-            'badge_token' => 'VARCHAR(64) NULL',
+            'badge_token' => 'VARCHAR(255) NULL',
             'badge_expires_at' => 'DATETIME NULL',
+            'region_code' => "VARCHAR(32) DEFAULT 'MINSK_CITY'",
         ];
         foreach ($vpAdditions as $col => $typeDef) {
             if (!isset($vpCols[strtolower($col)])) {
                 $pdo->exec("ALTER TABLE volunteer_profiles ADD COLUMN {$col} {$typeDef};");
                 echo "[MIGRATE] Added column: volunteer_profiles.{$col}\n";
             }
+        }
+        // Badge tokens are ~235 chars (base64url payload + HMAC signature): widen legacy columns.
+        if ($driver === 'mysql') {
+            $pdo->exec("ALTER TABLE volunteer_profiles MODIFY COLUMN badge_token VARCHAR(255) NULL;");
         }
     }
 
@@ -115,6 +130,36 @@ try {
         $pdo->exec($sql);
     }
     echo "[MIGRATE] Base schema, new tables & indexes verified successfully ({$driver}).\n";
+
+    // 2b. Country-wide coverage: backfill region_code from coordinates where missing.
+    $regionBackfills = [
+        'help_requests' => ['id', 'latitude', 'longitude'],
+        'elderly_profiles' => ['user_id', 'latitude', 'longitude'],
+        'volunteer_profiles' => ['user_id', 'latitude', 'longitude'],
+    ];
+    foreach ($regionBackfills as $table => [$pk, $latCol, $lonCol]) {
+        if (!$tableExists($table)) {
+            continue;
+        }
+        $cols = $getColumns($table);
+        if (!isset($cols['region_code'])) {
+            continue;
+        }
+        $rows = $pdo->query("SELECT {$pk} AS pk, {$latCol} AS lat, {$lonCol} AS lon, region_code FROM {$table}")->fetchAll(PDO::FETCH_ASSOC);
+        $upd = $pdo->prepare("UPDATE {$table} SET region_code = :region WHERE {$pk} = :pk");
+        $changed = 0;
+        foreach ($rows as $row) {
+            $current = strtoupper((string)($row['region_code'] ?? ''));
+            $target = \App\Services\RegionService::normalize($current !== '' ? $current : null, (float)$row['lat'], (float)$row['lon']);
+            if ($current !== $target) {
+                $upd->execute(['region' => $target, 'pk' => $row['pk']]);
+                $changed++;
+            }
+        }
+        if ($changed > 0) {
+            echo "[MIGRATE] Region codes synchronized for {$table}: {$changed}\n";
+        }
+    }
 
     // 3. Проверка колонки revoked_at в user_consents
     if ($tableExists('user_consents')) {

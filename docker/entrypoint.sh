@@ -27,11 +27,14 @@ chown -R www-data:www-data /var/www/html/database /var/www/html/storage
 find /var/www/html/database /var/www/html/storage -type d -exec chmod 775 {} \;
 find /var/www/html/database /var/www/html/storage -type f -exec chmod 664 {} \;
 
-# Start Nginx only when explicitly requested (local prod). On Railway we use the PHP dev server via startCommand.
-if [ "${USE_NGINX:-0}" = "1" ]; then
+# Start Nginx + PHP-FPM by default. Set USE_NGINX=0 to bypass (e.g. custom start command).
+if [ "${USE_NGINX:-1}" = "1" ]; then
     echo "[STARTUP] Testing Nginx config..."
     nginx -t
     echo "[STARTUP] Starting PHP-FPM and Nginx..."
     php-fpm -D
     exec nginx -g "daemon off;"
 fi
+
+# Fallback: honour an explicit container command (Railway startCommand / docker run ... cmd)
+exec "$@"

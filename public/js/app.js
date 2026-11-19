@@ -5,10 +5,18 @@
  */
 
 // Global State
-let currentRole = document.body.getAttribute('data-initial-role') || 'user';
+let currentRole = document.body.getAttribute('data-initial-role') || 'guest';
 let currentUser = null;
-let currentVolunteerId = 2; // Default volunteer ID
-const APP_CONFIG = window.APP_CONFIG || { mode: 'pensioner', demoAutologin: false };
+let currentVolunteerId = 2; // Set from the authenticated volunteer profile
+let currentVolunteerCoords = { lat: 53.9168, lon: 27.5862 };
+let regionsCache = [];
+const APP_CONFIG = window.APP_CONFIG || { mode: 'family', demoAutologin: false };
+
+function homeForRole(roleCode) {
+    if (roleCode === 'volunteer') return '/volunteer';
+    if (roleCode === 'admin' || roleCode === 'coordinator') return '/admin';
+    return '/';
+}
 
 // Centralized Vector SVG Icon Library (No Emojis)
 const Icons = {
@@ -73,10 +81,6 @@ async function authFetch(url, options = {}) {
     if (token) {
         options.headers['Authorization'] = `Bearer ${token}`;
     }
-    // Also include demo user header for seamless fallback
-    if (currentUser) {
-        options.headers['X-Demo-User'] = currentUser.id;
-    }
     const res = await fetch(url, options);
     if (res.status === 401 && !url.startsWith('/api/auth/login')) {
         handleSessionExpired();
@@ -87,36 +91,42 @@ async function authFetch(url, options = {}) {
 function handleSessionExpired() {
     clearTokens();
     currentUser = null;
-    if (!APP_CONFIG.demoAutologin) {
-        const message = APP_CONFIG.mode === 'family'
-            ? 'Срок входа истёк. Войдите снова.'
-            : 'Срок действия входа истёк. Попросите родственников открыть сайт на этом телефоне.';
-        showSessionGate(currentRole, message);
-    }
+    window.location.replace('/login?expired=1');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    initRoleSwitching();
-    initUserFunctions();
-    initAccessibility();
-    initForms();
+    // Smart narration first: it reads browser accessibility preferences and
+    // prepares the aria-live channel before any UI announcement is made.
+    try { SpeechHelper.initSmartNarration(); } catch (e) { console.error(e); }
+    // Login must bind first: it is the only critical function on the login page.
     initSessionGate();
-    initSecurityControls();
     initPasswordRecovery();
     initResetCodeForm();
-    loadCategoryCards();
+    initTopBarActions();
+    try { initUserFunctions(); } catch (e) { console.error(e); }
+    try { initAccessibility(); } catch (e) { console.error(e); }
+    try { initForms(); } catch (e) { console.error(e); }
+    try { initSecurityControls(); } catch (e) { console.error(e); }
+    try { loadCategoryCards(); } catch (e) { console.error(e); }
+    try { loadRegions(); } catch (e) { console.error(e); }
 
-    // Initial session bootstrap
+    if (currentRole === 'guest') {
+        return;
+    }
+
+    // Initial session bootstrap: the server already rendered only this role's workspace.
     bootstrapSession().then((ok) => {
         if (ok) {
-            activateRole(currentRole);
+            loadRoleData();
         } else {
-            showSessionGate(currentRole);
+            clearTokens();
+            window.location.replace('/login');
         }
     });
 
-    // Auto-polling for live updates every 25 seconds
+    // Auto-polling for live updates every 25 seconds (current role only)
     setInterval(() => {
+        if (!currentUser) return;
         if (currentRole === 'volunteer') {
             loadVolunteerRequests();
             loadVolunteerActiveTasks();
@@ -132,28 +142,27 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // =========================================================================
-// 1. Session Bootstrap & Quick Auth Chips
+// 1. Session Bootstrap
 // =========================================================================
 async function bootstrapSession() {
-    if (getToken()) {
-        try {
-            const res = await authFetch('/api/auth/me');
-            const data = await res.json();
-            if (data.success && data.user) {
-                setCurrentUser(data.user);
-                return true;
+    try {
+        // The HttpOnly cookie is the single source of truth for the web UI; the server
+        // already rendered exactly this role from the same cookie.
+        const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        if (data.success && data.user) {
+            const serverRole = roleFromUser(data.user);
+            if (serverRole !== currentRole) {
+                clearTokens();
+                return false;
             }
-        } catch (e) {
-            console.error('Session check failed', e);
+            // Drop any stale bearer token so API calls keep using the cookie identity.
+            clearTokens();
+            setCurrentUser(data.user);
+            return true;
         }
-        clearTokens();
-    }
-
-    if (APP_CONFIG.demoAutologin) {
-        const demoPhone = currentRole === 'admin'
-            ? '+375299999999'
-            : (currentRole === 'volunteer' ? '+375292223344' : '+375291112233');
-        return loginWithPhone(demoPhone, 'password123', false, true);
+    } catch (e) {
+        console.error('Session check failed', e);
     }
     return false;
 }
@@ -182,50 +191,86 @@ async function loginWithPhone(phone, password, showFeedback = true, remember = f
 }
 
 // =========================================================================
-// Session gate: pensioner device needs no input; family/staff sign in here.
+// Login gate: single entry point for every role
 // =========================================================================
 function initSessionGate() {
     const form = document.getElementById('sessionGateForm');
     if (!form) return;
+
+    const toggle = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('gatePassword');
+    const phoneEl = document.getElementById('gatePhone');
+    if (phoneEl && !phoneEl.value) {
+        phoneEl.focus();
+    }
+    if (toggle && passwordInput) {
+        toggle.addEventListener('click', () => {
+            const show = passwordInput.type === 'password';
+            passwordInput.type = show ? 'text' : 'password';
+            toggle.textContent = show ? 'Скрыть' : 'Показать';
+            toggle.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+            passwordInput.focus();
+        });
+    }
+
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const phone = document.getElementById('gatePhone').value.trim();
+        const phoneInput = document.getElementById('gatePhone');
+        const phone = phoneInput.value.trim();
         const password = document.getElementById('gatePassword').value;
-        const remember = document.getElementById('gateRemember').checked;
-        const isSetup = new URLSearchParams(location.search).get('setup') === '1';
+        const rememberEl = document.getElementById('gateRemember');
+        const remember = rememberEl ? rememberEl.checked : false;
         const errorBox = document.getElementById('gateError');
+        const submitBtn = document.getElementById('loginSubmitBtn');
 
-        if (isSetup && !remember) {
-            errorBox.textContent = 'Поставьте галочку «Запомнить на этом телефоне», чтобы подопечный открывал сайт без входа.';
-            errorBox.style.display = 'block';
+        const showError = (message) => {
+            if (errorBox) {
+                errorBox.textContent = message;
+                errorBox.style.display = 'block';
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Войти';
+            }
+        };
+
+        if (!phone || !password) {
+            showError('Введите номер телефона и пароль.');
             return;
+        }
+        if (phone.replace(/\D/g, '').length < 9) {
+            showError('Проверьте номер телефона: слишком мало цифр.');
+            return;
+        }
+
+        if (errorBox) errorBox.style.display = 'none';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Вход…';
         }
 
         const result = await loginWithPhone(phone, password, true, remember);
         if (result === true) {
-            errorBox.style.display = 'none';
             form.reset();
-            hideSessionGate();
-            if (isSetup && currentUser && currentUser.role_code === 'elderly') {
-                window.location.href = '/';
-                return;
-            }
-            activateRole(roleFromUser(currentUser), false);
+            // Full reload so the server renders only this account's role workspace.
+            window.location.replace(homeForRole(currentUser ? currentUser.role_code : 'elderly'));
         } else {
-            errorBox.textContent = result;
-            errorBox.style.display = 'block';
+            showError(result || 'Не удалось войти. Проверьте телефон и пароль.');
         }
     });
+}
 
+// Top bar actions live outside the login gate and must work on every authenticated page.
+function initTopBarActions() {
     const logoutBtn = document.getElementById('btnLogout');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            clearTokens();
-            currentUser = null;
-            window.location.reload();
-        });
-    }
+    if (!logoutBtn || logoutBtn.dataset.bound === '1') return;
+    logoutBtn.dataset.bound = '1';
+    logoutBtn.addEventListener('click', async () => {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        clearTokens();
+        currentUser = null;
+        window.location.replace('/login');
+    });
 }
 
 function roleFromUser(user) {
@@ -243,10 +288,7 @@ function showSessionGate(role, message = '') {
         return;
     }
     if (text) {
-        const roleNames = { user: 'подопечного', volunteer: 'волонтёра', admin: 'администратора' };
-        const fallback = APP_CONFIG.mode === 'family'
-            ? `Войдите под аккаунтом ${roleNames[role] || ''}.`
-            : 'Этот телефон ещё не настроен. Попросите родственника один раз войти на этом устройстве — дальше сайт будет открываться без входа.';
+        const fallback = 'Введите номер телефона и пароль, чтобы войти.';
         text.textContent = message || fallback;
     }
     const errorBox = document.getElementById('gateError');
@@ -454,100 +496,36 @@ function setCurrentUser(user) {
     }
     if (user.role_code === 'volunteer') {
         currentVolunteerId = user.id;
+        const profile = user.profile || {};
+        if (profile.latitude != null && profile.longitude != null) {
+            currentVolunteerCoords = { lat: parseFloat(profile.latitude), lon: parseFloat(profile.longitude) };
+        }
         const volName = document.getElementById('volNameDisplay');
         if (volName) volName.innerText = `${user.name} (ID #${user.id})`;
     }
 }
 
 // =========================================================================
-// 2. Role Switching Logic (User vs Admin vs Volunteer)
+// 2. Role workspace: load data for the single server-rendered role only
 // =========================================================================
-function initRoleSwitching() {
-    const roleBtns = document.querySelectorAll('.role-btn');
-    roleBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const role = btn.getAttribute('data-role');
-            activateRole(role);
-        });
-    });
-}
-
-function activateRole(role, autoLogin = true) {
-    if (APP_CONFIG.mode === 'pensioner') {
-        role = 'user';
-    }
-    currentRole = role;
-
-    // Update switcher buttons
-    document.querySelectorAll('.role-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.getAttribute('data-role') === role);
-    });
-
-    // Update Views
-    const views = {
-        user: document.getElementById('view-user'),
-        admin: document.getElementById('view-admin'),
-        volunteer: document.getElementById('view-volunteer')
-    };
-
-    Object.keys(views).forEach(key => {
-        if (views[key]) {
-            views[key].style.display = key === role ? 'block' : 'none';
-        }
-    });
-
-    // Update browser URL query without reload
-    const url = new URL(window.location);
-    url.searchParams.set('role', role);
-    window.history.replaceState({}, '', url);
-
-    // If active user role does not match view, auto-switch to corresponding demo user
-    const rolePhoneMap = {
-        'admin': '+375299999999',
-        'volunteer': '+375292223344',
-        'user': '+375291112233'
-    };
-
-    const expectedRoleCode = role === 'user' ? 'elderly' : role;
-    const needSwitch = autoLogin && (!currentUser || (currentUser.role_code !== expectedRoleCode && !(role === 'admin' && currentUser.role_code === 'admin')));
-
-    const proceedDataLoading = () => {
-        if (role === 'user') {
-            loadElderlyRequests();
-            loadAlerts();
-            loadEducation();
-        } else if (role === 'admin') {
-            loadAdminAnalytics();
-            loadAllVolunteers();
-            loadAdminRequests();
-            loadAdminAlerts();
-            loadCoordinatorSosAlerts();
-            loadWatchdogTasks();
-        } else if (role === 'volunteer') {
-            checkVolunteerStatus();
-            loadVolunteerRequests();
-            loadVolunteerActiveTasks();
-            loadLeaderboard();
-            loadVolunteerKnowledge();
-        }
-    };
-
-    if (!needSwitch) {
-        hideSessionGate();
-        proceedDataLoading();
-        return;
-    }
-
-    if (APP_CONFIG.demoAutologin) {
-        loginWithPhone(rolePhoneMap[role], 'password123', false).then(() => {
-            hideSessionGate();
-            proceedDataLoading();
-        });
-        return;
-    }
-
-    if (!currentUser || roleFromUser(currentUser) !== role) {
-        showSessionGate(role);
+function loadRoleData() {
+    if (currentRole === 'user') {
+        loadElderlyRequests();
+        loadAlerts();
+        loadEducation();
+    } else if (currentRole === 'admin') {
+        loadAdminAnalytics();
+        loadAllVolunteers();
+        loadAdminRequests();
+        loadAdminAlerts();
+        loadCoordinatorSosAlerts();
+        loadWatchdogTasks();
+    } else if (currentRole === 'volunteer') {
+        checkVolunteerStatus();
+        loadVolunteerRequests();
+        loadVolunteerActiveTasks();
+        loadLeaderboard();
+        loadVolunteerKnowledge();
     }
 }
 
@@ -654,6 +632,42 @@ async function loadCategoryCards() {
         if (selected && list[0]) selected.value = String(list[0].id);
     } catch (e) {
         console.error('Failed to load request categories', e);
+    }
+}
+
+// Load the country-wide region catalogue (all regions of Belarus)
+async function loadRegions() {
+    try {
+        const res = await fetch('/api/regions', { headers: { 'Accept': 'application/json' } });
+        if (!res.ok) return;
+        const json = await res.json();
+        regionsCache = Array.isArray(json.data) ? json.data : [];
+
+        const fillRequired = (id, preferred) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = regionsCache
+                .map((r) => `<option value="${r.code}" data-lat="${r.center_lat}" data-lon="${r.center_lon}">${escapeHtml(r.name)}</option>`)
+                .join('');
+            if (preferred && regionsCache.some((r) => r.code === preferred)) {
+                el.value = preferred;
+            }
+        };
+        const fillFilter = (id, placeholder) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = `<option value="">${placeholder}</option>` + regionsCache
+                .map((r) => `<option value="${r.code}">${escapeHtml(r.name)}</option>`)
+                .join('');
+        };
+
+        const profileRegion = currentUser && currentUser.profile ? currentUser.profile.region_code : '';
+        const existingRegion = document.getElementById('requestRegion')?.value || '';
+        fillRequired('requestRegion', existingRegion || profileRegion || 'MINSK_CITY');
+        fillFilter('adminRegionFilter', 'Вся Беларусь');
+        fillFilter('volunteerRegionFilter', 'Все регионы');
+    } catch (e) {
+        console.error('Failed to load regions', e);
     }
 }
 
@@ -1062,8 +1076,8 @@ async function submitCategoryForm(event) {
         });
         const json = await res.json();
         if (res.ok && json.success) {
-            showFormMessage('categoryFormMessage', id ? 'Вид заявки обновлён' : 'Вид заявки добавлен', true);
             resetCategoryForm();
+            showFormMessage('categoryFormMessage', id ? 'Вид заявки обновлён' : 'Вид заявки добавлен', true);
             loadAdminCategories();
         } else {
             showFormMessage('categoryFormMessage', json.error || 'Не удалось сохранить вид заявки', false);
@@ -1165,12 +1179,17 @@ async function deleteEducationMaterial(id) {
     }
 }
 
-async function loadAdminRequests(status = 'all') {
+async function loadAdminRequests(status = 'all', region = null) {
     const tbody = document.getElementById('adminRequestsTableBody');
     if (!tbody) return;
 
     try {
-        const url = status === 'all' ? '/api/coordinator/requests' : `/api/coordinator/requests?status=${status}`;
+        const regionEl = document.getElementById('adminRegionFilter');
+        if (region === null && regionEl) region = regionEl.value;
+        const params = new URLSearchParams();
+        if (status && status !== 'all') params.set('status', status);
+        if (region) params.set('region', region);
+        const url = '/api/coordinator/requests' + (params.toString() ? ('?' + params.toString()) : '');
         const res = await authFetch(url);
         const json = await res.json();
         if (json.data) {
@@ -1202,7 +1221,7 @@ async function loadAdminRequests(status = 'all') {
                         <td><span style="display: inline-flex; align-items: center; gap: 6px;">${Icons.category(req.category_id)} ${escapeHtml(req.category_title)}</span></td>
                         <td>
                             <strong>${escapeHtml(req.elderly_name)}</strong><br>
-                            <span style="font-size: 0.85em; color: var(--text-muted);">${escapeHtml(req.address)} (${escapeHtml(req.elderly_phone)})</span>
+                            <span style="font-size: 0.85em; color: var(--text-muted);">${escapeHtml(req.address)}${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (${escapeHtml(req.elderly_phone)})</span>
                         </td>
                         <td>${escapeHtml(req.description || req.title)}</td>
                         <td><span class="secret-code-pill">${escapeHtml(req.secret_code)}</span></td>
@@ -1363,7 +1382,11 @@ async function loadVolunteerRequests() {
     if (!list) return;
 
     try {
-        const res = await authFetch('/api/requests?lat=53.9180&lon=27.5900');
+        const region = document.getElementById('volunteerRegionFilter')?.value || '';
+        const coords = currentVolunteerCoords || { lat: 53.9168, lon: 27.5862 };
+        const params = new URLSearchParams({ lat: String(coords.lat), lon: String(coords.lon) });
+        if (region) params.set('region', region);
+        const res = await authFetch('/api/requests?' + params.toString());
         const json = await res.json();
         if (json.data) {
             if (json.data.length === 0) {
@@ -1385,7 +1408,7 @@ async function loadVolunteerRequests() {
                                 <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
                                 <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong> (расстояние: ~${req.distance_meters || 350} м)</span>
+                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (расстояние: ~${req.distance_meters || 350} м)</span>
                                 </p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
                                     ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
@@ -1651,6 +1674,27 @@ function initForms() {
                 }).catch(() => {});
             }
 
+            const regionSelect = document.getElementById('requestRegion');
+            const regionCode = regionSelect?.value || '';
+            const selectedRegion = regionSelect?.selectedOptions?.[0];
+            let reqLat = selectedRegion?.dataset?.lat ? parseFloat(selectedRegion.dataset.lat) : 53.9168;
+            let reqLon = selectedRegion?.dataset?.lon ? parseFloat(selectedRegion.dataset.lon) : 27.5862;
+            if (navigator.geolocation) {
+                try {
+                    const pos = await new Promise((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 2500,
+                            maximumAge: 60000
+                        });
+                    });
+                    reqLat = pos.coords.latitude;
+                    reqLon = pos.coords.longitude;
+                } catch (geoErr) {
+                    // Keep the regional centre as a fallback.
+                }
+            }
+
             try {
                 const res = await authFetch('/api/requests', {
                     method: 'POST',
@@ -1658,11 +1702,12 @@ function initForms() {
                     body: JSON.stringify({
                         elderly_id: (currentUser && currentUser.role_code === 'elderly') ? currentUser.id : 1,
                         category_id: parseInt(catId),
+                        region_code: regionCode,
                         title: desc.substring(0, 60),
                         description: desc,
                         address: address,
-                        latitude: 53.9168,
-                        longitude: 27.5862
+                        latitude: reqLat,
+                        longitude: reqLon
                     })
                 });
                 const data = await res.json();
@@ -1973,6 +2018,7 @@ function initAccessibility() {
                 toggleSeniorBtn.classList.remove('btn-primary');
                 toggleSeniorBtn.classList.add('btn-outline');
             }
+            SpeechHelper.refreshProfile({ announce: true });
             SpeechHelper.speak(active ? 'Включён крупный режим для слабовидящих' : 'Включён стандартный режим');
         });
     }
@@ -2228,7 +2274,7 @@ async function loadCoordinatorSosAlerts() {
                             </div>
                             <div style="font-size: 0.95em; opacity: 0.95; margin-top: 2px;">
                                 Подопечный: <strong>${escapeHtml(topAlert.elderly_name || 'ID #' + topAlert.elderly_id)}</strong> |
-                                Адрес: <strong>${escapeHtml(topAlert.address || 'Советский район')}</strong> |
+                                Адрес: <strong>${escapeHtml(topAlert.address || 'Республика Беларусь')}</strong> |
                                 Талон 112: <code>${escapeHtml(topAlert.emercom_ticket_id || 'Оповещен')}</code>
                             </div>
                         </div>
@@ -2404,14 +2450,14 @@ function renderBadge(badgeData) {
     const qrContainer = document.getElementById('badgeQrCardContainer');
     const btnPublic = document.getElementById('btnBadgePublicUrl');
     const expiresAt = badgeData.expires_at || (Math.floor(Date.now() / 1000) + 3600);
-    const badgeNum = badgeData.badge_number || 'BY-MSK-SOV-2026';
+    const badgeNum = badgeData.badge_number || `BY-${new Date().getFullYear()}`;
     const qrSvg = badgeData.qr_svg || '';
 
     if (qrContainer) {
         qrContainer.innerHTML = `
             <div class="badge-card">
                 <div style="font-size: 0.8em; font-weight: 700; color: var(--primary-color); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px;">
-                    ТЦСОН Советского района г. Минска
+                    ТЦСОН Республики Беларусь
                 </div>
                 <div style="font-size: 1.15em; font-weight: 800; margin-bottom: 6px;">
                     ${escapeHtml(currentUser ? currentUser.name : 'Волонтёр')}

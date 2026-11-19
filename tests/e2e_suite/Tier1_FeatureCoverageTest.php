@@ -55,7 +55,16 @@ class Tier1_FeatureCoverageTest
         $dbPath = __DIR__ . '/../../database/database.sqlite';
         $schemaPath = __DIR__ . '/../../database/schema.sql';
         
-        $this->harness->assert('F01-01: SQLite database file exists and is readable', file_exists($dbPath) && is_readable($dbPath), '', 'Tier 1');
+        $dbReady = false;
+        $dbDriver = 'unknown';
+        try {
+            $pdo = \App\Core\Database::getConnection();
+            $dbDriver = (string)$pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
+            $dbReady = $pdo->query('SELECT 1') !== false;
+        } catch (\Throwable $e) {
+            $dbReady = false;
+        }
+        $this->harness->assert('F01-01: Database is reachable and readable (driver: ' . $dbDriver . ')', $dbReady, "driver={$dbDriver}", 'Tier 1');
         $this->harness->assert('F01-02: Base schema.sql exists and contains valid DDL definitions', file_exists($schemaPath) && strpos((string)file_get_contents($schemaPath), 'CREATE TABLE') !== false, '', 'Tier 1');
         
         // Check healthcheck database status

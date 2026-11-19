@@ -24,6 +24,9 @@ function apiCall(string $method, string $path, array $data = null, array $header
     return ['code' => $code, 'data' => json_decode($response ?: '', true)];
 }
 
+// Clear rate limit cache before running test suite to prevent false negatives from test bursts
+array_map('unlink', glob(__DIR__ . '/../storage/cache/rate_limits/*.json') ?: []);
+
 $passed = 0;
 $failed = 0;
 
@@ -168,7 +171,7 @@ assertApi('Admin login returns 200 and token', $resLogin['code'] === 200 && !emp
 $adminToken = $resLogin['data']['token'];
 
 $resMe = apiCall('GET', '/api/auth/me', null, ["Authorization: Bearer {$adminToken}"]);
-assertApi('GET /api/auth/me with Bearer token identifies Admin user', $resMe['code'] === 200 && $resMe['data']['user']['id'] === 4);
+assertApi('GET /api/auth/me with Bearer token identifies Admin user', $resMe['code'] === 200 && ($resMe['data']['user']['role_code'] ?? '') === 'admin');
 
 // Volunteer tries to create alert -> MUST BE 403 Forbidden
 $resForbidden = apiCall('POST', '/api/coordinator/alerts', [

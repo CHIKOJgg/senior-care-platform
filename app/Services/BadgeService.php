@@ -9,11 +9,14 @@ use InvalidArgumentException;
 use App\Models\User;
 use App\Models\VolunteerProfile;
 use App\Core\Logger;
+use App\Services\RegionService;
+
+require_once __DIR__ . '/RegionService.php';
 
 class BadgeService
 {
     public const DEFAULT_TTL = 3600; // 1 hour dynamic TTL
-    public const DEFAULT_ORG = 'ТЦСОН Советского района г. Минска';
+    public const DEFAULT_ORG = 'ТЦСОН Республики Беларусь';
 
     private static ?string $customSecret = null;
     private static array $gfExp = [];
@@ -45,6 +48,24 @@ class BadgeService
         }
 
         return $secret;
+    }
+
+    /**
+     * Region short code for badge numbering (BY-BRE-2026-0007).
+     */
+    private static function regionShortForUser(int $userId): string
+    {
+        try {
+            if (class_exists(VolunteerProfile::class)) {
+                $vp = VolunteerProfile::find($userId);
+                if ($vp && !empty($vp['region_code'])) {
+                    return RegionService::short((string)$vp['region_code']);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Fall back to the capital region code.
+        }
+        return RegionService::short('MINSK_CITY');
     }
 
     /**
@@ -161,7 +182,7 @@ class BadgeService
         }
 
         $organization = $org ?: self::DEFAULT_ORG;
-        $badgeId = sprintf('BY-MSK-SOV-%s-%04d', date('Y'), $volunteerUserId);
+        $badgeId = sprintf('BY-%s-%s-%04d', self::regionShortForUser($volunteerUserId), date('Y'), $volunteerUserId);
 
         $payload = [
             'vid' => $volunteerUserId,
@@ -668,7 +689,7 @@ class BadgeService
         $payload = self::verifyBadgeToken($token);
 
         $name = 'Волонтёр ТЦСОН';
-        $bid = sprintf('BY-MSK-SOV-%s-%04d', date('Y'), $volunteerUserId);
+        $bid = sprintf('BY-%s-%s-%04d', self::regionShortForUser($volunteerUserId), date('Y'), $volunteerUserId);
         $org = self::DEFAULT_ORG;
         $status = 'ВЕРИФИЦИРОВАН ТЦСОН';
         $expTimestamp = time() + self::DEFAULT_TTL;
@@ -767,7 +788,7 @@ class BadgeService
         // Footer hotline bar
         $badge .= '<rect x="10" y="596" width="400" height="34" rx="0" fill="#F1F5F9"/>';
         $badge .= '<path d="M10 610 L10 618 Q10 630 26 630 L394 630 Q410 630 410 618 L410 610 Z" fill="#F1F5F9"/>';
-        $badge .= '<text x="210" y="618" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#475569">Дежурная служба ТЦСОН: +375 (17) 377-00-00 • Советский район г. Минска</text>';
+        $badge .= '<text x="210" y="618" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#475569">ТЦСОН: +375 (17) 377-00-00 • Единый номер 8-801-100-8-801</text>';
 
         $badge .= '</svg>';
         return $badge;

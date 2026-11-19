@@ -17,6 +17,7 @@ services:
       - APP_ENV=production
       - APP_URL=${APP_URL:-http://localhost}
       - APP_DEBUG=false
+      - ELDERLY_AUTO_LOGIN=${ELDERLY_AUTO_LOGIN:-true}
       - APP_SECRET=${APP_SECRET:?APP_SECRET must be set (openssl rand -hex 32)}
       - APP_ENCRYPTION_KEY=${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY must be set (base64:...)}
       - ADMIN_PHONE=${ADMIN_PHONE:?ADMIN_PHONE must be set}
@@ -35,6 +36,7 @@ services:
     volumes:
       - senior_care_logs:/var/www/html/storage/logs
       - senior_care_metrics:/var/www/html/storage/metrics
+      - senior_care_cache:/var/www/html/storage/cache
       - nginx_logs:/var/log/nginx
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/api/health"]
@@ -275,6 +277,7 @@ volumes:
   senior_care_mysql:
   senior_care_logs:
   senior_care_metrics:
+  senior_care_cache:
   nginx_logs:
   senior_care_prometheus:
   senior_care_loki:

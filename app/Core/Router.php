@@ -59,11 +59,11 @@ class Router
                 if (is_array($handler)) {
                     [$class, $action] = $handler;
                     $controller = new $class();
-                    call_user_func_array([$controller, $action], $params);
+                    call_user_func_array([$controller, $action], array_values($params));
                     return;
                 }
 
-                call_user_func_array($handler, $params);
+                call_user_func_array($handler, array_values($params));
                 return;
             }
         }
@@ -83,12 +83,17 @@ class Router
 
         http_response_code($status);
         header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-store');
         $corsOrigin = getenv('APP_CORS_ORIGIN') ?: (getenv('APP_ENV') === 'production' ? '' : '*');
         if ($corsOrigin !== '') {
             header('Access-Control-Allow-Origin: ' . $corsOrigin);
         }
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-        header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-Demo-User');
+        $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
+        if (getenv('APP_ENV') !== 'production') {
+            $allowedHeaders .= ', X-Demo-User';
+        }
+        header('Access-Control-Allow-Headers: ' . $allowedHeaders);
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
         $output = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

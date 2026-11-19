@@ -24,6 +24,7 @@ use App\Controllers\AuthController;
 use App\Controllers\HelpRequestController;
 use App\Controllers\AntiFraudController;
 use App\Controllers\EducationController;
+use App\Controllers\RegionController;
 use App\Controllers\ChatController;
 use App\Controllers\CoordinatorController;
 use App\Controllers\VolunteerController;
@@ -78,6 +79,7 @@ $router->post('/api/chat/{id}', [ChatController::class, 'send']);
 $router->get('/api/coordinator/stats', [CoordinatorController::class, 'stats']);
 $router->get('/api/coordinator/volunteers', [CoordinatorController::class, 'allVolunteers']);
 $router->get('/api/coordinator/volunteers/pending', [CoordinatorController::class, 'pendingVolunteers']);
+$router->get('/api/regions', [RegionController::class, 'index']);
 $router->get('/api/categories', [CoordinatorController::class, 'categories']);
 $router->get('/api/coordinator/categories', [CoordinatorController::class, 'categories']);
 $router->post('/api/coordinator/categories', [CoordinatorController::class, 'createCategory']);
@@ -104,6 +106,8 @@ $router->post('/api/volunteers/verify-identity', [VolunteerController::class, 'v
 // Privacy & Consent routes (Law of RB No. 99-Z / GDPR)
 $router->post('/api/consent', [PrivacyController::class, 'recordConsent']);
 $router->get('/api/consent', [PrivacyController::class, 'getConsents']);
+$router->post('/api/consent/revoke', [PrivacyController::class, 'revokeConsent']);
+$router->delete('/api/consent', [PrivacyController::class, 'revokeConsent']);
 $router->post('/api/privacy/anonymize', [PrivacyController::class, 'anonymize']);
 $router->post('/api/elderly/{id}/anonymize', [PrivacyController::class, 'anonymizeElderly']);
 
@@ -135,8 +139,32 @@ if ($method === 'OPTIONS') {
         header('Access-Control-Allow-Origin: ' . $corsOrigin);
     }
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-Demo-User');
+    $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
+    if (getenv('APP_ENV') !== 'production') {
+        $allowedHeaders .= ', X-Demo-User';
+    }
+    header('Access-Control-Allow-Headers: ' . $allowedHeaders);
     exit(0);
 }
 
-$router->dispatch($method, $uri);
+// Dispatch. Any unhandled exception must produce a clean JSON 500 (no stack trace / path leakage).
+try {
+    $router->dispatch($method, $uri);
+} catch (\Throwable $e) {
+    \App\Core\Logger::error('Unhandled API exception', [
+        'method' => $method,
+        'uri' => $uri,
+        'exception' => get_class($e),
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+    ]);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
+    }
+    echo json_encode(['error' => 'Внутренняя ошибка сервера', 'code' => 'INTERNAL_ERROR'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+

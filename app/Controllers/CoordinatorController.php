@@ -313,6 +313,18 @@ class CoordinatorController
         $status = $_GET['status'] ?? null;
         $requests = HelpRequest::getAllWithDetails($status);
 
+        $region = isset($_GET['region']) ? strtoupper(trim((string)$_GET['region'])) : '';
+        if ($region !== '' && \App\Services\RegionService::exists($region)) {
+            $requests = array_values(array_filter(
+                $requests,
+                fn($r) => \App\Services\RegionService::normalize($r['region_code'] ?? null) === $region
+            ));
+        }
+        foreach ($requests as &$req) {
+            $req['region_name'] = \App\Services\RegionService::name($req['region_code'] ?? null);
+        }
+        unset($req);
+
         Router::json([
             'success' => true,
             'count' => count($requests),

@@ -14,6 +14,7 @@ use App\Models\ElderlyProfile;
 use App\Services\GeoMatchingService;
 use App\Services\SecurityService;
 use App\Services\DataMaskingService;
+use App\Services\RegionService;
 
 class HelpRequestController
 {
@@ -22,6 +23,19 @@ class HelpRequestController
         $requests = HelpRequest::getActiveRequests();
         $volLat = isset($_GET['lat']) ? (float)$_GET['lat'] : null;
         $volLon = isset($_GET['lon']) ? (float)$_GET['lon'] : null;
+
+        // Country-wide feed: optional region filter (?region=BREST).
+        $regionFilter = isset($_GET['region']) ? strtoupper(trim((string)$_GET['region'])) : '';
+        if ($regionFilter !== '' && RegionService::exists($regionFilter)) {
+            $requests = array_values(array_filter(
+                $requests,
+                fn($req) => RegionService::normalize($req['region_code'] ?? null) === $regionFilter
+            ));
+        }
+        foreach ($requests as &$req) {
+            $req['region_name'] = RegionService::name($req['region_code'] ?? null);
+        }
+        unset($req);
 
         if ($volLat !== null && $volLon !== null) {
             foreach ($requests as &$req) {
@@ -127,7 +141,7 @@ class HelpRequestController
     public function store(): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        if (!RateLimiter::check("create_request:{$ip}", 20, 60)) {
+        if (!RateLimiter::check("create_request:{$ip}", 60, 60)) {
             Router::json(['error' => 'Слишком много запросов на создание заявок. Пожалуйста, подождите минуту.'], 429);
         }
 
@@ -147,15 +161,29 @@ class HelpRequestController
         $categoryId = (int)($input['category_id'] ?? 1);
         $title = trim($input['title'] ?? '');
         $description = trim($input['description'] ?? '');
-        $address = trim($input['address'] ?? 'г. Минск, пр-т Независимости, 45, кв. 12');
-        $lat = (float)($input['latitude'] ?? 53.9168);
-        $lon = (float)($input['longitude'] ?? 27.5862);
+        $address = trim((string)($input['address'] ?? ''));
 
-        if (!is_numeric($input['latitude'] ?? 53.9168) || !is_numeric($input['longitude'] ?? 27.5862)) {
+        $hasCoords = isset($input['latitude'], $input['longitude']);
+        $latInput = $hasCoords ? (float)$input['latitude'] : null;
+        $lonInput = $hasCoords ? (float)$input['longitude'] : null;
+
+        if ($hasCoords && (!is_numeric($input['latitude']) || !is_numeric($input['longitude']))) {
             Router::json(['error' => 'GPS-координаты (latitude/longitude) должны быть числами'], 400);
         }
-        if ($lat < -90 || $lat > 90 || $lon < -180 || $lon > 180) {
+        if ($hasCoords && ($latInput < -90 || $latInput > 90 || $lonInput < -180 || $lonInput > 180)) {
             Router::json(['error' => 'GPS-координаты вне допустимого диапазона (latitude: -90..90, longitude: -180..180)'], 400);
+        }
+
+        $regionCode = RegionService::normalize(
+            isset($input['region_code']) ? (string)$input['region_code'] : null,
+            $latInput,
+            $lonInput
+        );
+        $regionCenter = RegionService::center($regionCode);
+        $lat = $latInput ?? $regionCenter['lat'];
+        $lon = $lonInput ?? $regionCenter['lon'];
+        if ($address === '') {
+            $address = 'Республика Беларусь, ' . RegionService::name($regionCode);
         }
 
         if (!$title && !$description) {
@@ -164,6 +192,14 @@ class HelpRequestController
 
         if (!$title) {
             $title = mb_substr($description, 0, 60);
+        }
+
+        // MySQL columns are VARCHAR(255); never let an over-long dictated title become a 500.
+        if (mb_strlen($title, 'UTF-8') > 255) {
+            $title = mb_substr($title, 0, 255, 'UTF-8');
+        }
+        if (mb_strlen($description, 'UTF-8') > 5000) {
+            $description = mb_substr($description, 0, 5000, 'UTF-8');
         }
 
         // Generate friendly secret safety code
@@ -176,6 +212,7 @@ class HelpRequestController
             'description' => $description,
             'latitude' => $lat,
             'longitude' => $lon,
+            'region_code' => $regionCode,
             'address' => $address,
             'secret_code' => $secretCode,
             'status' => 'open'
