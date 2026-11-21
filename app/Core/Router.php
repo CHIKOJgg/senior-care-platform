@@ -96,6 +96,10 @@ class Router
         header('Access-Control-Allow-Headers: ' . $allowedHeaders);
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        header('Permissions-Policy: geolocation=(self), microphone=(self), camera=()');
+        header('Cross-Origin-Resource-Policy: same-origin');
+        header('X-Permitted-Cross-Domain-Policies: none');
         $output = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         header('Content-Length: ' . (string)strlen($output));
         echo $output;
