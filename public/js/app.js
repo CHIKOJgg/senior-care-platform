@@ -9,8 +9,10 @@ let currentRole = document.body.getAttribute('data-initial-role') || 'guest';
 let currentUser = null;
 let currentVolunteerId = 2; // Set from the authenticated volunteer profile
 let currentVolunteerCoords = { lat: 53.9168, lon: 27.5862 };
+let volunteerBlockedLowRating = false;
 let regionsCache = [];
 const APP_CONFIG = window.APP_CONFIG || { mode: 'family', demoAutologin: false };
+const IS_GUEST = !!(APP_CONFIG.isGuest || document.body.dataset.isGuest === '1');
 
 function homeForRole(roleCode) {
     if (roleCode === 'volunteer') return '/volunteer';
@@ -102,6 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSessionGate();
     initPasswordRecovery();
     initResetCodeForm();
+    initAdminCreateUserForm();
     initTopBarActions();
     try { initUserFunctions(); } catch (e) { console.error(e); }
     try { initAccessibility(); } catch (e) { console.error(e); }
@@ -145,6 +148,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // 1. Session Bootstrap
 // =========================================================================
 async function bootstrapSession() {
+    if (IS_GUEST) {
+        currentUser = null;
+        return true;
+    }
     try {
         // The HttpOnly cookie is the single source of truth for the web UI; the server
         // already rendered exactly this role from the same cookie.
@@ -488,6 +495,45 @@ function initResetCodeForm() {
     });
 }
 
+function initAdminCreateUserForm() {
+    const form = document.getElementById('adminCreateUserForm');
+    if (!form) return;
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('adminCreateUserMessage');
+        const payload = {
+            role_id: parseInt(document.getElementById('newUserRole').value, 10),
+            name: document.getElementById('newUserName').value.trim(),
+            phone: document.getElementById('newUserPhone').value.trim(),
+            password: document.getElementById('newUserPassword').value,
+            region_code: document.getElementById('newUserRegion').value,
+            address: document.getElementById('newUserAddress').value.trim()
+        };
+        if (!payload.name || !payload.phone || !payload.password) {
+            if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = 'Заполните имя, телефон и пароль'; }
+            return;
+        }
+        try {
+            const res = await authFetch('/api/admin/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.success) {
+                if (msg) { msg.className = 'alert-banner alert-banner-success'; msg.style.display = 'block'; msg.textContent = `Пользователь создан: ${data.user?.name || ''} (${data.user?.phone || ''})`; }
+                form.reset();
+                document.getElementById('newUserRegion').value = 'MINSK_CITY';
+                loadAllVolunteers && loadAllVolunteers(volunteerFilterState?.filter || 'all', volunteerFilterState?.minRating ?? null);
+            } else {
+                if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = data.error || 'Не удалось создать пользователя'; }
+            }
+        } catch (err) {
+            if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = 'Ошибка сети'; }
+        }
+    });
+}
+
 function setCurrentUser(user) {
     currentUser = user;
     const display = document.getElementById('currentUserDisplay');
@@ -510,7 +556,9 @@ function setCurrentUser(user) {
 // =========================================================================
 function loadRoleData() {
     if (currentRole === 'user') {
-        loadElderlyRequests();
+        if (!IS_GUEST) {
+            loadElderlyRequests();
+        }
         loadAlerts();
         loadEducation();
     } else if (currentRole === 'admin') {
@@ -530,33 +578,28 @@ function loadRoleData() {
 }
 
 // =========================================================================
-// 3. User View: Strictly 2 Functions
+// 3. User View: 3 Functions
 // =========================================================================
 function initUserFunctions() {
-    const btnRequest = document.getElementById('btnFuncRequest');
-    const btnSafety = document.getElementById('btnFuncSafety');
-    const paneRequest = document.getElementById('func-request');
-    const paneSafety = document.getElementById('func-safety');
+    const tabs = [
+        { btn: document.getElementById('btnFuncRequest'), pane: document.getElementById('func-request'), label: 'Мне нужна помощь' },
+        { btn: document.getElementById('btnFuncSafety'), pane: document.getElementById('func-safety'), label: 'Проверка на мошенничество' },
+        { btn: document.getElementById('btnFuncEducation'), pane: document.getElementById('func-education'), label: 'Уроки безопасности' }
+    ].filter(t => t.btn && t.pane);
 
-    if (btnRequest && btnSafety && paneRequest && paneSafety) {
-        btnRequest.addEventListener('click', () => {
-            btnRequest.classList.add('active');
-            btnSafety.classList.remove('active');
-            paneRequest.style.display = 'block';
-            paneSafety.style.display = 'none';
-            SpeechHelper.speak('Открыт раздел: Заказ помощи');
+    tabs.forEach(tab => {
+        tab.btn.addEventListener('click', () => {
+            tabs.forEach(t => {
+                t.btn.classList.toggle('active', t === tab);
+                t.pane.style.display = t === tab ? 'block' : 'none';
+            });
+            if (tab.pane.id === 'func-education') {
+                loadEducation();
+            }
+            SpeechHelper.speak('Открыт раздел: ' + tab.label);
         });
-
-        btnSafety.addEventListener('click', () => {
-            btnSafety.classList.add('active');
-            btnRequest.classList.remove('active');
-            paneSafety.style.display = 'block';
-            paneRequest.style.display = 'none';
-            SpeechHelper.speak('Открыт раздел: Школа безопасности и проверка на мошенничество');
-        });
-    }
-
-    // Category selection in request form with dynamic helpful placeholders
+    });
+// Category selection in request form with dynamic helpful placeholders
     const catPlaceholders = {
         '1': 'Например: купите, пожалуйста, молоко 2.5% 1 пакет, буханку чёрного хлеба и десяток яиц...',
         '2': 'Например: купить в аптеке корвалол, аспирин и пластырь по рецепту врача...',
@@ -672,6 +715,54 @@ async function loadRegions() {
 }
 
 // Load current user's active requests (with secret codes)
+async function rateRequest(requestId, rating) {
+    if (!requestId || rating < 1 || rating > 5) return;
+    try {
+        const res = await authFetch(`/api/requests/${requestId}/rate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            loadElderlyRequests();
+        } else {
+            alert(data.error || 'Не удалось сохранить оценку');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка сети при сохранении оценки');
+    }
+}
+window.rateRequest = rateRequest;
+
+function renderRatingControl(req) {
+    const current = parseInt(req.rating_score || 0, 10);
+    if (current >= 1 && current <= 5) {
+        return `
+            <div class="secret-code-box" style="text-align:center;">
+                <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Оценка</div>
+                <div style="font-size: 1.1em; font-weight: 800; color: var(--accent-color);">Оценено ${current} ${current === 1 ? 'звезда' : (current < 5 ? 'звезды' : 'звёзд')}</div>
+            </div>
+        `;
+    }
+
+    const stars = [1,2,3,4,5].map(n => `
+        <button type="button"
+            class="btn btn-outline btn-sm"
+            style="min-width:44px; min-height:44px; font-size:1.2em; padding:4px 8px;"
+            aria-label="Оценить на ${n}"
+            onclick="rateRequest(${req.id}, ${n})">★ ${n}</button>
+    `).join('');
+
+    return `
+        <div class="secret-code-box" style="text-align:center;">
+            <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold; margin-bottom: 8px;">Оцените работу волонтёра</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center;">${stars}</div>
+        </div>
+    `;
+}
+
 async function loadElderlyRequests() {
     const container = document.getElementById('elderlyRequestsList');
     if (!container) return;
@@ -684,14 +775,23 @@ async function loadElderlyRequests() {
             container.innerHTML = json.data.map(req => {
                 let statusBadge = '';
                 if (req.status === 'open') {
-                    statusBadge = `<span class="badge badge-open">${Icons.clock} Ищем волонтёра</span>`;
+                    statusBadge = `<span class="badge badge-open">${Icons.clock} Ищет волонтёра</span>`;
                 } else if (req.status === 'in_progress') {
-                    statusBadge = `<span class="badge badge-warning">${Icons.volunteer} Волонтёр в пути (${escapeHtml(req.volunteer_name || 'Назначен')})</span>`;
+                    statusBadge = `<span class="badge badge-warning">${Icons.volunteer} В пути (${escapeHtml(req.volunteer_name || 'Назначен')})</span>`;
                 } else if (req.status === 'completed') {
                     statusBadge = `<span class="badge badge-success">${Icons.check} Выполнено</span>`;
                 } else {
                     statusBadge = `<span class="badge badge-cancelled">${Icons.cross} Отменено</span>`;
                 }
+
+                const rightBox = req.status === 'completed'
+                    ? renderRatingControl(req)
+                    : `
+                        <div class="secret-code-box">
+                            <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Секретное кодовое слово:</div>
+                            <div style="font-size: 1.3em; font-weight: 900; color: var(--accent-color); letter-spacing: 1px;">&lt;${escapeHtml(req.secret_code)}&gt;</div>
+                        </div>
+                    `;
 
                 return `
                     <div class="card card-accent-primary" style="margin-bottom: 14px;">
@@ -705,26 +805,19 @@ async function loadElderlyRequests() {
                                     ${Icons.mapPin} <span>${escapeHtml(req.address)} • Дата: ${escapeHtml(req.created_at)}</span>
                                 </p>
                             </div>
-                            <div class="secret-code-box">
-                                <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Секретное проверочное слово:</div>
-                                <div style="font-size: 1.3em; font-weight: 900; color: var(--accent-color); letter-spacing: 1px;">«${escapeHtml(req.secret_code)}»</div>
-                            </div>
+                            ${rightBox}
                         </div>
                     </div>
                 `;
             }).join('');
         } else {
-            container.innerHTML = '<p class="text-muted">У вас пока нет активных заявок. Выберите категорию выше и нажмите «Отправить заявку».</p>';
+            container.innerHTML = '<p class="text-muted">У вас пока нет активных заявок. Выберите категорию помощи выше и нажмите «Вызвать помощь».</p>';
         }
     } catch (e) {
         console.error(e);
         container.innerHTML = '<p style="color: var(--danger-color);">Ошибка загрузки ваших заявок.</p>';
     }
 }
-
-// =========================================================================
-// 4. Admin View: Management & Analytics
-// =========================================================================
 function initAdminSubnav() {
     const adminBtns = document.querySelectorAll('.admin-subnav-btn');
     adminBtns.forEach(btn => {
@@ -866,10 +959,19 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
             tbody.innerHTML = list.map(v => {
                 const status = parseInt(v.is_verified);
                 const rating = parseFloat(v.rating || 0);
+                const verificationStatus = String(v.verification_status || '').toUpperCase();
                 let badge = '';
                 let actions = '';
 
-                if (status === 1) {
+                if (verificationStatus === 'BLOCKED_LOW_RATING' || (rating < 3 && status !== -1)) {
+                    badge = `<span class="badge badge-rejected" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.alert} Временно заблокирован (низкий рейтинг)</span>`;
+                    actions = `
+                        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
+                            <small style="color:var(--text-muted);">Обратиться в ТЦСОН или позвонить в поддержку: <strong>+375441111110</strong></small>
+                            ${currentRole === 'admin' ? `<button class="btn btn-success btn-xs" onclick="restoreVolunteer(${v.user_id})">${Icons.check} Восстановить права</button>` : '<span class="badge badge-open">Восстановление: только админ</span>'}
+                        </div>
+                    `;
+                } else if (status === 1) {
                     badge = `<span class="badge badge-verified" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.check} Верифицирован</span>`;
                     actions = `<button class="btn btn-outline btn-xs" style="color: var(--danger-color);" onclick="rejectVolunteer(${v.user_id})">${Icons.cross} Отозвать</button>`;
                 } else if (status === 0) {
@@ -886,14 +988,13 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                 }
 
                 // Low rating -> offer the rehabilitation track (training + re-verification)
-                if (rating < 3.5) {
+                if (rating < 3.5 && verificationStatus !== 'BLOCKED_LOW_RATING' && rating >= 3) {
                     actions += `
                         <button class="btn btn-danger btn-xs" style="margin-left: 6px;" onclick="rehabilitateVolunteer(${v.user_id})">
                             ${Icons.alert} Реабилитация
                         </button>
                     `;
                 }
-
                 const docStatus = v.masked_passport ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>` : '<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>';
                 const policeStatus = (v.police_clearance_status === 'CLEAN')
                     ? `<span class="badge badge-success" style="font-size: 0.8em;">МВД: Проверено</span>`
@@ -918,6 +1019,23 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
     } catch (e) {
         console.error(e);
         tbody.innerHTML = `<tr><td colspan="7" style="color: red; text-align: center;">Ошибка загрузки списка волонтёров</td></tr>`;
+    }
+}
+
+async function restoreVolunteer(id) {
+    if (!confirm('Восстановить права волонтёра? Это действие доступно только администратору.')) return;
+    try {
+        const res = await authFetch(`/api/coordinator/volunteers/${id}/restore`, { method: 'POST' });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            alert(json.message || 'Права волонтёра восстановлены.');
+            loadAllVolunteers(volunteerFilterState.filter || 'all', volunteerFilterState.minRating);
+            loadAdminAnalytics();
+        } else {
+            alert(json.error || 'Не удалось восстановить права');
+        }
+    } catch (e) {
+        alert('Ошибка сети при восстановлении прав');
     }
 }
 
@@ -1130,16 +1248,34 @@ async function loadAdminEducation() {
     }
 }
 
+function toggleEducationMediaField() {
+    const type = document.getElementById('eduType')?.value || 'memo';
+    const group = document.getElementById('eduMediaUrlGroup');
+    const input = document.getElementById('eduMediaUrl');
+    const show = type === 'video' || type === 'audio';
+    if (group) group.style.display = show ? 'block' : 'none';
+    if (input) {
+        input.required = type === 'video';
+        if (!show) input.value = '';
+    }
+}
+window.toggleEducationMediaField = toggleEducationMediaField;
+
 async function submitEducationForm(event) {
     if (event) event.preventDefault();
     const payload = {
         title: document.getElementById('eduTitle').value.trim(),
         type: document.getElementById('eduType').value,
-        category: document.getElementById('eduCategory').value.trim() || 'Общее',
-        content: document.getElementById('eduContent').value.trim()
+        category: document.getElementById('eduCategory').value.trim() || 'Безопасность',
+        content: document.getElementById('eduContent').value.trim(),
+        audio_url: document.getElementById('eduMediaUrl')?.value.trim() || null
     };
     if (!payload.title || !payload.content) {
         showFormMessage('educationFormMessage', 'Укажите заголовок и текст материала', false);
+        return false;
+    }
+    if (payload.type === 'video' && !payload.audio_url) {
+        showFormMessage('educationFormMessage', 'Для видео укажите ссылку YouTube', false);
         return false;
     }
     try {
@@ -1150,19 +1286,20 @@ async function submitEducationForm(event) {
         });
         const json = await res.json();
         if (res.ok && json.success) {
-            showFormMessage('educationFormMessage', 'Обучающий материал добавлен', true);
+            showFormMessage('educationFormMessage', 'Материал добавлен', true);
             const form = document.getElementById('educationForm');
             if (form) form.reset();
+            toggleEducationMediaField();
             loadAdminEducation();
+            loadEducation();
         } else {
             showFormMessage('educationFormMessage', json.error || 'Не удалось добавить материал', false);
         }
     } catch (e) {
-        showFormMessage('educationFormMessage', 'Сбой сети при сохранении', false);
+        showFormMessage('educationFormMessage', 'Ошибка сети при сохранении', false);
     }
     return false;
 }
-
 async function deleteEducationMaterial(id) {
     if (!confirm('Удалить этот обучающий материал?')) return;
     try {
@@ -1313,32 +1450,45 @@ async function checkVolunteerStatus() {
         const json = await res.json();
         if (json.success && json.user) {
             const user = json.user;
-            const isVerified = user.profile ? parseInt(user.profile.is_verified) : 0;
+            const profile = user.profile || {};
+            const isVerified = parseInt(profile.is_verified || 0, 10);
+            const verificationStatus = String(profile.verification_status || '').toUpperCase();
+            const rating = parseFloat(profile.rating || 0);
+            volunteerBlockedLowRating = verificationStatus === 'BLOCKED_LOW_RATING' || rating < 3.0;
+
+            if (volunteerBlockedLowRating) {
+                notice.style.borderLeftColor = 'var(--danger-color)';
+                notice.style.background = '#fef2f2';
+                title.innerHTML = `${Icons.alert} <span>Статус волонтёра: Временно заблокирован из-за низкого рейтинга</span>`;
+                title.style.color = 'var(--danger-color)';
+                desc.innerHTML = 'Из-за низкого рейтинга вы временно не можете принимать задания. Обратитесь в ТЦСОН или позвоните в поддержку по номеру <strong>+375441111110</strong> для восстановления прав. Права может восстановить только администратор.';
+                return;
+            }
+
             if (isVerified === 1) {
                 notice.style.borderLeftColor = 'var(--accent-color)';
                 notice.style.background = '#f0fdf4';
                 title.innerHTML = `${Icons.check} <span>Статус волонтёра: Верифицирован</span>`;
                 title.style.color = 'var(--accent-color)';
-                desc.innerText = 'Ваша личность проверена ТЦСОН. Вы имеете полный доступ к приёму заявок.';
+                desc.innerText = 'Ваш профиль подтверждён. Вы можете принимать заявки и помогать подопечным.';
             } else if (isVerified === 0) {
                 notice.style.borderLeftColor = 'var(--warning-color)';
                 notice.style.background = '#fffbeb';
-                title.innerHTML = `${Icons.clock} <span>Статус волонтёра: Ожидает верификации</span>`;
+                title.innerHTML = `${Icons.clock} <span>Статус волонтёра: Ожидает проверки</span>`;
                 title.style.color = 'var(--warning-color)';
-                desc.innerText = 'Ваш профиль проходит проверку координатором ТЦСОН. До окончания верификации вы НЕ можете брать заявки.';
+                desc.innerText = 'Ваш профиль находится на проверке. До завершения проверки вы не можете брать заявки.';
             } else {
                 notice.style.borderLeftColor = 'var(--danger-color)';
                 notice.style.background = '#fef2f2';
                 title.innerHTML = `${Icons.cross} <span>Статус волонтёра: Отклонён / Заблокирован</span>`;
                 title.style.color = 'var(--danger-color)';
-                desc.innerText = 'Ваш допуск к заявкам заблокирован администрацией.';
+                desc.innerText = 'Ваш доступ к заявкам ограничен. Обратитесь к координатору или администратору.';
             }
         }
     } catch (e) {
         console.error(e);
     }
 }
-
 async function loadVolunteerActiveTasks() {
     const list = document.getElementById('volunteerActiveTasksList');
     if (!list) return;
@@ -1377,13 +1527,33 @@ async function loadVolunteerActiveTasks() {
     }
 }
 
+async function getLiveVolunteerCoords() {
+    if (!navigator.geolocation) return currentVolunteerCoords;
+    try {
+        const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 15000
+            });
+        });
+        currentVolunteerCoords = {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude
+        };
+        return currentVolunteerCoords;
+    } catch (e) {
+        return currentVolunteerCoords;
+    }
+}
+
 async function loadVolunteerRequests() {
     const list = document.getElementById('volunteerRequestList');
     if (!list) return;
 
     try {
         const region = document.getElementById('volunteerRegionFilter')?.value || '';
-        const coords = currentVolunteerCoords || { lat: 53.9168, lon: 27.5862 };
+        const coords = await getLiveVolunteerCoords();
         const params = new URLSearchParams({ lat: String(coords.lat), lon: String(coords.lon) });
         if (region) params.set('region', region);
         const res = await authFetch('/api/requests?' + params.toString());
@@ -1397,8 +1567,18 @@ async function loadVolunteerRequests() {
             list.innerHTML = json.data.map(req => {
                 let actionBtn = `<button class="btn btn-primary btn-sm" onclick="acceptRequest(${req.id})">${Icons.volunteer} Взять заявку</button>`;
                 if (req.status === 'in_progress') {
-                    actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (Код)</button>`;
+                    actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (код)</button>`;
                 }
+                if (volunteerBlockedLowRating && req.status === 'open') {
+                    actionBtn = `<div class="badge badge-cancelled" style="white-space:normal; text-align:center;">Низкий рейтинг: приём заявок временно недоступен</div>`;
+                }
+
+                const distanceMeters = (req.distance_meters !== undefined && req.distance_meters !== null)
+                    ? Math.round(Number(req.distance_meters))
+                    : null;
+                const distanceLabel = distanceMeters !== null
+                    ? (distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} км` : `${distanceMeters} м`)
+                    : 'н/д';
 
                 return `
                     <div class="card card-accent-primary" style="margin-bottom: 12px;">
@@ -1408,7 +1588,7 @@ async function loadVolunteerRequests() {
                                 <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
                                 <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (расстояние: ~${req.distance_meters || 350} м)</span>
+                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (Расстояние: ~${distanceLabel})</span>
                                 </p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
                                     ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
@@ -1426,7 +1606,6 @@ async function loadVolunteerRequests() {
         console.error(e);
     }
 }
-
 async function acceptRequest(id) {
     try {
         const res = await authFetch(`/api/requests/${id}/accept`, {
@@ -1679,17 +1858,19 @@ function initForms() {
             const selectedRegion = regionSelect?.selectedOptions?.[0];
             let reqLat = selectedRegion?.dataset?.lat ? parseFloat(selectedRegion.dataset.lat) : 53.9168;
             let reqLon = selectedRegion?.dataset?.lon ? parseFloat(selectedRegion.dataset.lon) : 27.5862;
+            let gpsCaptured = false;
             if (navigator.geolocation) {
                 try {
                     const pos = await new Promise((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(resolve, reject, {
                             enableHighAccuracy: true,
-                            timeout: 2500,
+                            timeout: 5000,
                             maximumAge: 60000
                         });
                     });
                     reqLat = pos.coords.latitude;
                     reqLon = pos.coords.longitude;
+                    gpsCaptured = true;
                 } catch (geoErr) {
                     // Keep the regional centre as a fallback.
                 }
@@ -1707,7 +1888,8 @@ function initForms() {
                         description: desc,
                         address: address,
                         latitude: reqLat,
-                        longitude: reqLon
+                        longitude: reqLon,
+                        gps_captured: gpsCaptured
                     })
                 });
                 const data = await res.json();
@@ -1840,12 +2022,22 @@ function clearEducationSearch() {
     renderEducationCards(selectedEducationCategory);
 }
 
+function getYoutubeEmbedUrl(url) {
+    if (!url) return null;
+    const raw = String(url).trim();
+    let m = raw.match(/[?&]v=([a-zA-Z0-9_-]{6,})/);
+    if (!m) m = raw.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
+    if (!m) m = raw.match(/youtube(?:-nocookie)?\.com\/embed\/([a-zA-Z0-9_-]{6,})/);
+    if (!m) m = raw.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/);
+    return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : null;
+}
+
 function renderEducationCards(category = 'all') {
     const container = document.getElementById('educationList');
+    const videoContainer = document.getElementById('educationVideoList');
     if (!container) return;
     selectedEducationCategory = category;
 
-    // Render category filter tabs
     const tabsContainer = document.getElementById('educationCategoryTabs');
     if (tabsContainer) {
         const categories = ['all', ...Array.from(new Set(allEducationMaterialsCache.map(m => m.category || 'Общее')))];
@@ -1872,12 +2064,42 @@ function renderEducationCards(category = 'all') {
         );
     }
 
-    if (filtered.length === 0) {
-        container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалов по вашему запросу не найдено. Попробуйте изменить поисковый запрос или выбрать категорию «Все».</div>';
+    const videos = filtered.filter(m => (m.type || 'memo') === 'video');
+    const memos = filtered.filter(m => (m.type || 'memo') !== 'video');
+
+    if (videoContainer) {
+        if (videos.length === 0) {
+            videoContainer.innerHTML = '<p class="text-muted">Видео пока не добавлены. Администратор может добавить видео по ссылке YouTube через панель управления.</p>';
+        } else {
+            videoContainer.innerHTML = videos.map(item => {
+                const embed = getYoutubeEmbedUrl(item.audio_url || item.content || '');
+                const videoBlock = embed
+                    ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:12px;background:#000;margin-bottom:12px;">
+                         <iframe src="${escapeHtml(embed)}" title="${escapeHtml(item.title || 'Видео-урок')}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+                       </div>`
+                    : `<p style="color:var(--danger-color);">Не удалось распознать ссылку YouTube. Укажите ссылку вида https://www.youtube.com/watch?v=...</p>`;
+                return `
+                    <div class="card" style="margin-bottom: 14px;">
+                        ${videoBlock}
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
+                            <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
+                            <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
+                        </div>
+                        ${item.content ? `<p style="margin: 8px 0 0 0; line-height: 1.5;">${escapeHtml(item.content)}</p>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    if (memos.length === 0) {
+        container.innerHTML = videos.length > 0
+            ? '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Текстовых памяток в этой категории нет.</div>'
+            : '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалы пока не найдены. Попробуйте другой запрос или категорию.</div>';
         return;
     }
 
-    container.innerHTML = filtered.map(item => `
+    container.innerHTML = memos.map(item => `
         <div class="card" style="margin-bottom: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
                 <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
@@ -1885,7 +2107,7 @@ function renderEducationCards(category = 'all') {
             </div>
             <p style="margin: 8px 0 12px 0; line-height: 1.5;">${escapeHtml(item.content)}</p>
             <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak('${escapeJs(item.title)}. ${escapeJs(item.content)}')">
-                ${Icons.volume} Прослушать памятку
+                ${Icons.volume} Озвучить памятку
             </button>
         </div>
     `).join('');
@@ -1906,7 +2128,6 @@ async function loadEducation() {
         console.error('Error loading education materials', e);
     }
 }
-
 let selectedVolunteerKnowledgeCategory = 'all';
 
 function renderVolunteerKnowledgeCards(category = 'all') {

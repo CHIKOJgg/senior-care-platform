@@ -307,6 +307,36 @@ class CoordinatorController
         ]);
     }
 
+    public function restoreVolunteer(string $id): void
+    {
+        $admin = AuthService::requireAuth(['admin']);
+        $uid = (int)$id;
+        $vp = VolunteerProfile::find($uid);
+        if (!$vp) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+
+        $update = [
+            'is_verified' => 1,
+            'verification_status' => 'VERIFIED',
+            'badge_token' => null,
+            'badge_expires_at' => null,
+        ];
+        if ((float)($vp['rating'] ?? 0) < 3.0) {
+            $update['rating'] = 3.0;
+        }
+
+        VolunteerProfile::update($uid, $update);
+        Logger::info("Volunteer #{$uid} restored by Admin #{$admin['user_id']}");
+
+        Router::json([
+            'success' => true,
+            'message' => 'Права волонтёра восстановлены администратором.',
+            'volunteer_id' => $uid,
+            'verification_status' => 'VERIFIED'
+        ]);
+    }
+
     public function allRequests(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);

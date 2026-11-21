@@ -220,6 +220,24 @@ class HelpRequestController
 
         Logger::info("New help request #{$requestId} created by elderly user #{$elderlyId}");
 
+        // Keep elderly profile location fresh when the request was created with real GPS.
+        $gpsCaptured = filter_var($input['gps_captured'] ?? false, FILTER_VALIDATE_BOOLEAN) && $hasCoords;
+        if ($elderlyId && $gpsCaptured) {
+            try {
+                $profileUpdate = [
+                    'latitude' => $lat,
+                    'longitude' => $lon,
+                    'region_code' => $regionCode,
+                ];
+                if ($address !== '') {
+                    $profileUpdate['address'] = $address;
+                }
+                ElderlyProfile::update((int)$elderlyId, $profileUpdate);
+            } catch (\Throwable $e) {
+                Logger::warning("Failed to refresh elderly GPS profile for user #{$elderlyId}: " . $e->getMessage());
+            }
+        }
+
         // Find matching nearby volunteers
         $verifiedVolunteers = VolunteerProfile::getVerified();
         $reqData = ['latitude' => $lat, 'longitude' => $lon];
@@ -258,15 +276,28 @@ class HelpRequestController
             Router::json(['error' => 'Заявка уже взята другим волонтёром или завершена'], 400);
         }
 
-        // Verification check: only verified volunteers can accept
+                // Verification and rating check: only verified volunteers with acceptable rating can accept
         $volunteer = VolunteerProfile::find($volunteerId);
-        if (!$volunteer || (int)$volunteer['is_verified'] !== 1) {
-            Logger::security("Unverified volunteer #{$volunteerId} tried to accept request #{$id}");
+        if (!$volunteer) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+
+        $verificationStatus = (string)($volunteer['verification_status'] ?? '');
+        $rating = (float)($volunteer['rating'] ?? 0);
+        if ($verificationStatus === 'BLOCKED_LOW_RATING' || $rating < 3.0) {
+            Logger::security("Blocked low-rating volunteer #{$volunteerId} tried to accept request #{$id}");
             Router::json([
-                'error' => 'Вы не можете брать заявки: ваш профиль волонтёра ещё не прошёл верификацию администратором/координатором.'
+                'error' => 'Из-за низкого рейтинга вы временно не можете принимать задания. Обратитесь в ТЦСОН или позвоните в поддержку по номеру +375441111110 для восстановления прав.',
+                'code' => 'BLOCKED_LOW_RATING'
             ], 403);
         }
 
+        if ((int)$volunteer['is_verified'] !== 1) {
+            Logger::security("Unverified volunteer #{$volunteerId} tried to accept request #{$id}");
+            Router::json([
+                'error' => 'Вы не можете брать заявки: ваш профиль волонтёра ещё не прошёл верификацию координатором/администратором.'
+            ], 403);
+        }
         HelpRequest::update((int)$id, [
             'volunteer_id' => $volunteerId,
             'status' => 'in_progress',
@@ -354,17 +385,10 @@ class HelpRequestController
             Router::json(['error' => 'Некорректные GPS-координаты волонтёра'], 400);
         }
 
-        // Resolve target coordinates
+        // Resolve target coordinates: use the place where the request was created.
+        // This keeps geofence validation tied to the request itself, not a stale profile address.
         $targetLat = (float)$req['latitude'];
         $targetLon = (float)$req['longitude'];
-
-        if (!empty($req['elderly_id'])) {
-            $elderly = ElderlyProfile::find((int)$req['elderly_id']);
-            if ($elderly && !empty($elderly['latitude']) && !empty($elderly['longitude'])) {
-                $targetLat = (float)$elderly['latitude'];
-                $targetLon = (float)$elderly['longitude'];
-            }
-        }
 
         $distMeters = GeoMatchingService::calculateDistanceMeters($vLat, $vLon, $targetLat, $targetLon);
         if ($distMeters > 150.0) {
@@ -412,6 +436,72 @@ class HelpRequestController
         }
 
         Router::json($response);
+    }
+
+    public function rate(string $id): void
+    {
+        $currentUser = AuthService::requireAuth(['elderly', 'admin', 'coordinator']);
+        $reqId = (int)$id;
+        $req = HelpRequest::find($reqId);
+
+        if (!$req) {
+            Router::json(['error' => 'Заявка не найдена'], 404);
+        }
+
+        $role = $currentUser['role_code'] ?? '';
+        $uid = (int)$currentUser['user_id'];
+        if ($role === 'elderly' && (int)$req['elderly_id'] !== $uid) {
+            Router::json(['error' => 'Недостаточно прав для оценки этой заявки'], 403);
+        }
+
+        if (($req['status'] ?? '') !== 'completed') {
+            Router::json(['error' => 'Оценить можно только выполненную заявку'], 400);
+        }
+
+        if (!empty($req['rating_score'])) {
+            Router::json(['error' => 'Заявка уже оценена', 'rating_score' => (int)$req['rating_score']], 409);
+        }
+
+        $input = Router::getJsonInput();
+        $rating = isset($input['rating']) ? (int)$input['rating'] : 0;
+        if ($rating < 1 || $rating > 5) {
+            Router::json(['error' => 'Оценка должна быть от 1 до 5'], 400);
+        }
+
+        HelpRequest::update($reqId, ['rating_score' => $rating]);
+
+        $volunteerId = (int)($req['volunteer_id'] ?? 0);
+        if ($volunteerId > 0) {
+            try {
+                $avgRow = HelpRequest::query(
+                    "SELECT AVG(rating_score) as avg_rating, COUNT(*) as cnt
+                     FROM help_requests
+                     WHERE volunteer_id = :vid AND rating_score IS NOT NULL",
+                    ['vid' => $volunteerId]
+                );
+                $avg = $avgRow[0]['avg_rating'] ?? null;
+                if ($avg !== null) {
+                    $newRating = round((float)$avg, 2);
+                    $update = ['rating' => $newRating];
+                    if ($newRating < 3.0) {
+                        $update['is_verified'] = 0;
+                        $update['verification_status'] = 'BLOCKED_LOW_RATING';
+                        $update['badge_token'] = null;
+                        $update['badge_expires_at'] = null;
+                    }
+                    VolunteerProfile::update($volunteerId, $update);
+                }
+            } catch (\Throwable $e) {
+                Logger::warning("Failed to recalculate volunteer rating for #{$volunteerId}: " . $e->getMessage());
+            }
+        }
+
+        Logger::info("Request #{$reqId} rated {$rating}/5 by user #{$uid}");
+        Router::json([
+            'success' => true,
+            'message' => 'Спасибо за оценку',
+            'rating_score' => $rating
+        ]);
     }
 
     public function cancel(string $id): void

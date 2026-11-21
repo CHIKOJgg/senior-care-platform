@@ -81,6 +81,22 @@ class SosController
             ? (string)$input['reason']
             : 'Экстренная тревога подопечного: требуется срочная помощь';
 
+        // Keep elderly profile location fresh when real GPS coordinates are provided.
+        $gpsProvided = isset($input['latitude'], $input['longitude'])
+            && is_numeric($input['latitude'])
+            && is_numeric($input['longitude']);
+        if ($gpsProvided) {
+            try {
+                ElderlyProfile::update($elderlyId, [
+                    'latitude' => $lat,
+                    'longitude' => $lon,
+                    'address' => $address,
+                ]);
+            } catch (\Throwable $e) {
+                Logger::warning("Failed to refresh elderly GPS profile from SOS for user #{$elderlyId}: " . $e->getMessage());
+            }
+        }
+
         // Modular EMERCOM / 112 dispatch
         $emercomAdapter = new MchsEmergencyAdapter();
         $dispatchData = [
