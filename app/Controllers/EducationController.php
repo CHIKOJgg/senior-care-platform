@@ -52,12 +52,13 @@ class EducationController
             Router::json(['error' => 'Недопустимый type (memo/audio/video)'], 400);
         }
 
+        $mediaUrl = trim((string)($input['audio_url'] ?? $input['video_url'] ?? ''));
         $id = EducationalMaterial::create([
             'title' => $title,
             'type' => $type,
             'category' => $category,
             'content' => $content,
-            'audio_url' => $input['audio_url'] ?? null
+            'audio_url' => $mediaUrl !== '' ? $mediaUrl : null
         ]);
         Logger::info("Educational material #{$id} created by Admin #{$admin['user_id']}");
         Router::json(['success' => true, 'material_id' => $id], 201);
@@ -77,6 +78,9 @@ class EducationController
             if (isset($input[$f])) {
                 $data[$f] = is_string($input[$f]) ? trim($input[$f]) : $input[$f];
             }
+        }
+        if (!isset($data['audio_url']) && isset($input['video_url'])) {
+            $data['audio_url'] = trim((string)$input['video_url']);
         }
         if (empty($data)) {
             Router::json(['error' => 'Нет данных для обновления'], 400);

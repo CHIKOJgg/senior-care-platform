@@ -328,6 +328,87 @@ class AuthController
         ], 201);
     }
 
+    public function adminCreateUser(): void
+    {
+        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+
+        $input = Router::getJsonInput();
+        $phone = trim((string)($input['phone'] ?? ''));
+        $name = trim((string)($input['name'] ?? ''));
+        $password = trim((string)($input['password'] ?? ''));
+        $roleId = (int)($input['role_id'] ?? 1);
+        if (!in_array($roleId, [1, 2], true)) {
+            Router::json(['error' => 'Роль должна быть: 1 (подопечный) или 2 (волонтёр)'], 400);
+        }
+
+        if ($phone === '' || $name === '' || $password === '') {
+            Router::json(['error' => 'Заполните телефон, имя и пароль'], 400);
+        }
+        if (mb_strlen($password) < 8) {
+            Router::json(['error' => 'Пароль должен содержать не менее 8 символов'], 400);
+        }
+        if (User::findByPhone($phone)) {
+            Router::json(['error' => 'Пользователь с таким телефоном уже зарегистрирован'], 400);
+        }
+
+        $userId = User::create([
+            'role_id' => $roleId,
+            'phone' => $phone,
+            'name' => $name,
+            'password_hash' => password_hash($password, PASSWORD_DEFAULT)
+        ]);
+
+        $profileLat = isset($input['latitude']) ? (float)$input['latitude'] : null;
+        $profileLon = isset($input['longitude']) ? (float)$input['longitude'] : null;
+        $regionCode = RegionService::normalize(
+            isset($input['region_code']) ? (string)$input['region_code'] : null,
+            $profileLat,
+            $profileLon
+        );
+        $regionCenter = RegionService::center($regionCode);
+        $profileLat = $profileLat ?? $regionCenter['lat'];
+        $profileLon = $profileLon ?? $regionCenter['lon'];
+
+        if ($roleId === 1) {
+            ElderlyProfile::create([
+                'user_id' => (int)$userId,
+                'address' => $input['address'] ?? ('Обычный адрес, ' . RegionService::name($regionCode)),
+                'latitude' => $profileLat,
+                'longitude' => $profileLon,
+                'region_code' => $regionCode,
+                'birth_year' => (int)($input['birth_year'] ?? 1950),
+                'mobility_notes' => $input['mobility_notes'] ?? '',
+                'emergency_contact' => $input['emergency_contact'] ?? ''
+            ]);
+        } else {
+            VolunteerProfile::create([
+                'user_id' => (int)$userId,
+                'is_verified' => 0,
+                'rating' => 5.0,
+                'points' => 0,
+                'latitude' => $profileLat,
+                'longitude' => $profileLon,
+                'region_code' => $regionCode,
+                'radius_km' => (float)($input['radius_km'] ?? 5.0),
+                'skills' => $input['skills'] ?? 'Помощь по дому, покупка продуктов',
+                'completed_tasks_count' => 0
+            ]);
+        }
+
+        $user = User::getWithProfile((int)$userId);
+        if ($user) {
+            unset($user['password_hash']);
+        }
+
+        Logger::info("User #{$userId} ({$name}, role {$roleId}) created by admin #{$admin['user_id']}");
+
+        Router::json([
+            'success' => true,
+            'message' => 'Пользователь создан',
+            'user' => $user
+        ], 201);
+    }
+
     public function me(): void
     {
         $currentUser = AuthService::getCurrentUser();
