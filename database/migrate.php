@@ -19,7 +19,7 @@ if (!file_exists($schemaFile)) {
 }
 
 try {
-    // Хелпер проверки существования таблицы
+
     $tableExists = function (string $table) use ($pdo): bool {
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         if ($driver === 'sqlite') {
@@ -31,7 +31,7 @@ try {
         return (bool)$stmt->fetchColumn();
     };
 
-    // Хелпер для определения существующих колонок
+
     $getColumns = function (string $table) use ($pdo): array {
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
         if ($driver === 'sqlite') {
@@ -43,8 +43,8 @@ try {
             return $cols;
         } else {
             $stmt = $pdo->prepare("
-                SELECT LOWER(COLUMN_NAME) as col 
-                FROM INFORMATION_SCHEMA.COLUMNS 
+                SELECT LOWER(COLUMN_NAME) as col
+                FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table
             ");
             $stmt->execute(['table' => $table]);
@@ -56,7 +56,7 @@ try {
         }
     };
 
-    // 1. Предварительное инкрементальное расширение существующих таблиц до применения индексов
+
     if ($tableExists('help_requests')) {
         $hrCols = $getColumns('help_requests');
         $hrAdditions = [
@@ -110,16 +110,16 @@ try {
                 echo "[MIGRATE] Added column: volunteer_profiles.{$col}\n";
             }
         }
-        // Badge tokens are ~235 chars (base64url payload + HMAC signature): widen legacy columns.
+
         if ($driver === 'mysql') {
             $pdo->exec("ALTER TABLE volunteer_profiles MODIFY COLUMN badge_token VARCHAR(255) NULL;");
         }
     }
 
-    // 2. Применение базовой схемы таблиц (CREATE TABLE IF NOT EXISTS & CREATE INDEX IF NOT EXISTS)
+
     $sql = file_get_contents($schemaFile);
     if ($driver === 'mysql') {
-        // PDO MySQL needs statements executed one by one for predictable errors
+
         $statements = array_filter(array_map('trim', explode(';', $sql)));
         foreach ($statements as $statement) {
             if ($statement !== '') {
@@ -131,7 +131,7 @@ try {
     }
     echo "[MIGRATE] Base schema, new tables & indexes verified successfully ({$driver}).\n";
 
-    // 2b. Country-wide coverage: backfill region_code from coordinates where missing.
+
     $regionBackfills = [
         'help_requests' => ['id', 'latitude', 'longitude'],
         'elderly_profiles' => ['user_id', 'latitude', 'longitude'],
@@ -161,7 +161,7 @@ try {
         }
     }
 
-    // 3. Проверка колонки revoked_at в user_consents
+
     if ($tableExists('user_consents')) {
         $ucCols = $getColumns('user_consents');
         if (!isset($ucCols['revoked_at'])) {
@@ -170,7 +170,7 @@ try {
         }
     }
 
-    // 4. Гарантия создания индексов (идемпотентно, только SQLite: в MySQL-схеме индексы описаны в таблицах)
+
     $indices = $driver === 'mysql' ? [] : [
         "CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);",
         "CREATE INDEX IF NOT EXISTS idx_password_resets_expires_at ON password_resets(expires_at);",
@@ -191,20 +191,20 @@ try {
     }
     echo "[MIGRATE] Indexes verified successfully.\n";
 
-    // 5. Синхронизация статусов существующих волонтёров
+
     $pdo->exec("
-        UPDATE volunteer_profiles 
-        SET verification_status = 'VERIFIED' 
+        UPDATE volunteer_profiles
+        SET verification_status = 'VERIFIED'
         WHERE is_verified = 1 AND (verification_status IS NULL OR verification_status = 'PENDING');
     ");
     $pdo->exec("
-        UPDATE volunteer_profiles 
-        SET verification_status = 'REJECTED' 
+        UPDATE volunteer_profiles
+        SET verification_status = 'REJECTED'
         WHERE is_verified = -1 AND (verification_status IS NULL OR verification_status = 'PENDING');
     ");
     echo "[MIGRATE] Existing volunteer verification statuses synchronized.\n";
 
-    // 6. Шифрование существующих незашифрованных медицинских заметок (mobility_notes)
+
     $stmt = $pdo->query("SELECT user_id, mobility_notes FROM elderly_profiles WHERE mobility_notes IS NOT NULL AND mobility_notes != ''");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $encryptedCount = 0;

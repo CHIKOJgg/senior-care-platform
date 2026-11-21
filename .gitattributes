@@ -1,0 +1,6 @@
+# Keep Windows launchers CRLF and Unix launchers LF regardless of core.autocrlf.
+start.bat text eol=crlf
+start.sh text eol=lf
+start.command text eol=lf
+docker/*.sh text eol=lf
+tools/*.php text eol=lf

@@ -10,10 +10,10 @@ class GeoMatchingService
     public const EARTH_RADIUS_METERS = 6371000.0;
     public const DEFAULT_GEOFENCE_RADIUS_METERS = 150.0;
 
-    /**
-     * Calculate distance between two coordinates in kilometers using Haversine formula.
-     * Uses numerical clamping to avoid NaN on antipodal points.
-     */
+
+
+
+
     public static function calculateDistance(float $lat1, float $lon1, float $lat2, float $lon2): float
     {
         $dLat = deg2rad($lat2 - $lat1);
@@ -23,7 +23,7 @@ class GeoMatchingService
              cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
              sin($dLon / 2) * sin($dLon / 2);
 
-        // Clamping to avoid NaN on antipodal points or floating point inaccuracies
+
         $a = max(0.0, min(1.0, $a));
 
         $c = 2 * atan2(sqrt($a), sqrt(1.0 - $a));
@@ -31,9 +31,9 @@ class GeoMatchingService
         return round(self::EARTH_RADIUS_KM * $c, 4);
     }
 
-    /**
-     * Calculate distance between two coordinates in meters using Haversine formula.
-     */
+
+
+
     public static function calculateDistanceMeters(float $lat1, float $lon1, float $lat2, float $lon2): float
     {
         $dLat = deg2rad($lat2 - $lat1);
@@ -50,9 +50,9 @@ class GeoMatchingService
         return round(self::EARTH_RADIUS_METERS * $c, 2);
     }
 
-    /**
-     * Check whether two points are within the allowed geofence radius (in meters).
-     */
+
+
+
     public static function isWithinGeofence(
         float $lat1,
         float $lon1,
@@ -63,9 +63,9 @@ class GeoMatchingService
         return self::calculateDistanceMeters($lat1, $lon1, $lat2, $lon2) <= $radiusMeters;
     }
 
-    /**
-     * Alias for isWithinGeofence as defined in SCOPE.md.
-     */
+
+
+
     public static function isWithinRadius(
         float $lat1,
         float $lon1,
@@ -76,17 +76,17 @@ class GeoMatchingService
         return self::isWithinGeofence($lat1, $lon1, $lat2, $lon2, $radiusMeters);
     }
 
-    /**
-     * Secret word validation proxy (SCOPE.md deliverable).
-     */
+
+
+
     public static function validateSecretWord(string $entered, string $expected): bool
     {
         return SecurityService::verifyCode($entered, $expected);
     }
 
-    /**
-     * Rank volunteers for a request based on distance, rating and skills
-     */
+
+
+
     public static function rankVolunteers(array $request, array $volunteers, float $maxRadiusKm = 5.0): array
     {
         $ranked = [];
@@ -103,7 +103,7 @@ class GeoMatchingService
                 continue;
             }
 
-            // Weights
+
             $wDist = 0.5;
             $wRating = 0.3;
             $wKarma = 0.2;

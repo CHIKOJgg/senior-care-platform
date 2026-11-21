@@ -48,8 +48,8 @@ class AuthController
         $remember = !empty($input['remember']) && ($withProfile['role_code'] ?? '') === 'elderly';
         $ttl = $remember ? AuthService::TTL_DEVICE : AuthService::TTL_SESSION;
         $token = AuthService::createToken($withProfile, $ttl);
-        // Always establish the HttpOnly auth cookie: the server uses it to render only
-        // this account's role workspace. "Remember" merely extends the TTL for seniors.
+
+
         @setcookie('auth_token', $token, [
             'expires' => time() + $ttl,
             'path' => '/',
@@ -106,8 +106,8 @@ class AuthController
         $remember = !empty($input['remember']) && ($withProfile['role_code'] ?? '') === 'elderly';
         $ttl = $remember ? AuthService::TTL_DEVICE : AuthService::TTL_SESSION;
         $token = AuthService::createToken($withProfile, $ttl);
-        // Always establish the HttpOnly auth cookie: the server uses it to render only
-        // this account's role workspace. "Remember" merely extends the TTL for seniors.
+
+
         @setcookie('auth_token', $token, [
             'expires' => time() + $ttl,
             'path' => '/',
@@ -152,9 +152,9 @@ class AuthController
         ]);
     }
 
-    /**
-     * Coordinator issues a one-time code for a pensioner or volunteer.
-     */
+
+
+
     public function requestPasswordReset(): void
     {
         $admin = AuthService::requireAuth(['coordinator', 'admin']);
@@ -193,9 +193,9 @@ class AuthController
         ]);
     }
 
-    /**
-     * Public: set a new password using a one-time coordinator code.
-     */
+
+
+
     public function resetPassword(): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -241,8 +241,8 @@ class AuthController
         $phone = trim($input['phone'] ?? '');
         $name = trim($input['name'] ?? '');
         $password = trim($input['password'] ?? '');
-        $roleId = (int)($input['role_id'] ?? 1); // 1 = elderly, 2 = volunteer
-        // Security: prevent self-registration as coordinator/admin
+        $roleId = (int)($input['role_id'] ?? 1);
+
         if (!in_array($roleId, [1, 2], true)) {
             $roleId = 1;
         }
@@ -266,7 +266,7 @@ class AuthController
             'password_hash' => password_hash($password, PASSWORD_DEFAULT)
         ]);
 
-        // Country-wide: region is explicit or derived from coordinates (nearest regional centre).
+
         $profileLat = isset($input['latitude']) ? (float)$input['latitude'] : null;
         $profileLon = isset($input['longitude']) ? (float)$input['longitude'] : null;
         $regionCode = RegionService::normalize(
@@ -278,7 +278,7 @@ class AuthController
         $profileLat = $profileLat ?? $regionCenter['lat'];
         $profileLon = $profileLon ?? $regionCenter['lon'];
 
-        if ($roleId === 1) { // Elderly
+        if ($roleId === 1) {
             ElderlyProfile::create([
                 'user_id' => (int)$userId,
                 'address' => $input['address'] ?? ('Республика Беларусь, ' . RegionService::name($regionCode)),
@@ -289,10 +289,10 @@ class AuthController
                 'mobility_notes' => $input['mobility_notes'] ?? '',
                 'emergency_contact' => $input['emergency_contact'] ?? ''
             ]);
-        } elseif ($roleId === 2) { // Volunteer
+        } elseif ($roleId === 2) {
             VolunteerProfile::create([
                 'user_id' => (int)$userId,
-                'is_verified' => 0, // Pending verification
+                'is_verified' => 0,
                 'rating' => 5.0,
                 'points' => 0,
                 'latitude' => $profileLat,

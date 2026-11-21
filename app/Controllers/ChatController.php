@@ -74,7 +74,7 @@ class ChatController
             AuthService::requireAuth();
             return;
         } else {
-            // Local dev fallback only
+
             $senderId = (int)($input['sender_id'] ?? 1);
         }
 

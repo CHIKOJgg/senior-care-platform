@@ -10,7 +10,7 @@ require_once __DIR__ . '/Tier2_BoundaryCornerTest.php';
 require_once __DIR__ . '/Tier3_CrossFeatureTest.php';
 require_once __DIR__ . '/Tier4_RealWorldScenariosTest.php';
 
-// Parse command line arguments
+
 $options = getopt('', ['tier:', 'strict', 'json::', 'help', 'verbose']);
 
 if (isset($options['help'])) {
@@ -30,8 +30,8 @@ $strictMode = isset($options['strict']);
 $verboseMode = isset($options['verbose']);
 $jsonPath = null;
 if (isset($options['json'])) {
-    $jsonPath = is_string($options['json']) && $options['json'] !== '' 
-        ? $options['json'] 
+    $jsonPath = is_string($options['json']) && $options['json'] !== ''
+        ? $options['json']
         : __DIR__ . '/../e2e_report.json';
 }
 

@@ -13,9 +13,9 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
     private const PROVIDER_NAME = 'EMERCOM_112_BY';
     private const DEFAULT_CREW = 'ПАСЧ-24 Советского РОЧС г. Минска (АЦ-5.0)';
 
-    /**
-     * In-memory offline fallback queue for simulated network disconnects.
-     */
+
+
+
     private static array $offlineQueue = [];
 
     public function getProviderName(): string
@@ -23,9 +23,9 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         return self::PROVIDER_NAME;
     }
 
-    /**
-     * Generate standardized Belarusian EMERCOM / 112 ticket code: EMERCOM-112-BY-2026-XXXX
-     */
+
+
+
     public static function generateTicketId(): string
     {
         $year = date('Y');
@@ -33,20 +33,20 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         return "EMERCOM-112-BY-{$year}-{$randomHex}";
     }
 
-    /**
-     * Validate ticket code structure
-     */
+
+
+
     public static function verifyTicketId(string $ticketId): bool
     {
         return (bool)preg_match('/^EMERCOM-112-BY-\d{4}-[A-Z0-9]{4,}$/', $ticketId);
     }
 
-    /**
-     * Dispatch emergency incident to 112 service
-     *
-     * @param array<string, mixed> $incidentData
-     * @return array<string, mixed>
-     */
+
+
+
+
+
+
     public function dispatchEmergency(array $incidentData): array
     {
         $ticketId = self::generateTicketId();
@@ -56,7 +56,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         $address = $incidentData['address'] ?? 'г. Минск, Советский район';
         $reason = $incidentData['reason'] ?? 'Экстренная тревога подопечного (SOS)';
 
-        // Simulate network disconnect if explicitly requested in test payload
+
         if (!empty($incidentData['simulate_network_failure'])) {
             Logger::error("EMERCOM adapter network disconnect: queuing incident for retry. Elderly #{$elderlyId}");
             self::$offlineQueue[] = [
@@ -70,7 +70,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
                 'incident_code' => $ticketId,
                 'ticket_id' => $ticketId,
                 'provider' => self::PROVIDER_NAME,
-                'status' => 'DISPATCHED', // Dispatched into local resilient queue
+                'status' => 'DISPATCHED',
                 'queued_offline' => true,
                 'assigned_crew' => self::DEFAULT_CREW,
                 'eta_minutes' => 7,
@@ -100,9 +100,9 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         ];
     }
 
-    /**
-     * Check status of incident ticket
-     */
+
+
+
     public function checkIncidentStatus(string $ticketId): array
     {
         if (!self::verifyTicketId($ticketId)) {
@@ -124,9 +124,9 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         ];
     }
 
-    /**
-     * Cancel incident ticket
-     */
+
+
+
     public function cancelIncident(string $ticketId, string $reason = ''): array
     {
         Logger::info("EMERCOM incident {$ticketId} cancelled. Reason: {$reason}");
@@ -141,9 +141,9 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
         ];
     }
 
-    /**
-     * Get offline queued incidents count (for audit/healthchecks)
-     */
+
+
+
     public static function getOfflineQueue(): array
     {
         return self::$offlineQueue;

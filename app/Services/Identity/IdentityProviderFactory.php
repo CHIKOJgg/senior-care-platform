@@ -8,9 +8,9 @@ use InvalidArgumentException;
 
 class IdentityProviderFactory
 {
-    /**
-     * Создать экземпляр адаптера по строковому коду.
-     */
+
+
+
     public static function get(string $providerName): IdentityProviderInterface
     {
         $code = strtolower(trim($providerName));
@@ -22,11 +22,11 @@ class IdentityProviderFactory
         };
     }
 
-    /**
-     * Реестр поддерживаемых провайдеров идентификации с метаданными.
-     *
-     * @return array<int, array<string, string>>
-     */
+
+
+
+
+
     public static function getAvailableProviders(): array
     {
         return [

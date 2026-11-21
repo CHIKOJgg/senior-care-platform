@@ -110,7 +110,7 @@ $volunteerUser = User::getWithProfile(2);
 assertTest('Volunteer user profile loaded correctly', $volunteerUser !== null && $volunteerUser['profile_type'] === 'volunteer');
 
 echo "\n[TEST SUITE 5] Volunteer Verification & Protection Logic:\n";
-// Create test volunteer
+
 $testPhone = '+37529' . rand(1000000, 9999999);
 $testVid = (int)User::create([
     'role_id' => 2,
@@ -120,7 +120,7 @@ $testVid = (int)User::create([
 ]);
 VolunteerProfile::create([
     'user_id' => $testVid,
-    'is_verified' => 0, // initially unverified
+    'is_verified' => 0,
     'rating' => 5.0,
     'points' => 0,
     'latitude' => 53.9180,
@@ -133,12 +133,12 @@ VolunteerProfile::create([
 $unverifiedProfile = VolunteerProfile::find($testVid);
 assertTest('New volunteer starts unverified (is_verified = 0)', (int)$unverifiedProfile['is_verified'] === 0);
 
-// Admin approves volunteer
+
 VolunteerProfile::setVerificationStatus($testVid, 1);
 $verifiedProfile = VolunteerProfile::find($testVid);
 assertTest('Admin verification activates volunteer (is_verified = 1)', (int)$verifiedProfile['is_verified'] === 1);
 
-// Admin rejects volunteer
+
 VolunteerProfile::setVerificationStatus($testVid, -1);
 $rejectedProfile = VolunteerProfile::find($testVid);
 assertTest('Admin rejection disables volunteer (is_verified = -1)', (int)$rejectedProfile['is_verified'] === -1);
@@ -161,7 +161,7 @@ assertTest('Token successfully generated', !empty($token) && str_contains($token
 $decoded = AuthService::verifyToken($token);
 assertTest('Token verified and payload extracted', $decoded !== null && $decoded['user_id'] === 4 && $decoded['role_code'] === 'admin');
 
-// Tampered token test
+
 $tamperedToken = $token . 'tamper';
 $tamperedResult = AuthService::verifyToken($tamperedToken);
 assertTest('Tampered token is rejected', $tamperedResult === null);

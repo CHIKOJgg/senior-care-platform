@@ -34,7 +34,7 @@ abstract class Model
 
     public static function where(string $column, mixed $value, string $operator = '='): array
     {
-        // Sanitize column name to allow only safe identifier characters
+
         if (!preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
             throw new InvalidArgumentException("Invalid column name: {$column}");
         }

@@ -1,112 +1,66 @@
-# Architecture Decision Records (ADR) — «ЗаботаРядом»
+# Architecture Decision Records
 
-Набор архитектурных решений платформы **Senior Care Platform / «ЗаботаРядом»**.
-Документы фиксируют **что выбрано**, **почему именно это** и **какие компромиссы приняты**.
-
-## Как читать
-
-Каждый ADR имеет единую структуру:
-
-| Раздел | Содержание |
-|---|---|
-| **Статус** | `Принято`, `Предложено`, `Устарело`, `Заменено` |
-| **Контекст** | Ограничения, требования и условия, в которых принималось решение |
-| **Решение** | Что именно выбрано и где это в коде |
-| **Обоснование** | Почему выбран этот вариант, а не альтернативы |
-| **Последствия** | Положительные, отрицательные и нейтральные эффекты |
-| **Альтернативы** | Что рассматривалось и почему отклонено |
-| **Ссылки** | Файлы, документы и внешние стандарты |
+Архитектурные решения платформы **«ЗаботаРядом»**. Каждый документ фиксирует контекст, выбранное решение, причины выбора, последствия и рассмотренные альтернативы.
 
 ## Реестр решений
 
 | № | Решение | Категория | Статус |
 |---|---|---|---|
-| [ADR-0001](0001-php82-custom-mvc.md) | PHP 8.2 и собственное MVC-ядро без фреймворка | Фреймворк / backend | Принято |
-| [ADR-0002](0002-vanilla-js-frontend-wcag.md) | Vanilla JS + CSS без фронтенд-фреймворка и сборки | Фреймворк / frontend | Принято |
-| [ADR-0003](0003-database-sqlite-mysql.md) | SQLite 3 (dev/test) и MySQL 8 (production), без ORM | База данных | Принято |
-| [ADR-0004](0004-pdo-idempotent-migrations.md) | PDO и идемпотентные миграции на чистом PHP | База данных | Принято |
-| [ADR-0005](0005-hmac-auth-and-rate-limiting.md) | Stateless HMAC-токены, `token_version` и файловый rate limiter | Безопасность | Принято |
-| [ADR-0006](0006-zero-composer-custom-libraries.md) | Нулевые Composer-зависимости и собственные библиотеки | Библиотеки | Принято |
-| [ADR-0007](0007-aes256gcm-and-data-masking.md) | AES-256-GCM, маскирование ПД и право на забвение | Безопасность / ПДн | Принято |
-| [ADR-0008](0008-identity-provider-adapters.md) | Адаптеры верификации МСИ РБ и ЕСИА (Госуслуги) | Интеграция | Принято |
-| [ADR-0009](0009-emergency-112-adapter.md) | Адаптер МЧС 112 и офлайн-очередь SOS | Интеграция | Принято |
-| [ADR-0010](0010-observability-stack.md) | Prometheus, Grafana, Loki и Promtail | Интеграция / observability | Принято |
-| [ADR-0011](0011-docker-caddy-nginx-phpfpm.md) | Docker, Caddy, Nginx + PHP-FPM | Инфраструктура | Принято |
-| [ADR-0012](0012-custom-test-harness.md) | Собственный тест-харнесс и 5 уровней тестирования | Тестирование | Принято |
-| [ADR-0013](0013-backups-secrets-healthchecks.md) | Бэкапы MySQL, секреты окружения и healthcheck | Эксплуатация | Принято |
-| [ADR-0014](0014-web-speech-and-audio-api.md) | Web Speech API и Web Audio API для доступности | Интеграция / браузер | Принято |
+| [ADR-0001](0001-php82-custom-mvc.md) | PHP 8.2 и собственное MVC-ядро без фреймворка | Backend | Принято |
+| [ADR-0002](0002-vanilla-js-frontend-wcag.md) | Vanilla JS и CSS без сборки, приоритет WCAG 2.1 AAA | Frontend | Принято |
+| [ADR-0003](0003-database-sqlite-mysql.md) | SQLite для unit/CI, MySQL для one-click dev и production | Данные | Принято |
+| [ADR-0004](0004-pdo-idempotent-migrations.md) | PDO и идемпотентные миграции на чистом PHP | Данные | Принято |
+| [ADR-0005](0005-hmac-auth-and-rate-limiting.md) | Stateless HMAC-токены, HttpOnly-cookie, `token_version` и rate limiting | Безопасность | Принято |
+| [ADR-0006](0006-zero-composer-custom-libraries.md) | Нулевые Composer-зависимости и собственные компоненты | Зависимости | Принято |
+| [ADR-0007](0007-aes256gcm-and-data-masking.md) | AES-256-GCM, маскирование ПДн, согласия и право на забвение | Приватность | Принято |
+| [ADR-0008](0008-identity-provider-adapters.md) | Адаптеры верификации МСИ РБ и ЕСИА | Интеграции | Принято |
+| [ADR-0009](0009-emergency-112-adapter.md) | Адаптер МЧС 112 и устойчивая очередь SOS | Интеграции | Принято |
+| [ADR-0010](0010-observability-stack.md) | Prometheus, Grafana, Loki, Promtail и healthcheck | Observability | Принято |
+| [ADR-0011](0011-docker-caddy-nginx-phpfpm.md) | One-click MySQL-стек и production-контейнеры Caddy/Nginx/PHP-FPM | Инфраструктура | Принято |
+| [ADR-0012](0012-custom-test-harness.md) | Собственный тест-харнесс, CI и MySQL-smoke | Тестирование | Принято |
+| [ADR-0013](0013-backups-secrets-healthchecks.md) | Бэкапы MySQL, обязательные секреты и healthcheck | Эксплуатация | Принято |
+| [ADR-0014](0014-web-speech-and-audio-api.md) | Web Speech API и Web Audio API для доступности | Frontend | Принято |
+| [ADR-0015](0015-anti-fraud-keyword-ai-fallback.md) | Keyword-антифрод с необязательным OpenRouter AI и fallback | Безопасность | Принято |
 
-## Сводка по стеку
+## Стек в одном месте
 
-| Слой | Технология | Где зафиксировано |
+| Слой | Решение |
+|---|---|
+| Backend | PHP 8.2+, `declare(strict_types=1)`, MVC и сервисный слой |
+| Frontend | HTML5, CSS3 custom properties, vanilla JavaScript, Web Speech API |
+| Хранилище | SQLite 3 для unit/CI, MySQL 8 для one-click dev и production |
+| Доступ к данным | PDO, prepared statements, миграции `database/migrate.php` |
+| Аутентификация | HMAC-SHA256-токены, HttpOnly-cookie, `token_version` |
+| Шифрование | AES-256-GCM через OpenSSL |
+| Верификация | Адаптеры МСИ РБ и ЕСИА |
+| Экстренные вызовы | Адаптер МЧС 112 с offline queue |
+| Наблюдаемость | `/api/health`, `/api/metrics`, Prometheus, Grafana, Loki, Promtail |
+| Запуск | `start.bat`, `start.command`, `start.sh` → Docker Compose с MySQL |
+| Тестирование | PHP-харнесс, E2E, adversarial/challenger, Node-проверки, CI |
+
+## Режимы запуска
+
+| Режим | База | Как запускается |
 |---|---|---|
-| Язык backend | PHP 8.2+, `declare(strict_types=1)` | ADR-0001 |
-| Архитектура backend | MVC + сервисный слой, front controllers | ADR-0001 |
-| Язык frontend | Vanilla JavaScript ES6+ | ADR-0002 |
-| Стили | CSS3 custom properties, WCAG 2.1 AAA | ADR-0002 |
-| СУБД dev/test | SQLite 3 (WAL, foreign keys) | ADR-0003 |
-| СУБД production | MySQL 8.0 (InnoDB, utf8mb4) | ADR-0003 |
-| Доступ к данным | PDO, prepared statements, singleton | ADR-0004 |
-| Миграции | Собственный идемпотентный `migrate.php` | ADR-0004 |
-| Аутентификация | HMAC-SHA256 stateless-токены | ADR-0005 |
-| Хеширование паролей | `password_hash` / `password_verify` (bcrypt) | ADR-0005 |
-| Шифрование | OpenSSL AES-256-GCM | ADR-0007 |
-| QR-коды | Собственный энкодер ISO/IEC 18004 | ADR-0006 |
-| Верификация личности | МСИ РБ, ЕСИА (адаптеры) | ADR-0008 |
-| Экстренные службы | МЧС 112 (адаптер + offline queue) | ADR-0009 |
-| Метрики | Prometheus + `/api/metrics` | ADR-0010 |
-| Логи | Loki + Promtail | ADR-0010 |
-| Дашборды | Grafana (provisioning) | ADR-0010 |
-| Edge-прокси | Caddy 2.8 | ADR-0011 |
-| Web-сервер | Nginx + PHP-FPM 8.2 | ADR-0011 |
-| Контейнеризация | Docker / Docker Compose | ADR-0011 |
-| Тестирование | Собственный harness + 5 tiers | ADR-0012 |
-| Резервное копирование | `mysqldump` в отдельном контейнере | ADR-0013 |
-| Голос | Web Speech API (STT/TTS) | ADR-0014 |
-| Сирена | Web Audio API | ADR-0014 |
+| One-click | MySQL 8 | `start.bat`, `start.command`, `start.sh` или `docker compose up --build` |
+| Локальная разработка | SQLite 3 | `php database/migrate.php`, `php database/seed.php`, `php -S 127.0.0.1:8000 router.php` |
+| Production | MySQL 8 | `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build` |
+| CI | SQLite + MySQL-smoke | `.github/workflows/ci.yml` |
 
-## Важные оговорки по фактическому состоянию кода
-
-Эти наблюдения важны, чтобы ADR описывали реальную систему, а не только заявленные намерения:
-
-1. **PostgreSQL не реализован.** `README.md` упоминает PostgreSQL, но `app/Core/Database.php` поддерживает только `sqlite` и `mysql` (ветка `else` всегда строит MySQL DSN). См. ADR-0003.
-2. **«JWT» — это не стандартный JWT.** Токен имеет формат `base64(payload).hex(HMAC-SHA256)`, без JWT-заголовка и `alg`. Это stateless HMAC-токен, а не RFC 7519. См. ADR-0005.
-3. **Слой `views/` пуст.** HTML-шаблон находится в `public/index.php`, а клиентская логика — в `public/js/app.js`. «View» в MVC реализован как PHP-шаблон + SPA-скрипт, а не отдельный шаблонизатор. См. ADR-0001, ADR-0002.
-4. **Composer отсутствует.** Нет `composer.json`, `vendor/` и автозагрузчика Composer; используется ручной `spl_autoload_register` в `public/api.php`. См. ADR-0006.
-5. **Интеграции МСИ, ЕСИА и МЧС — адаптеры-эмуляторы.** Они валидируют форматы и возвращают детерминированные ответы, но не выполняют реальных сетевых вызовов к государственным API. См. ADR-0008, ADR-0009.
-6. **В корне есть вложенная копия `senior-care-platform/senior-care-platform/`.** Она не участвует в сборке, но может вводить в заблуждение при поиске файлов. ADR ссылаются на корневые пути.
-
-## Шаблон нового ADR
+## Формат нового ADR
 
 ```markdown
-# ADR-XXXX. Краткое название решения
+# ADR-XXXX. Краткое название
 
 - **Статус:** Предложено
 - **Дата:** YYYY-MM-DD
-- **Категория:** База данных / Фреймворк / Библиотека / Интеграция / Инфраструктура
+- **Категория:** Backend / Frontend / Данные / Безопасность / Инфраструктура
 - **Связанные ADR:** —
 
 ## Контекст
-...
-
 ## Решение
-...
-
 ## Обоснование
-...
-
 ## Последствия
-### Положительные
-- ...
-### Отрицательные / риски
-- ...
-### Нейтральные
-- ...
-
-## Рассмотренные альтернативы
-| Альтернатива | Почему отклонена |
-|---|---|
-
+## Альтернативы
 ## Ссылки
-- ...
 ```

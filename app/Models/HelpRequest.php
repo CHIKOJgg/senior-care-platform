@@ -12,7 +12,7 @@ class HelpRequest extends Model
 
     public static function getActiveRequests(): array
     {
-        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon, 
+        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon,
                        u.name as elderly_name, u.phone as elderly_phone
                 FROM help_requests r
                 JOIN categories c ON c.id = r.category_id
@@ -24,7 +24,7 @@ class HelpRequest extends Model
 
     public static function getWithDetails(int $id): ?array
     {
-        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon, 
+        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon,
                        u.name as elderly_name, u.phone as elderly_phone,
                        v.name as volunteer_name, v.phone as volunteer_phone
                 FROM help_requests r
@@ -77,7 +77,7 @@ class HelpRequest extends Model
             $params['status'] = $status;
         }
 
-        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon, 
+        $sql = "SELECT r.*, c.title as category_title, c.icon as category_icon,
                        u.name as elderly_name, u.phone as elderly_phone,
                        v.name as volunteer_name, v.phone as volunteer_phone
                 FROM help_requests r

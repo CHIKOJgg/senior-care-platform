@@ -9,31 +9,31 @@ use RuntimeException;
 class CryptoService
 {
     private const CIPHER = 'aes-256-gcm';
-    private const IV_LENGTH = 12;   // 96-bit IV per NIST SP 800-38D
-    private const TAG_LENGTH = 16;  // 128-bit authentication tag
+    private const IV_LENGTH = 12;
+    private const TAG_LENGTH = 16;
     private const PREFIX = 'enc:v1:';
 
     private static ?string $customKey = null;
 
-    /**
-     * Override encryption key in runtime (for unit tests / rotation)
-     */
+
+
+
     public static function setKey(?string $key): void
     {
         self::$customKey = $key;
     }
 
-    /**
-     * Generate a new cryptographically secure 256-bit key
-     */
+
+
+
     public static function generateKey(): string
     {
         return 'base64:' . base64_encode(random_bytes(32));
     }
 
-    /**
-     * Retrieve and normalize 32-byte binary key
-     */
+
+
+
     public static function getKey(): string
     {
         if (self::$customKey !== null) {
@@ -60,9 +60,9 @@ class CryptoService
         return self::normalizeKey($raw);
     }
 
-    /**
-     * Normalize key string into exactly 32 raw bytes
-     */
+
+
+
     public static function normalizeKey(string $key): string
     {
         if (str_starts_with($key, 'base64:')) {
@@ -86,17 +86,17 @@ class CryptoService
         return hash('sha256', $key, true);
     }
 
-    /**
-     * Encrypt plaintext string using AES-256-GCM
-     * Output format: "enc:v1:" . base64_encode(iv . tag . ciphertext)
-     */
+
+
+
+
     public static function encrypt(?string $plaintext, string $aad = ''): ?string
     {
         if ($plaintext === null || $plaintext === '') {
             return $plaintext;
         }
 
-        // Prevent double encryption
+
         if (str_starts_with($plaintext, self::PREFIX)) {
             return $plaintext;
         }
@@ -124,17 +124,17 @@ class CryptoService
         return self::PREFIX . base64_encode($payload);
     }
 
-    /**
-     * Decrypt authenticated ciphertext payload
-     * Verifies 16-byte authentication tag
-     */
+
+
+
+
     public static function decrypt(?string $payload, string $aad = ''): ?string
     {
         if ($payload === null || $payload === '') {
             return $payload;
         }
 
-        // Backward compatibility: legacy unencrypted data returned as-is
+
         if (!str_starts_with($payload, self::PREFIX)) {
             return $payload;
         }
@@ -168,9 +168,9 @@ class CryptoService
         return $plaintext;
     }
 
-    /**
-     * Check if string has encrypted prefix
-     */
+
+
+
     public static function isEncrypted(?string $value): bool
     {
         return $value !== null && str_starts_with($value, self::PREFIX);

@@ -1,5 +1,3 @@
--- MySQL 8.0 schema for the Senior Care Platform
--- Charset: utf8mb4 (Cyrillic + emoji-safe), engine: InnoDB
 
 CREATE TABLE IF NOT EXISTS roles (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,

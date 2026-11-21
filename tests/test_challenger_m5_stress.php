@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-/**
- * Challenger M5-2: Independent Empirical Stress Harness
- * 
- * Adversarially challenges:
- * 1. Cryptographic tampering (corrupted mobility_notes ciphertext, double-encryption prevention)
- * 2. Dynamic QR badge HMAC tampering (bit-flips, exp+1s, future iat)
- * 3. Anonymization: volunteer accreditation instant revocation (badge valid: false)
- * 4. EMERCOM ticket burst: 1,000 tickets, verify 0 collisions + boundary validation
- * 5. SOS burst: 10 concurrent requests (curl_multi & parallel processes), verify no SQLite deadlocks
- */
+
+
+
+
+
+
+
+
+
+
 
 require_once __DIR__ . '/../app/Core/Database.php';
 require_once __DIR__ . '/../app/Core/Model.php';
@@ -69,22 +69,22 @@ echo "========================================================\n\n";
 
 $pdo = Database::getConnection();
 
-// =========================================================================
-// VECTOR 1: Cryptographic Tampering & Double-Encryption Prevention
-// =========================================================================
+
+
+
 echo "[Vector 1] Cryptographic Tampering & Double-Encryption:\n";
 
-// 1.1: Direct CryptoService::decrypt() on corrupted payloads
+
 $validPlain = 'Пациент перенес инсульт, требуется контроль давления';
 $validCipher = CryptoService::encrypt($validPlain);
 $rawPayload = base64_decode(substr($validCipher, strlen('enc:v1:')));
 
-// Corrupt tag (bytes 12..27)
+
 $corruptedTagBytes = $rawPayload;
 $corruptedTagBytes[15] = chr(ord($corruptedTagBytes[15]) ^ 0x01);
 $corruptedTagPayload = 'enc:v1:' . base64_encode($corruptedTagBytes);
 
-// Corrupt ciphertext (bytes 28..)
+
 $corruptedCipherBytes = $rawPayload;
 $corruptedCipherBytes[29] = chr(ord($corruptedCipherBytes[29]) ^ 0x01);
 $corruptedCipherPayload = 'enc:v1:' . base64_encode($corruptedCipherBytes);
@@ -115,12 +115,12 @@ assertStress(
     $allDirectThrew
 );
 
-// 1.2: Database record with corrupted ciphertext reads gracefully via Model
+
 $regRes1 = $harness->registerUser(1, 'Стресс Пожилой 1');
 $uidSenior1 = (int)$regRes1['user']['id'];
 $tokenSenior1 = $regRes1['token'];
 
-// Inject tampered ciphertext into DB
+
 $stmt = $pdo->prepare("UPDATE elderly_profiles SET mobility_notes = :notes WHERE user_id = :id");
 $stmt->execute(['notes' => $corruptedTagPayload, 'id' => $uidSenior1]);
 
@@ -131,7 +131,7 @@ assertStress(
     $loadedProfile !== null && $loadedProfile['mobility_notes'] === null
 );
 
-// 1.3: API endpoint /api/auth/me works without 500 crash when mobility_notes is corrupted
+
 $apiMeRes = $harness->apiCall('GET', '/api/auth/me', null, ["Authorization: Bearer {$tokenSenior1}"]);
 $hasProfile = isset($apiMeRes['data']['user']['profile']) && is_array($apiMeRes['data']['user']['profile']);
 $profileData = $hasProfile ? $apiMeRes['data']['user']['profile'] : [];
@@ -145,7 +145,7 @@ assertStress(
     'Code=' . $apiMeRes['code'] . ', Notes=' . var_export($profileData['mobility_notes'] ?? 'undefined', true)
 );
 
-// 1.4: Double encryption prevention
+
 $encOnce = CryptoService::encrypt($validPlain);
 $encTwice = CryptoService::encrypt($encOnce);
 $encThrice = CryptoService::encrypt($encTwice);
@@ -156,7 +156,7 @@ assertStress(
     $encOnce === $encTwice && $encTwice === $encThrice && substr_count($encThrice, 'enc:v1:') === 1
 );
 
-// 1.5: Edge inputs: null, empty string, legacy unencrypted
+
 $nullEnc = CryptoService::encrypt(null);
 $emptyEnc = CryptoService::encrypt('');
 $legacyDec = CryptoService::decrypt('Обычный текст без шифрования');
@@ -167,12 +167,12 @@ assertStress(
     $nullEnc === null && $emptyEnc === '' && $legacyDec === 'Обычный текст без шифрования'
 );
 
-// =========================================================================
-// VECTOR 2: Dynamic QR Badge HMAC Tampering & Boundaries
-// =========================================================================
+
+
+
 echo "\n[Vector 2] Dynamic QR Badge HMAC Tampering & Expiration Boundaries:\n";
 
-// Register and verify volunteer
+
 $regVol2 = $harness->registerUser(2, 'Смирнов Дмитрий Иванович');
 $uidVol2 = (int)$regVol2['user']['id'];
 $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$uidVol2}");
@@ -182,7 +182,7 @@ $parts = explode('.', $validToken);
 $b64Payload = $parts[0];
 $b64Sig = $parts[1];
 
-// 2.1: Bit-flips across signature positions (first char, middle char, last char)
+
 $tamperedSigStart = chr(ord($b64Sig[0]) ^ 0x01) . substr($b64Sig, 1);
 $tamperedSigMid = substr($b64Sig, 0, (int)(strlen($b64Sig) / 2)) . chr(ord($b64Sig[(int)(strlen($b64Sig) / 2)]) ^ 0x01) . substr($b64Sig, (int)(strlen($b64Sig) / 2) + 1);
 $tamperedSigEnd = substr($b64Sig, 0, -1) . chr(ord(substr($b64Sig, -1)) ^ 0x01);
@@ -201,7 +201,7 @@ assertStress(
     $allBitFlipsRejected
 );
 
-// 2.2: Payload tampering with untouched signature
+
 $rawJsonPayload = base64_decode(strtr($b64Payload, '-_', '+/'));
 $decodedPayload = json_decode($rawJsonPayload, true);
 $decodedPayload['name'] = 'Злоумышленник Хакер';
@@ -216,10 +216,10 @@ assertStress(
     $resPayloadTamper['code'] === 400 && ($resPayloadTamper['data']['valid'] ?? true) === false
 );
 
-// 2.3: Expiration boundary: exp - 1s (expired), exp (exact edge), exp + 10s (valid)
+
 $secret = BadgeService::getSecret();
 
-// Expired by 1 second: exp = time() - 1
+
 $payloadExp1 = $decodedPayload;
 $payloadExp1['iat'] = time() - 3601;
 $payloadExp1['exp'] = time() - 1;
@@ -228,7 +228,7 @@ $b64Exp1 = rtrim(strtr(base64_encode($jsonExp1), '+/', '-_'), '=');
 $sigExp1 = rtrim(strtr(base64_encode(hash_hmac('sha256', $b64Exp1, $secret, true)), '+/', '-_'), '=');
 $resExp1 = $harness->apiCall('GET', "/api/volunteers/badge/{$b64Exp1}.{$sigExp1}");
 
-// Unexpired: exp = time() + 30
+
 $payloadValid = $decodedPayload;
 $payloadValid['iat'] = time() - 10;
 $payloadValid['exp'] = time() + 30;
@@ -244,8 +244,8 @@ assertStress(
     && $resValid['code'] === 200 && ($resValid['data']['valid'] ?? false) === true
 );
 
-// 2.4: Future iat clock skew testing: iat = now + 50s (tolerated) vs now + 65s (rejected)
-// iat + 50s
+
+
 $payloadSkew50 = $decodedPayload;
 $payloadSkew50['iat'] = time() + 50;
 $payloadSkew50['exp'] = time() + 3650;
@@ -254,7 +254,7 @@ $b64Skew50 = rtrim(strtr(base64_encode($jsonSkew50), '+/', '-_'), '=');
 $sigSkew50 = rtrim(strtr(base64_encode(hash_hmac('sha256', $b64Skew50, $secret, true)), '+/', '-_'), '=');
 $resSkew50 = $harness->apiCall('GET', "/api/volunteers/badge/{$b64Skew50}.{$sigSkew50}");
 
-// iat + 65s (beyond 60s skew limit)
+
 $payloadSkew65 = $decodedPayload;
 $payloadSkew65['iat'] = time() + 65;
 $payloadSkew65['exp'] = time() + 3665;
@@ -270,12 +270,12 @@ assertStress(
     && $resSkew65['code'] === 400 && ($resSkew65['data']['valid'] ?? true) === false
 );
 
-// =========================================================================
-// VECTOR 3: Anonymization & Instant Volunteer Accreditation Revocation
-// =========================================================================
+
+
+
 echo "\n[Vector 3] Volunteer Accreditation Instant Revocation on Anonymization:\n";
 
-// Register volunteer 3, approve accreditation, generate dynamic badge
+
 $regVol3 = $harness->registerUser(2, 'Кузнецов Сергей Петрович');
 $uidVol3 = (int)$regVol3['user']['id'];
 $tokenVol3 = $regVol3['token'];
@@ -283,19 +283,19 @@ $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$uidVol3}");
 
 $activeBadgeToken3 = BadgeService::generateBadgeToken($uidVol3, 'Кузнецов Сергей Петрович');
 
-// Confirm badge is valid initially
+
 $checkBefore = $harness->apiCall('GET', "/api/volunteers/badge/{$activeBadgeToken3}");
 $validBefore = ($checkBefore['code'] === 200 && ($checkBefore['data']['valid'] ?? false) === true);
 
-// Exercise Right to be Forgotten via API
+
 $anonRes = $harness->apiCall('POST', '/api/privacy/anonymize', ['confirm' => true], ["Authorization: Bearer {$tokenVol3}"]);
 $anonOk = ($anonRes['code'] === 200 && ($anonRes['data']['success'] ?? false) === true);
 
-// Re-verify the active badge token (cryptographically valid, TTL not expired)
+
 $checkAfter = $harness->apiCall('GET', "/api/volunteers/badge/{$activeBadgeToken3}");
 $validAfter = ($checkAfter['data']['valid'] ?? true) === false;
 
-// Direct DB verification
+
 $vProf3 = VolunteerProfile::find($uidVol3);
 $isRevokedInDb = ((int)($vProf3['is_verified'] ?? 1) === 0)
     && (($vProf3['verification_status'] ?? '') === 'REVOKED')
@@ -307,14 +307,14 @@ assertStress(
     $validBefore && $anonOk && $validAfter && $checkAfter['code'] === 400 && $isRevokedInDb
 );
 
-// Also test coordinator rejection instant revocation
+
 $regVol4 = $harness->registerUser(2, 'Васильев Олег Игоревич');
 $uidVol4 = (int)$regVol4['user']['id'];
 $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$uidVol4}");
 $badgeToken4 = BadgeService::generateBadgeToken($uidVol4, 'Васильев Олег Игоревич');
 $check4Pre = $harness->apiCall('GET', "/api/volunteers/badge/{$badgeToken4}");
 
-// Coordinator rejects
+
 $harness->apiCall('POST', "/api/coordinator/reject-volunteer/{$uidVol4}");
 $check4Post = $harness->apiCall('GET', "/api/volunteers/badge/{$badgeToken4}");
 
@@ -326,12 +326,12 @@ assertStress(
     && $check4Post['code'] === 400
 );
 
-// =========================================================================
-// VECTOR 4: EMERCOM Ticket Burst & Collision Stress
-// =========================================================================
+
+
+
 echo "\n[Vector 4] EMERCOM Ticket Burst & Collision Stress:\n";
 
-// Generate 1,000 tickets
+
 $emercomTickets = [];
 $regexPattern = '/^EMERCOM-112-BY-\d{4}-[A-Z0-9]{8}$/';
 $allValidPattern = true;
@@ -352,7 +352,7 @@ assertStress(
     "Count={$count1k}, PatternValid=" . var_export($allValidPattern, true)
 );
 
-// Extended burst: another 2,000 tickets (total 3,000 unique)
+
 for ($i = 0; $i < 2000; $i++) {
     $tid = MchsEmergencyAdapter::generateTicketId();
     $emercomTickets[$tid] = true;
@@ -365,7 +365,7 @@ assertStress(
     "Count={$count3k} / 3000"
 );
 
-// Structural validation of verifyTicketId
+
 $adapter = new MchsEmergencyAdapter();
 $validSampleTicket = array_key_first($emercomTickets);
 $v1 = MchsEmergencyAdapter::verifyTicketId($validSampleTicket);
@@ -379,17 +379,17 @@ assertStress(
     $v1 === true && $v2 === false && $v3 === false && $v4 === false
 );
 
-// =========================================================================
-// VECTOR 5: SOS Burst & Concurrency Resilience
-// =========================================================================
+
+
+
 echo "\n[Vector 5] SOS Burst & Concurrency Resilience:\n";
 
-// Register elderly citizen for SOS test
+
 $regSeniorSOS = $harness->registerUser(1, 'Бабушка Зинаида');
 $uidSeniorSOS = (int)$regSeniorSOS['user']['id'];
 $tokenSeniorSOS = $regSeniorSOS['token'];
 
-// Part A: 10 parallel HTTP requests via curl_multi
+
 $mh = curl_multi_init();
 $curls = [];
 $sosUrl = $harness->getBaseUrl() . '/api/sos';
@@ -448,8 +448,8 @@ assertStress(
     "HTTP 201 count: {$http201Count}/10, Unique IDs: " . count(array_unique($createdSosIds))
 );
 
-// Part B: Direct multiprocess concurrency stress on SQLite
-// Launch 10 independent background CLI processes simultaneously inserting into database
+
+
 $scriptPath = __DIR__ . '/_tmp_sos_worker.php';
 $workerCode = <<<'PHP'
 <?php
@@ -528,7 +528,7 @@ assertStress(
     "Success count: {$procSuccessCount}/10. Errors: " . implode('; ', $procErrors)
 );
 
-// Verify total active alerts created for this user
+
 $stmtCount = $pdo->prepare("SELECT COUNT(*) FROM sos_alerts WHERE elderly_id = :id");
 $stmtCount->execute(['id' => $uidSeniorSOS]);
 $totalAlertsInDb = (int)$stmtCount->fetchColumn();

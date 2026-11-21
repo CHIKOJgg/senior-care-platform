@@ -15,10 +15,10 @@ use App\Models\User;
 
 class SosController
 {
-    /**
-     * Trigger Priority 0 Emergency SOS Alert
-     * Route: POST /api/sos
-     */
+
+
+
+
     public function trigger(): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -26,8 +26,8 @@ class SosController
             Router::json(['error' => 'Слишком много экстренных запросов. Пожалуйста, подождите минуту.'], 429);
         }
 
-        // Require a real session (HttpOnly cookie from the web UI, or an explicit bearer token).
-        // This still blocks the local demo fallback for truly anonymous requests.
+
+
         $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION'])
             || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])
             || !empty($_SERVER['HTTP_X_AUTH_TOKEN'])
@@ -43,7 +43,7 @@ class SosController
 
         $input = Router::getJsonInput();
 
-        // Resolve elderly citizen identity
+
         $role = $currentUser['role_code'] ?? '';
         if ($role === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
@@ -56,7 +56,7 @@ class SosController
             Router::json(['error' => 'Вызов SOS доступен только подопечным, администраторам и координаторам'], 403);
         }
 
-        // Fetch elderly profile defaults if coordinates or address omitted
+
         $profile = ElderlyProfile::find($elderlyId);
         $user = User::find($elderlyId);
 
@@ -68,7 +68,7 @@ class SosController
             ? (float)$input['longitude']
             : (float)($profile['longitude'] ?? 27.5862);
 
-        // Coordinate validation
+
         if ($lat < -90.0 || $lat > 90.0 || $lon < -180.0 || $lon > 180.0) {
             Router::json(['error' => 'Некорректные географические координаты вызова SOS'], 400);
         }
@@ -81,7 +81,7 @@ class SosController
             ? (string)$input['reason']
             : 'Экстренная тревога подопечного: требуется срочная помощь';
 
-        // Keep elderly profile location fresh when real GPS coordinates are provided.
+
         $gpsProvided = isset($input['latitude'], $input['longitude'])
             && is_numeric($input['latitude'])
             && is_numeric($input['longitude']);
@@ -97,7 +97,7 @@ class SosController
             }
         }
 
-        // Modular EMERCOM / 112 dispatch
+
         $emercomAdapter = new MchsEmergencyAdapter();
         $dispatchData = [
             'elderly_id' => $elderlyId,
@@ -110,7 +110,7 @@ class SosController
         $dispatchResult = $emercomAdapter->dispatchEmergency($dispatchData);
         $ticketId = $dispatchResult['ticket_id'] ?? $dispatchResult['incident_code'] ?? null;
 
-        // Persist Priority 0 Alert to database
+
         $alertId = SosAlert::create([
             'elderly_id' => $elderlyId,
             'latitude' => $lat,
@@ -138,10 +138,10 @@ class SosController
         ], 201);
     }
 
-    /**
-     * List active Priority 0 SOS alerts for Coordinator / Admin
-     * Routes: GET /api/sos/active, GET /api/coordinator/sos-alerts, GET /api/coordinator/alerts
-     */
+
+
+
+
     public function activeAlerts(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -156,10 +156,10 @@ class SosController
         ]);
     }
 
-    /**
-     * Show single SOS alert details
-     * Route: GET /api/sos/{id}
-     */
+
+
+
+
     public function show(string $id): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -175,10 +175,10 @@ class SosController
         ]);
     }
 
-    /**
-     * Resolve active SOS alert
-     * Routes: POST /api/sos/{id}/resolve, POST /api/coordinator/sos-alerts/{id}/resolve
-     */
+
+
+
+
     public function resolveAlert(string $id): void
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);

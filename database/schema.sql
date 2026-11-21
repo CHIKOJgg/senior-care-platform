@@ -1,5 +1,3 @@
--- Схема базы данных платформы помощи пожилым людям (Senior Care Platform)
--- SQLite 3 (development / test). Production MySQL schema: database/schema.mysql.sql
 
 CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -71,8 +69,7 @@ CREATE TABLE IF NOT EXISTS help_requests (
     region_code VARCHAR(32) DEFAULT 'MINSK_CITY',
     address TEXT NOT NULL,
     secret_code VARCHAR(50) NOT NULL,
-    status VARCHAR(50) DEFAULT 'open', -- open, in_progress, completed, cancelled
-    volunteer_feedback TEXT NULL,
+    status VARCHAR(50) DEFAULT 'open',     volunteer_feedback TEXT NULL,
     rating_score INTEGER NULL,
     completed_lat REAL NULL,
     completed_lon REAL NULL,
@@ -101,8 +98,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE TABLE IF NOT EXISTS educational_materials (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL, -- memo, audio, video
-    category VARCHAR(100) NOT NULL,
+    type VARCHAR(50) NOT NULL,     category VARCHAR(100) NOT NULL,
     content TEXT NOT NULL,
     audio_url VARCHAR(255) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -112,8 +108,7 @@ CREATE TABLE IF NOT EXISTS fraud_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
-    severity VARCHAR(50) DEFAULT 'warning', -- info, warning, danger
-    is_active INTEGER DEFAULT 1,
+    severity VARCHAR(50) DEFAULT 'warning',     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -126,7 +121,6 @@ CREATE TABLE IF NOT EXISTS volunteer_achievements (
     FOREIGN KEY (volunteer_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Таблица согласий субъектов персональных данных (Закон РБ № 99-З)
 CREATE TABLE IF NOT EXISTS user_consents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -139,7 +133,6 @@ CREATE TABLE IF NOT EXISTS user_consents (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Таблица экстренных вызовов подопечных (Priority 0 SOS)
 CREATE TABLE IF NOT EXISTS sos_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     elderly_id INTEGER NOT NULL,
@@ -155,7 +148,6 @@ CREATE TABLE IF NOT EXISTS sos_alerts (
     FOREIGN KEY (elderly_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Одноразовые коды восстановления пароля (выдаёт координатор ТЦСОН)
 CREATE TABLE IF NOT EXISTS password_resets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -168,7 +160,6 @@ CREATE TABLE IF NOT EXISTS password_resets (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Индексы для оптимизации поиска и фильтрации
 CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);
 CREATE INDEX IF NOT EXISTS idx_password_resets_expires_at ON password_resets(expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_consents_user_id ON user_consents(user_id);

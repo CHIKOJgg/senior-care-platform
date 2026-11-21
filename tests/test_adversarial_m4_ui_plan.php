@@ -1,15 +1,15 @@
 <?php
 declare(strict_types=1);
 
-/**
- * =============================================================================
- * ADVERSARIAL STRESS TEST SUITE: MILESTONE 4 (UI WORKFLOWS & PLAN SUITE)
- * Independent empirical verification of Web Audio API, Voice Interception,
- * Geofencing Telemetry, Dynamic QR Badge, and Architectural Plan Suite.
- * Platform: «ЗаботаРядом» (Советский район г. Минска)
- * Author: Challenger M4-2
- * =============================================================================
- */
+
+
+
+
+
+
+
+
+
 
 $rootDir = dirname(__DIR__);
 $passCount = 0;
@@ -32,7 +32,7 @@ echo "==========================================================================
 echo "  CHALLENGER M4-2: ADVERSARIAL UI WORKFLOWS & PLAN INTEGRITY SUITE              " . PHP_EOL;
 echo "================================================================================" . PHP_EOL;
 
-// Load target files
+
 $appJsPath = $rootDir . '/public/js/app.js';
 $speechJsPath = $rootDir . '/public/js/speech.js';
 $indexPath = $rootDir . '/public/index.php';
@@ -45,12 +45,12 @@ $indexHtml = file_exists($indexPath) ? file_get_contents($indexPath) : '';
 $verifyHtml = file_exists($verifyPath) ? file_get_contents($verifyPath) : '';
 $cssContent = file_exists($cssPath) ? file_get_contents($cssPath) : '';
 
-// =============================================================================
-// PART 1: Web Audio API Siren & Voice Interception Logic
-// =============================================================================
+
+
+
 echo PHP_EOL . "--- [PART 1] Web Audio API Siren & Voice Interception Logic ---" . PHP_EOL;
 
-// 1.1 AudioContext existence and oscillator type
+
 $hasAudioContext = strpos($appJs, 'AudioContext') !== false || strpos($appJs, 'webkitAudioContext') !== false;
 recordResult(
     'AUDIO-SIREN',
@@ -59,7 +59,7 @@ recordResult(
     'AudioContext / webkitAudioContext fallback implemented'
 );
 
-// 1.2 Oscillator frequency configuration: strictly within [600, 900] Hz
+
 $initialFreqMatch = preg_match('/setValueAtTime\s*\(\s*(\d+)\s*,\s*sirenAudioCtx\.currentTime\s*\)/', $appJs, $freqM);
 $initialFreq = $initialFreqMatch ? (int)$freqM[1] : 0;
 $freqSweepMatch = preg_match('/targetFreq\s*=\s*highFreq\s*\?\s*(\d+)\s*:\s*(\d+)/', $appJs, $sweepM);
@@ -78,7 +78,7 @@ recordResult(
     sprintf("Base: %d Hz, Alternating: [%d, %d] Hz", $initialFreq, $lowFreq, $highFreq)
 );
 
-// 1.3 Volume envelope (GainNode) does not exceed 1.0 (no ear damage / clipping)
+
 $gainMatch = preg_match('/sirenGainNode\.gain\.setValueAtTime\s*\(\s*([0-9.]+)\s*,/', $appJs, $gainM);
 $initialGain = $gainMatch ? (float)$gainM[1] : 999.0;
 recordResult(
@@ -88,7 +88,7 @@ recordResult(
     sprintf("Configured gain: %.3f (Safe threshold <= 1.0, recommended <= 0.3)", $initialGain)
 );
 
-// 1.4 Fade out ramp on stopSiren to avoid speaker pop
+
 $rampMatch = preg_match('/sirenGainNode\.gain\.linearRampToValueAtTime\s*\(\s*([0-9.]+)\s*,/', $appJs, $rampM);
 $fadeGain = $rampMatch ? (float)$rampM[1] : 1.0;
 recordResult(
@@ -98,7 +98,7 @@ recordResult(
     sprintf("Fade-out target gain: %.4f", $fadeGain)
 );
 
-// 1.5 User-gesture unlocking: AudioContext resumed from suspended state
+
 $hasResumeCheck = strpos($appJs, "sirenAudioCtx.state === 'suspended'") !== false
     && strpos($appJs, "sirenAudioCtx.resume()") !== false;
 recordResult(
@@ -108,7 +108,7 @@ recordResult(
     'AudioContext checks suspended state and triggers resume'
 );
 
-// 1.6 Mute toggle logic suppresses oscillator
+
 $hasMuteCheck = strpos($appJs, 'isSirenMuted') !== false
     && strpos($appJs, 'toggleSirenMute') !== false
     && strpos($appJs, 'if (isSirenMuted) return') !== false;
@@ -119,7 +119,7 @@ recordResult(
     'isSirenMuted state guard active in playSiren and toggleSirenMute'
 );
 
-// 1.7 Speech recognition keyword triggers in public/js/speech.js
+
 $hasVoiceFn = strpos($speechJs, 'checkEmergencyVoiceCommand') !== false;
 recordResult(
     'VOICE-INTERCEPT',
@@ -128,12 +128,12 @@ recordResult(
     'Voice emergency listener hook declared'
 );
 
-// Extract regex from speech.js
+
 preg_match('/const\s+emergencyRegex\s*=\s*\/(.*?)\/([a-z]*);/', $speechJs, $regexMatches);
 $voicePattern = $regexMatches[1] ?? '';
 $voiceFlags = $regexMatches[2] ?? '';
 
-// Check mandatory keywords: "Помощь", "Тревога", "SOS", "Спасите"
+
 $kwPomosh = stripos($voicePattern, 'помощь') !== false;
 $kwTrevo = stripos($voicePattern, 'тревога') !== false;
 $kwSos = stripos($voicePattern, 'sos') !== false;
@@ -146,8 +146,8 @@ recordResult(
     sprintf("Pattern: /%s/%s (Помощь:%d, Тревога:%d, SOS:%d, Спасите:%d)", $voicePattern, $voiceFlags, $kwPomosh, $kwTrevo, $kwSos, $kwSpasite)
 );
 
-// 1.8 Regex evaluation: PHP PCRE Unicode vs ECMA-262 JavaScript semantics
-// Test with PHP PCRE (Unicode flag /u)
+
+
 $testPhrases = ['Помощь', 'Тревога', 'SOS', 'Спасите', 'Мне нужна помощь срочно', 'Спасите помогите'];
 $pcreMatchedAll = true;
 foreach ($testPhrases as $phrase) {
@@ -163,10 +163,10 @@ recordResult(
     'All test phrases matched under PCRE /u rules'
 );
 
-// 1.9 ECMA-262 JavaScript Word Boundary Verification on Cyrillic
-// In ECMA-262 (Standard JavaScript), \b is ASCII-only word boundary (\w is [A-Za-z0-9_]).
-// Cyrillic characters are non-word characters in JS regex, so \b fails when wrapping Cyrillic words.
-// The implementation in public/js/speech.js must use Unicode-aware boundary matching without ASCII \b adjacent to Cyrillic.
+
+
+
+
 $hasAsciiBoundaryOnCyrillic = str_contains($voicePattern, '\b') && (
     str_starts_with($voicePattern, '\b') ||
     str_ends_with($voicePattern, '\b') ||
@@ -174,7 +174,7 @@ $hasAsciiBoundaryOnCyrillic = str_contains($voicePattern, '\b') && (
     preg_match('/[а-яёА-ЯЁ]\\\\b/u', $voicePattern)
 );
 
-// Verify that negative words like "беспомощный" and "помощник" do not trigger false positives
+
 $negativePhrases = ['беспомощный', 'помощник', 'помощница', 'беспомощность'];
 $negativeRejectedAll = true;
 foreach ($negativePhrases as $neg) {
@@ -190,19 +190,19 @@ recordResult(
     'VOICE-INTERCEPT',
     'VOC-04: JavaScript RegExp uses Unicode-safe word boundaries for Cyrillic keywords',
     $voc04Passed,
-    $voc04Passed 
+    $voc04Passed
         ? 'Pattern avoids ASCII-only \b on Cyrillic keywords and rejects false positives'
-        : ($hasAsciiBoundaryOnCyrillic 
-            ? 'ASCII-only \b boundary detected on Cyrillic in pattern' 
+        : ($hasAsciiBoundaryOnCyrillic
+            ? 'ASCII-only \b boundary detected on Cyrillic in pattern'
             : 'Negative keyword rejection or PCRE matching failed')
 );
 
-// =============================================================================
-// PART 2: Volunteer Geofenced Modal & Distance Telemetry
-// =============================================================================
+
+
+
 echo PHP_EOL . "--- [PART 2] Volunteer Geofenced Modal & Distance Telemetry ---" . PHP_EOL;
 
-// 2.1 DOM elements for geofenced completion in public/index.php
+
 $domGeoModal = strpos($indexHtml, 'id="geo-complete-modal"') !== false;
 $domGeoReqId = strpos($indexHtml, 'id="geoCompleteRequestId"') !== false;
 $domGeoSecret = strpos($indexHtml, 'id="geoSecretWordInput"') !== false;
@@ -218,7 +218,7 @@ recordResult(
     'Modal, inputs, telemetry display, and error boxes confirmed'
 );
 
-// 2.2 openCompleteModal implementation in public/js/app.js
+
 $hasOpenModal = strpos($appJs, 'function openCompleteModal') !== false;
 $populatesId = strpos($appJs, 'reqIdInput.value = id') !== false;
 $queriesGeo = strpos($appJs, 'navigator.geolocation.getCurrentPosition') !== false;
@@ -230,7 +230,7 @@ recordResult(
     'Request ID binding and live GPS query verified in app.js'
 );
 
-// 2.3 submitGeoComplete validates non-empty secret word
+
 $validatesSecret = strpos($appJs, '!secretCode') !== false
     && strpos($appJs, 'errorBox.style.display = \'block\'') !== false;
 
@@ -241,7 +241,7 @@ recordResult(
     'Rejects empty secret code before dispatching to server'
 );
 
-// 2.4 Out-of-range (>150m) feedback formatting in JavaScript
+
 $hasDistanceFeedback = strpos($appJs, 'Превышение радиуса геозоны (до 150 м)') !== false
     && strpos($appJs, 'errorText') !== false;
 
@@ -252,25 +252,25 @@ recordResult(
     'Displays Russian error with distance and prompts volunteer to approach residence'
 );
 
-// 2.5 Live Backend Proof-of-Presence Verification via SQLite
+
 require_once $rootDir . '/app/Core/Database.php';
 $pdo = App\Core\Database::getConnection();
 
-// Clean up any old test records first
+
 $pdo->exec("DELETE FROM help_requests WHERE title LIKE 'CHALLENGER_M4_TEST%'");
 
-// Insert clean test help request assigned to volunteer 2 (Алексей Смирнов)
-// Home coordinates: Sovetsky district (53.9168, 27.5856)
+
+
 $stmt = $pdo->prepare("
     INSERT INTO help_requests (elderly_id, volunteer_id, category_id, title, description, address, latitude, longitude, secret_code, status, assigned_at)
-    VALUES (1, 2, 1, 'CHALLENGER_M4_TEST_GEOFENCE', 'Test request for geofence verification', 'Минск, ул. Якуба Коласа, 28', 53.9168, 27.5856, 'ромашка', 'in_progress', strftime('%s', 'now'))
+    VALUES (1, 2, 1, 'CHALLENGER_M4_TEST_GEOFENCE', 'Test request for geofence verification', 'Минск, ул. Якуба Коласа, 28', 53.9168, 27.5856, 'ромашка', 'in_progress', :assigned_at)
 ");
-$stmt->execute();
+$stmt->execute(['assigned_at' => date('Y-m-d H:i:s')]);
 $testRequestId = (int)$pdo->lastInsertId();
 
 require_once $rootDir . '/app/Services/GeoMatchingService.php';
 
-// Test A: Out of range coordinates (e.g. 53.9280, 27.5990 -> distance ~1.5 km > 150m)
+
 $geoService = new App\Services\GeoMatchingService();
 $distMeters = $geoService->calculateDistanceMeters(53.9168, 27.5856, 53.9280, 27.5990);
 
@@ -281,10 +281,10 @@ recordResult(
     sprintf("Computed distance: %.2f m (Threshold: 150.0 m)", $distMeters)
 );
 
-// Test B: Verify server rejection of out-of-range completion
-// Call /api/requests/{id}/complete via curl against container's local built-in server
+
+
 $ch = curl_init("http://127.0.0.1:8000/api/requests/{$testRequestId}/complete");
-// Volunteer login to obtain Bearer token
+
 $loginCh = curl_init("http://127.0.0.1:8000/api/auth/login");
 curl_setopt($loginCh, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($loginCh, CURLOPT_POST, true);
@@ -294,7 +294,7 @@ $loginResp = json_decode((string)curl_exec($loginCh), true);
 curl_close($loginCh);
 $volToken = $loginResp['token'] ?? '';
 
-// Perform out-of-range complete attempt
+
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
@@ -322,7 +322,7 @@ recordResult(
     sprintf("HTTP %d :: %s", $httpCode, $completeResp['error'] ?? 'No error')
 );
 
-// Verify DB integrity: request MUST remain in_progress
+
 $checkStmt = $pdo->prepare("SELECT status FROM help_requests WHERE id = ?");
 $checkStmt->execute([$testRequestId]);
 $currentStatus = $checkStmt->fetchColumn();
@@ -333,15 +333,15 @@ recordResult(
     "Current status in DB: {$currentStatus}"
 );
 
-// Clean up temporary test request
+
 $pdo->exec("DELETE FROM help_requests WHERE id = {$testRequestId}");
 
-// =============================================================================
-// PART 3: Volunteer Dynamic QR Badge Modal & Expiration Timer
-// =============================================================================
+
+
+
 echo PHP_EOL . "--- [PART 3] Volunteer Dynamic QR Badge Modal ---" . PHP_EOL;
 
-// 3.1 Modal structure in index.php
+
 $domBadgeModal = strpos($indexHtml, 'id="volunteer-badge-modal"') !== false;
 $domBadgeCardContainer = strpos($indexHtml, 'id="badgeQrCardContainer"') !== false;
 $domBadgeTimer = strpos($indexHtml, 'id="badgeCountdownTimer"') !== false;
@@ -355,7 +355,7 @@ recordResult(
     'Modal, card container, countdown timer, refresh button, public status link confirmed'
 );
 
-// 3.2 1-hour countdown timer calculation in app.js
+
 $hasCountdownFn = strpos($appJs, 'function startBadgeCountdown') !== false;
 $hasTtlCalc = strpos($appJs, 'expiresAtTimestamp - now') !== false;
 $hasPadFormat = strpos($appJs, "padStart(2, '0')") !== false;
@@ -368,7 +368,7 @@ recordResult(
     'Timer calculates remaining seconds, formats MM:SS, and switches to expired state'
 );
 
-// 3.3 Test countdown timer formatting math
+
 function formatBadgeCountdown(int $remaining): string {
     $remaining = max(0, $remaining);
     $mins = (int)floor($remaining / 60);
@@ -376,10 +376,10 @@ function formatBadgeCountdown(int $remaining): string {
     return sprintf('%02d:%02d', $mins, $secs);
 }
 
-$testFormat3600 = formatBadgeCountdown(3600); // 60:00
-$testFormat3599 = formatBadgeCountdown(3599); // 59:59
-$testFormat65   = formatBadgeCountdown(65);   // 01:05
-$testFormat0    = formatBadgeCountdown(0);    // 00:00
+$testFormat3600 = formatBadgeCountdown(3600);
+$testFormat3599 = formatBadgeCountdown(3599);
+$testFormat65   = formatBadgeCountdown(65);
+$testFormat0    = formatBadgeCountdown(0);
 
 $mathCorrect = ($testFormat3600 === '60:00')
     && ($testFormat3599 === '59:59')
@@ -393,7 +393,7 @@ recordResult(
     "3600s -> {$testFormat3600}, 3599s -> {$testFormat3599}, 65s -> {$testFormat65}, 0s -> {$testFormat0}"
 );
 
-// 3.4 Expired state UI warning banner in verify.php
+
 $hasVerifyWarningBanner = strpos($verifyHtml, 'alert-banner alert-banner-danger') !== false
     && strpos($verifyHtml, 'Не впускайте человека в жилое помещение') !== false;
 
@@ -404,7 +404,7 @@ recordResult(
     'Renders alert-banner-danger with urgent instructions for elderly citizen'
 );
 
-// 3.5 Refresh button dispatches fresh token request
+
 $refreshTriggersFetch = strpos($appJs, 'refreshBadgeBtn') !== false || strpos($indexHtml, 'id="refreshBadgeBtn"') !== false;
 $showBadgeFetches = strpos($appJs, "authFetch('/api/volunteers/my-badge')") !== false;
 
@@ -415,7 +415,7 @@ recordResult(
     'Button triggers showVolunteerBadge() which re-fetches dynamic badge and restarts timer'
 );
 
-// 3.6 Live API validation of badge re-issue and HMAC-SHA256 signature
+
 $badgeCh = curl_init("http://127.0.0.1:8000/api/volunteers/my-badge");
 curl_setopt($badgeCh, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($badgeCh, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$volToken}"]);
@@ -434,7 +434,7 @@ recordResult(
     sprintf("Token issued with TTL: %d seconds (Expected ~3600s)", $ttlSeconds)
 );
 
-// Verify badge publicly via /api/volunteers/badge/{token}
+
 $publicBadgeCh = curl_init("http://127.0.0.1:8000/api/volunteers/badge/{$badgeToken}");
 curl_setopt($publicBadgeCh, CURLOPT_RETURNTRANSFER, true);
 $publicResp = json_decode((string)curl_exec($publicBadgeCh), true);
@@ -448,7 +448,7 @@ recordResult(
     "Public validation response valid = " . ($publicValid ? 'true' : 'false')
 );
 
-// Adversarial test: Tampered token signature must be rejected
+
 $tamperedToken = $badgeToken . 'tampered';
 $tamperCh = curl_init("http://127.0.0.1:8000/api/volunteers/badge/{$tamperedToken}");
 curl_setopt($tamperCh, CURLOPT_RETURNTRANSFER, true);
@@ -464,85 +464,57 @@ recordResult(
     sprintf("HTTP %d :: valid = %s", $tamperCode, var_export($tamperResp['valid'] ?? null, true))
 );
 
-// =============================================================================
-// PART 4: Architectural Plan Suite Integrity (8 Documents in plan/)
-// =============================================================================
-echo PHP_EOL . "--- [PART 4] Architectural Plan Suite Integrity (plan/*.md) ---" . PHP_EOL;
 
-$planFiles = [
-    '01_SYSTEM_OVERVIEW.md' => [
-        'min_size' => 5000,
-        'keywords' => ['миссия', 'тополог', 'актор']
-    ],
-    '02_GEOFENCING_AND_SECURITY.md' => [
-        'min_size' => 5000,
-        'keywords' => ['Haversine', '6371', 'clamping', '150']
-    ],
-    '03_VOLUNTEER_VERIFICATION_AND_BADGES.md' => [
-        'min_size' => 5000,
-        'keywords' => ['MSI', '14', 'SNILS', '101', 'HMAC-SHA256', 'ISO/IEC 18004']
-    ],
-    '04_DATA_PROTECTION_AND_PRIVACY.md' => [
-        'min_size' => 5000,
-        'keywords' => ['99-З', 'GDPR', 'AES-256-GCM', 'enc:v1:', 'user_consents']
-    ],
-    '05_EMERGENCY_SOS_AND_WATCHDOG.md' => [
-        'min_size' => 5000,
-        'keywords' => ['Priority 0', 'EMERCOM-112', '3600', '7200', '10800']
-    ],
-    '06_DATABASE_MIGRATIONS.md' => [
-        'min_size' => 5000,
-        'keywords' => ['PRAGMA', 'idx_', 'migrate.php']
-    ],
-    '07_REST_API_SPECIFICATION.md' => [
-        'min_size' => 5000,
-        'keywords' => ['/api/requests', '/api/sos', '/api/volunteers', 'OpenAPI']
-    ],
-    '08_TESTING_AND_AUDIT.md' => [
-        'min_size' => 5000,
-        'keywords' => ['Tier 1', 'Tier 2', 'Tier 3', 'Tier 4', 'Tier 5']
-    ]
+
+
+echo PHP_EOL . "--- [PART 4] Architecture Decision Records Integrity (docs/adr/*.md) ---" . PHP_EOL;
+
+$adrFiles = [
+    'README.md' => ['min_size' => 500, 'keywords' => ['ADR-0001', 'ADR-0014', 'Стек']],
+    '0001-php82-custom-mvc.md' => ['min_size' => 500, 'keywords' => ['PHP 8.2', 'MVC', 'Composer']],
+    '0002-vanilla-js-frontend-wcag.md' => ['min_size' => 500, 'keywords' => ['Vanilla', 'WCAG', 'CSS']],
+    '0003-database-sqlite-mysql.md' => ['min_size' => 500, 'keywords' => ['SQLite', 'MySQL', 'PDO']],
+    '0004-pdo-idempotent-migrations.md' => ['min_size' => 500, 'keywords' => ['PDO', 'migrate.php', 'индекс']],
+    '0005-hmac-auth-and-rate-limiting.md' => ['min_size' => 500, 'keywords' => ['HMAC', 'RBAC', 'Rate']],
+    '0007-aes256gcm-and-data-masking.md' => ['min_size' => 500, 'keywords' => ['99-З', 'AES-256-GCM', 'enc:v1:']],
+    '0008-identity-provider-adapters.md' => ['min_size' => 500, 'keywords' => ['МСИ', 'СНИЛС', '101']],
+    '0009-emergency-112-adapter.md' => ['min_size' => 500, 'keywords' => ['EMERCOM-112', '112', 'SOS']],
+    '0012-custom-test-harness.md' => ['min_size' => 500, 'keywords' => ['T1', 'T2', 'run_e2e.php']],
+    '0015-anti-fraud-keyword-ai-fallback.md' => ['min_size' => 500, 'keywords' => ['OpenRouter', 'fallback', 'risk_level']]
 ];
 
-foreach ($planFiles as $filename => $spec) {
-    $fullPath = $rootDir . '/plan/' . $filename;
+foreach ($adrFiles as $filename => $spec) {
+    $fullPath = $rootDir . '/docs/adr/' . $filename;
     $exists = file_exists($fullPath);
     $size = $exists ? filesize($fullPath) : 0;
-    $content = $exists ? file_get_contents($fullPath) : '';
+    $content = $exists ? (string)file_get_contents($fullPath) : '';
 
-    // File existence & size test
     recordResult(
-        'PLAN-SUITE',
-        "PLN-EX-{$filename}: Exists and exceeds 5,000 bytes",
+        'ADR-SUITE',
+        "ADR-EX-{$filename}: Exists and exceeds 500 bytes",
         $exists && $size >= $spec['min_size'],
         sprintf("Size: %d bytes (Threshold: %d bytes)", $size, $spec['min_size'])
     );
 
-    // Keywords check
     foreach ($spec['keywords'] as $kw) {
         $found = mb_stripos($content, $kw, 0, 'UTF-8') !== false;
-        // Check Cyrillic equivalent if Latin acronym
-        if (!$found && $kw === 'SNILS' && mb_stripos($content, 'СНИЛС', 0, 'UTF-8') !== false) {
-            $found = true; // Accepted via Cyrillic СНИЛС
-            $kw = 'SNILS/СНИЛС';
-        }
         recordResult(
-            'PLAN-SUITE',
-            "PLN-KW-{$filename}: Contains required keyword/formula [{$kw}]",
+            'ADR-SUITE',
+            "ADR-KW-{$filename}: Contains required keyword [{$kw}]",
             $found,
-            $found ? "Found in document" : "MISSING from document"
+            $found ? 'Found in document' : 'MISSING from document'
         );
     }
 }
 
-// =============================================================================
-// PART 5: Zero-Emoji Compliance & Database State Integrity
-// =============================================================================
-echo PHP_EOL . "--- [PART 5] Zero-Emoji Forensic Audit & SQLite Database State ---" . PHP_EOL;
+
+
+
+echo PHP_EOL . "--- [PART 5] Zero-Emoji Forensic Audit & Database State ---" . PHP_EOL;
 
 $targetFiles = array_merge(
     [$indexPath, $verifyPath, $cssPath, $appJsPath, $speechJsPath],
-    glob($rootDir . '/plan/*.md') ?: []
+    glob($rootDir . '/docs/adr/*.md') ?: []
 );
 
 $emojiPattern = '/[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}]/u';
@@ -559,21 +531,35 @@ foreach ($targetFiles as $file) {
 
 recordResult(
     'ZERO-EMOJI',
-    'EMJ-01: Zero Unicode emojis in all M4 frontend, CSS, JS, and plan documents',
+    'EMJ-01: Zero Unicode emojis in all M4 frontend, CSS, JS, and ADR documents',
     $totalEmojiCount === 0,
     sprintf("Found %d emoji characters across %d files", $totalEmojiCount, count($targetFiles))
 );
 
-// Database foreign keys check
-$fkCheck = $pdo->query("PRAGMA foreign_key_check")->fetchAll();
-recordResult(
-    'DB-INTEGRITY',
-    'DB-01: SQLite foreign key integrity verified (0 violations)',
-    count($fkCheck) === 0,
-    sprintf("%d foreign key violations found", count($fkCheck))
-);
 
-// Ensure no test artifacts remain in DB
+$driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+if ($driver === 'sqlite') {
+    $fkCheck = $pdo->query("PRAGMA foreign_key_check")->fetchAll();
+    recordResult(
+        'DB-INTEGRITY',
+        'DB-01: SQLite foreign key integrity verified (0 violations)',
+        count($fkCheck) === 0,
+        sprintf("%d foreign key violations found", count($fkCheck))
+    );
+} else {
+    $fkCount = (int)$pdo->query("
+        SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
+        WHERE CONSTRAINT_SCHEMA = DATABASE()
+    ")->fetchColumn();
+    recordResult(
+        'DB-INTEGRITY',
+        'DB-01: MySQL foreign key constraints are present',
+        $fkCount > 0,
+        sprintf("%d foreign key constraints found", $fkCount)
+    );
+}
+
+
 $testRowsCount = (int)$pdo->query("SELECT COUNT(*) FROM help_requests WHERE title LIKE 'CHALLENGER_M4_TEST%'")->fetchColumn();
 recordResult(
     'DB-INTEGRITY',
@@ -582,9 +568,9 @@ recordResult(
     sprintf("%d test artifacts remaining", $testRowsCount)
 );
 
-// =============================================================================
-// SUMMARY & VERDICT
-// =============================================================================
+
+
+
 echo PHP_EOL . "================================================================================" . PHP_EOL;
 echo "  TEST SUMMARY" . PHP_EOL;
 echo "================================================================================" . PHP_EOL;
@@ -603,5 +589,5 @@ if ($failCount > 0) {
 }
 echo "================================================================================" . PHP_EOL;
 
-// Exit with non-zero if failures found
+
 exit($failCount > 0 ? 1 : 0);

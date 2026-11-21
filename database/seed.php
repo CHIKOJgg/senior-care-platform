@@ -119,8 +119,8 @@ if ($seedDemoUsers && !User::findByPhone('+375299999999')) {
     ]);
 }
 
-// Administrator from environment: created last so demo IDs stay stable (1=elderly, 2=volunteer,
-// 3=coordinator, 4=admin). If ADMIN_PHONE matches the demo admin, this block is a no-op.
+
+
 $adminPhone = getenv('ADMIN_PHONE') ?: '';
 $adminPassword = getenv('ADMIN_PASSWORD') ?: '';
 if ($adminPhone !== '' && $adminPassword !== '') {
@@ -134,8 +134,8 @@ if ($adminPhone !== '' && $adminPassword !== '') {
         ]);
         echo "[SEED] Admin created from ADMIN_PHONE\n";
     } elseif ($seedDemoUsers) {
-        // Demo/staging only: keep the ADMIN_PHONE credentials authoritative.
-        // Production (SEED_DEMO=false) never overwrites a rotated admin password.
+
+
         User::update((int)$existingAdmin['id'], [
             'role_id' => 4,
             'password_hash' => password_hash($adminPassword, PASSWORD_DEFAULT)
@@ -159,7 +159,7 @@ if ($seedDemoUsers && empty(HelpRequest::all())) {
     ]);
 }
 
-// Country-wide demo coverage: one senior and one open request in every region of Belarus.
+
 if ($seedDemoUsers) {
     $regionalDemo = [
         [

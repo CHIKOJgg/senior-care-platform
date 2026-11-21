@@ -5,7 +5,7 @@ require_once __DIR__ . '/../app/Services/BadgeService.php';
 
 use App\Services\BadgeService;
 
-// Извлечение токена из query параметра или path_info
+
 $token = trim((string)($_GET['token'] ?? ''));
 if ($token === '') {
     $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
@@ -90,7 +90,7 @@ if ($token !== '') {
 <body class="senior-mode">
     <main class="container">
         <div class="verify-card">
-            <!-- Header with Official TЦСОН Seal (Pure Vector SVG) -->
+
             <div class="seal-header">
                 <svg class="badge-seal-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="50" cy="50" r="46" stroke="#004085" stroke-width="4" fill="#F0F7FF"/>
@@ -122,11 +122,11 @@ if ($token !== '') {
                 <?php endif; ?>
             </div>
 
-            <?php if ($isValid && isset($badgeData['volunteer'])): 
+            <?php if ($isValid && isset($badgeData['volunteer'])):
                 $v = $badgeData['volunteer'];
                 $fullNameFormatted = htmlspecialchars(trim(($v['first_name'] ?? '') . ' ' . ($v['last_initial'] ?? '')));
             ?>
-                <!-- Valid Volunteer Details (Law 99-Z Compliant: No full phone or passport) -->
+
                 <div style="margin-top: 20px;">
                     <div class="data-row">
                         <span class="data-label">Имя волонтёра:</span>
@@ -156,7 +156,7 @@ if ($token !== '') {
                     </p>
                 </div>
             <?php else: ?>
-                <!-- Warning Notice for Invalid / Expired Badge -->
+
                 <div class="alert-banner alert-banner-danger" style="margin-top: 20px;">
                     <h3 style="display: flex; align-items: center; gap: 8px;">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -172,7 +172,7 @@ if ($token !== '') {
                 </div>
             <?php endif; ?>
 
-            <!-- Hotline Support Footer -->
+
             <div style="margin-top: 30px; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 20px;">
                 <p style="font-size: 0.95rem; color: #334155; margin-bottom: 6px;">
                     Дежурная служба ТЦСОН: <strong>+375 (17) 377-00-00</strong>

@@ -17,13 +17,13 @@ class SecurityService
         return self::$friendlyWords[random_int(0, count(self::$friendlyWords) - 1)];
     }
 
-    /**
-     * Normalize secret code:
-     * - Trim whitespace
-     * - Strip surrounding unicode and standard quotation marks («», "", '', “”, ‘’)
-     * - Lowercase (UTF-8)
-     * - Cyrillic 'ё' <-> 'е' unification
-     */
+
+
+
+
+
+
+
     public static function normalizeCode(string $code): string
     {
         $code = trim($code);
@@ -33,9 +33,9 @@ class SecurityService
         return str_replace('ё', 'е', $code);
     }
 
-    /**
-     * Verify provided secret code against expected code with Cyrillic hardening.
-     */
+
+
+
     public static function verifyCode(string $provided, string $expected): bool
     {
         $normProvided = self::normalizeCode($provided);

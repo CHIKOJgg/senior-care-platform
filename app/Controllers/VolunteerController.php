@@ -15,16 +15,16 @@ use App\Models\User;
 
 class VolunteerController
 {
-    /**
-     * Self-service endpoint for verified volunteers to retrieve their active dynamic badge
-     * GET /api/volunteers/my-badge
-     */
+
+
+
+
     public function myBadge(): void
     {
-        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) || 
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) ||
                            !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ||
-                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) || 
-                           !empty($_COOKIE['auth_token']) || 
+                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) ||
+                           !empty($_COOKIE['auth_token']) ||
                            !empty($_SERVER['HTTP_X_DEMO_USER']);
         if (!$hasExplicitAuth) {
             Router::json(['error' => 'Требуется авторизация в системе', 'code' => 'UNAUTHORIZED'], 401);
@@ -87,10 +87,10 @@ class VolunteerController
         ]);
     }
 
-    /**
-     * Public verification endpoint for citizens/relatives scanning the QR code
-     * GET /api/volunteers/badge/{token}
-     */
+
+
+
+
     public function verifyPublicBadge(string $token): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -107,10 +107,10 @@ class VolunteerController
         Router::json($result, 200);
     }
 
-    /**
-     * Render dynamic visual SVG Badge Card directly
-     * GET /api/volunteers/badge/{token}/svg
-     */
+
+
+
+
     public function renderBadgeSvg(string $token): void
     {
         $payload = BadgeService::verifyBadgeToken($token);
@@ -132,10 +132,10 @@ class VolunteerController
         exit;
     }
 
-    /**
-     * Volunteer identity self-verification via external provider (MSI / Gosuslugi)
-     * POST /api/volunteers/verify-identity
-     */
+
+
+
+
     public function verifyIdentity(): void
     {
         $auth = AuthService::requireAuth(['volunteer', 'admin']);
@@ -172,7 +172,7 @@ class VolunteerController
             ], 422);
         }
 
-        // Update profile in database
+
         $vp = VolunteerProfile::find($userId);
         if ($vp) {
             VolunteerProfile::update($userId, [

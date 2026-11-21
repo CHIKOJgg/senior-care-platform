@@ -6,10 +6,10 @@ namespace App\Core;
 
 use Throwable;
 
-/**
- * Lightweight Prometheus metrics for the PHP-FPM app.
- * HTTP counters are aggregated in a locked JSON file; business gauges come from the DB.
- */
+
+
+
+
 class MetricsService
 {
     public static function recordRequest(string $route, int $status, float $duration): void
@@ -52,7 +52,7 @@ class MetricsService
             flock($fp, LOCK_UN);
             fclose($fp);
         } catch (Throwable $e) {
-            // Metrics must never break a request
+
         }
     }
 

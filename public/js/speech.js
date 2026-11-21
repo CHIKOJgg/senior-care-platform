@@ -1,16 +1,16 @@
-/**
- * Speech Module: Web Speech API (STT Voice-to-Text & TTS Text-to-Speech)
- *
- * Smart narration:
- *  - reads browser accessibility preferences (forced-colors, prefers-contrast,
- *    prefers-reduced-motion, dark theme, large root font) and the app's senior mode;
- *  - mirrors every announcement into an aria-live region so real screen readers
- *    receive the same message;
- *  - queues speech by priority, de-duplicates repeats and never lets a routine
- *    message interrupt an emergency announcement;
- *  - picks a Russian voice, slows down for accessibility/senior mode and can be
- *    muted with the header toggle (persisted in localStorage).
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
 const SpeechHelper = {
     recognition: null,
     isListening: false,
@@ -36,9 +36,6 @@ const SpeechHelper = {
         voice: null
     },
 
-    // ---------------------------------------------------------------------
-    // Browser accessibility detection
-    // ---------------------------------------------------------------------
     detectProfile() {
         const mq = (query) => {
             try {
@@ -58,9 +55,9 @@ const SpeechHelper = {
             || localStorage.getItem('seniorMode') === 'true';
         const largeText = rootFontSize >= 18;
 
-        // "Blind mode" is our best-effort signal from the browser + the app's own
-        // accessibility switches. Screen readers cannot be detected directly, so
-        // forced-colors / high-contrast are treated as a screen-reader hint.
+
+
+
         const blindMode = forcedColors || highContrast || reducedMotion || seniorMode || largeText;
         const screenReaderLikely = forcedColors || highContrast;
 
@@ -101,9 +98,9 @@ const SpeechHelper = {
         return profile;
     },
 
-    // ---------------------------------------------------------------------
-    // Init
-    // ---------------------------------------------------------------------
+
+
+
     initSmartNarration() {
         if (this._initialized) return;
         this._initialized = true;
@@ -130,11 +127,11 @@ const SpeechHelper = {
             try {
                 window.matchMedia(query).addEventListener?.('change', () => this.refreshProfile({ announce: true }));
             } catch (e) {
-                // Older browsers: no media query listeners.
+
             }
         });
 
-        // Stop speech when a dialog/page is left or the tab is hidden.
+
         document.addEventListener('visibilitychange', () => {
             if (document.hidden) this.stop();
         });
@@ -149,7 +146,7 @@ const SpeechHelper = {
         this.bindToggleButton();
         this.announcePageOnLoad();
 
-        // Chrome sometimes pauses long utterances; keep the queue alive.
+
         window.addEventListener('beforeunload', () => this.stop());
     },
 
@@ -218,8 +215,8 @@ const SpeechHelper = {
     announcePageOnLoad() {
         if (!this.state.profile.blindMode) return;
 
-        // Screen reader users already hear the page from their own software:
-        // give them a compact aria-live hint instead of duplicate TTS.
+
+
         setTimeout(() => {
             if (this.state.autoAnnounced) return;
             this.state.autoAnnounced = true;
@@ -232,9 +229,9 @@ const SpeechHelper = {
         }, 900);
     },
 
-    // ---------------------------------------------------------------------
-    // Voice selection
-    // ---------------------------------------------------------------------
+
+
+
     pickVoice() {
         if (!('speechSynthesis' in window)) return null;
         if (this.state.voice) return this.state.voice;
@@ -245,9 +242,9 @@ const SpeechHelper = {
         return this.state.voice;
     },
 
-    // ---------------------------------------------------------------------
-    // Announcements (aria-live + TTS)
-    // ---------------------------------------------------------------------
+
+
+
     announce(text, priority = 2) {
         const clean = String(text || '').replace(/\s+/g, ' ').trim();
         if (!clean) return;
@@ -279,7 +276,6 @@ const SpeechHelper = {
         const clean = this.cleanText(text, maxLength);
         if (!clean) return;
 
-        // Screen readers get the same message through aria-live.
         this.announce(clean, priority);
 
         if (!this.state.enabled && !force && priority !== 0) return;
@@ -293,7 +289,7 @@ const SpeechHelper = {
 
         if (!('speechSynthesis' in window)) return;
 
-        // Emergency messages interrupt everything; normal ones wait behind them.
+
         if (priority === 0) {
             this.state.queue = [];
             this.cancelCurrent();
@@ -306,7 +302,7 @@ const SpeechHelper = {
             return;
         }
 
-        // A more important message replaces the current one; drop stale queue items.
+
         this.state.queue = [];
         this.cancelCurrent();
         this.speakNow(clean, priority);
@@ -356,7 +352,7 @@ const SpeechHelper = {
             try {
                 window.speechSynthesis.cancel();
             } catch (e) {
-                // ignore
+
             }
         }
     },
@@ -366,9 +362,9 @@ const SpeechHelper = {
         this.cancelCurrent();
     },
 
-    // ---------------------------------------------------------------------
-    // Page summary
-    // ---------------------------------------------------------------------
+
+
+
     speakPage({ automatic = false } = {}) {
         const parts = [];
         const pageTitle = document.title.replace(/\s*[—-]\s*ЗаботаРядом\s*$/, '').trim();
@@ -392,9 +388,6 @@ const SpeechHelper = {
         this.speak(intro + parts.join('. '), { priority: automatic ? 2 : 1, maxLength: 700 });
     },
 
-    // ---------------------------------------------------------------------
-    // Speech-to-text (unchanged public API)
-    // ---------------------------------------------------------------------
     initSTT(onResultCallback, onEndCallback) {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {

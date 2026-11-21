@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 
-// If request is targeting API, delegate to API router
+
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '/';
 $requestUri = rtrim($requestUri, '/');
 if ($requestUri === '') {
     $requestUri = '/';
 }
 
-// Never serve a stale authenticated/staff page from cache or bfcache.
+
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Vary: Cookie');
@@ -17,8 +17,8 @@ if (str_starts_with($requestUri, '/api/')) {
     exit;
 }
 
-// Autoload application classes so the server can resolve the authenticated role
-// from the HttpOnly session cookie before rendering any markup.
+
+
 spl_autoload_register(function (string $class): void {
     $prefix = 'App\\';
     if (!str_starts_with($class, $prefix)) {
@@ -35,15 +35,15 @@ $authToken = $_COOKIE['auth_token'] ?? '';
 $hasAuthCookie = is_string($authToken) && $authToken !== '';
 if ($hasAuthCookie) {
     try {
-        // Cookie-based resolution validates token_version (revocation) as well as signature.
+
         $sessionUser = \App\Services\AuthService::getCurrentUser();
     } catch (\Throwable $e) {
         $sessionUser = null;
     }
 }
 
-// Expired/revoked cookie must not block the senior entrance: clear it and
-// let the device re-provision itself on "/".
+
+
 if ($hasAuthCookie && $sessionUser === null) {
     setcookie('auth_token', '', [
         'expires' => time() - 3600,
@@ -56,8 +56,8 @@ if ($hasAuthCookie && $sessionUser === null) {
     $hasAuthCookie = false;
 }
 
-// Guest entrance: unauthenticated users on "/" see the elderly workspace as guest.
-// They can view education and fraud-check, but cannot create requests until they log in.
+
+
 $isGuestElderly = ($sessionUser === null && $requestUri === '/');
 $roleCode = (string)($sessionUser['role_code'] ?? '');
 $viewRole = match ($roleCode) {
@@ -81,8 +81,8 @@ if (!\App\Services\RegionService::exists($profileRegion)) {
     $profileRegion = 'MINSK_CITY';
 }
 
-// One URL per role: staff cannot open another role's workspace. "/login" is always
-// available (so staff can sign in from a device that is already senior-signed-in).
+
+
 if ($isAuthed) {
     $guardedPaths = ['/', '/admin', '/volunteer'];
     if (in_array($requestUri, $guardedPaths, true) && $requestUri !== $homeUrl) {
@@ -94,9 +94,9 @@ if ($isAuthed) {
     exit;
 }
 
-// -------------------------------------------------------------------------
-// Dedicated staff/volunteer login page. "/" is available to guests as elderly view.
-// -------------------------------------------------------------------------
+
+
+
 if ($requestUri === '/login' || (!$isAuthed && !$isGuest)) {
     $loginNotice = isset($_GET['expired'])
         ? 'Сессия истекла. Войдите снова.'
@@ -224,7 +224,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 </head>
 <body data-initial-role="<?php echo htmlspecialchars($viewRole ?? 'guest'); ?>" data-mode="<?php echo $mode; ?>" data-is-guest="<?php echo !empty($isGuest) ? '1' : '0'; ?>">
 
-<!-- Top Status Bar -->
+
 <div class="quick-auth-bar">
     <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
         <span id="currentUserDisplay" style="font-weight: 700; color: var(--primary-color); display: inline-flex; align-items: center; gap: 6px;">
@@ -279,7 +279,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 </header>
 
 <main class="container">
-    <!-- Active Danger Alert Banner for Citizens -->
+
     <div id="urgentAlertBox" class="alert-banner alert-banner-danger" style="display: none;">
         <div>
             <h3 id="alertTitle" style="display: flex; align-items: center; gap: 8px;">
@@ -294,12 +294,12 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         </button>
     </div>
 
-    <!-- ========================================================================= -->
-    <!-- 1. USER SECTION: STRICTLY 2 FUNCTIONS ONLY                               -->
-    <!-- ========================================================================= -->
+
+
+
     <?php if ($viewRole === 'user'): ?>
     <div id="view-user" class="role-view" style="display: block;">
-        <!-- Active Emergency SOS Banner (Displays EMERCOM-112-BY ticket) -->
+
         <div id="activeSosBanner" class="alert-banner alert-banner-danger sos-pulse-banner" style="display: none; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
@@ -325,7 +325,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         </div>
 
         <?php if (empty($isGuest)): ?>
-        <!-- Dedicated High-Contrast Emergency SOS Button (WCAG 2.1 AAA Compliant) -->
+
         <div class="card card-accent-danger" style="background: #fef2f2; border: 3px solid var(--danger-color); padding: 16px 20px; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                 <div style="display: flex; align-items: center; gap: 14px;">
@@ -350,7 +350,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </div>
         <?php endif; ?>
-        <!-- 3 Function Selector Navigation -->
+
         <div class="user-functions-nav">
             <button class="function-card-btn active" data-user-func="func-request" id="btnFuncRequest">
                 <span class="function-icon">
@@ -380,7 +380,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </button>
         </div>
-        <!-- User Function 1: Help Request -->
+
         <section id="func-request" class="user-func-pane">
             <?php if (!empty($isGuest)): ?>
             <div class="card" style="border-left: 4px solid var(--primary-color);">
@@ -394,7 +394,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             <?php else: ?>
             <div class="card">
                 <h2 style="margin-bottom: 16px;">Какая помощь вам требуется?</h2>
-                
+
                 <input type="hidden" id="selectedCategory" value="1">
                 <div class="category-grid" id="categoryGrid">
                     <div class="category-card selected" data-id="1">
@@ -435,7 +435,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
 
-                <!-- Voice Dictation Feature -->
+
                 <div class="card card-accent-primary" style="background: #eff6ff;">
                     <div class="voice-bar">
                         <button type="button" id="micBtn" class="mic-btn" title="Нажмите и говорите">
@@ -479,7 +479,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </button>
                 </form>
 
-                <!-- Modal / Banner for Secret Code -->
+
                 <div id="secretCodeBanner" class="secret-code-banner" style="display: none;">
                     <h3 style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -494,7 +494,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- My Active Requests (for Elderly) -->
+
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <h3 style="display: flex; align-items: center; gap: 8px;">
@@ -511,11 +511,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <p>Загрузка ваших заявок...</p>
                 </div>
             </div>
-        
+
             <?php endif; ?>
         </section>
 
-        <!-- User Function 2: Safety & Anti-Fraud Scanner -->
+
         <section id="func-safety" class="user-func-pane" style="display: none;">
             <div class="card card-accent-danger">
                 <h2 style="display: flex; align-items: center; gap: 8px;">
@@ -523,7 +523,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <span>Проверка подозрительного звонка или СМС</span>
                 </h2>
                 <p style="margin: 8px 0 16px 0;">Вам позвонили из банка, милиции или водоканала? Вставьте текст или перескажите фразу сюда для мгновенной проверки:</p>
-                
+
                 <div class="voice-bar">
                     <button type="button" id="micFraudBtn" class="mic-btn" style="width: 50px; height: 50px;" title="Надиктовать голосом">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
@@ -549,13 +549,13 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     Проверить на мошенничество
                 </button>
-                
+
                 <div id="fraudResultBox" style="display: none; margin-top: 16px; padding: 16px; border-radius: 12px; border: 2px solid;"></div>
             </div>
 
                     </section>
 
-        <!-- User Function 3: Safety Lessons & Memos -->
+
         <section id="func-education" class="user-func-pane" style="display: none;">
             <div class="card">
                 <h2 style="display: flex; align-items: center; gap: 8px;">
@@ -587,7 +587,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 <div id="educationList"></div>
             </div>
         </section>
-        <!-- Privacy & Right to be Forgotten Card (Law 99-Z) -->
+
         <div class="card" style="margin-top: 20px; border-top: 2px solid var(--border-color);">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <div>
@@ -614,11 +614,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 
     <?php if ($viewRole === 'admin'): ?>
-    <!-- ========================================================================= -->
-    <!-- 2. ADMIN SECTION: MANAGEMENT & ANALYTICS                                  -->
-    <!-- ========================================================================= -->
+
+
+
     <div id="view-admin" class="role-view" style="display: block;">
-        <!-- Coordinator Priority 0 SOS Incident Console Banner -->
+
         <div id="coordinatorSosBannerContainer" style="display: none;"></div>
 
         <div class="card" style="border-top: 6px solid var(--text-color);">
@@ -633,7 +633,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 <span class="admin-badge">РЕСПУБЛИКА БЕЛАРУСЬ</span>
             </div>
 
-            <!-- Admin Sub-Navigation -->
+
             <div class="admin-subnav" role="tablist">
                 <button class="admin-subnav-btn active" data-admin-tab="admin-analytics" id="btnAdminAnalytics">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -665,7 +665,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </button>
             </div>
 
-            <!-- Tab 1: Analytics & Reports -->
+
             <div id="admin-analytics" class="admin-tab-pane">
                 <div class="stat-grid" id="analyticsKpiGrid">
                     <div class="stat-card">
@@ -687,7 +687,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 20px;">
-                    <!-- Categories Breakdown -->
+
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Распределение потребностей по категориям</h3>
                         <div id="categoryAnalyticsBars" style="margin-top: 16px;">
@@ -695,7 +695,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </div>
                     </div>
 
-                    <!-- Top Volunteers Leaderboard in Admin -->
+
                     <div class="card" style="margin-bottom: 0;">
                         <h3 style="display: flex; align-items: center; gap: 8px;">
                             <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
@@ -707,7 +707,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- Tab 2: Volunteer Verification Queue -->
+
             <div id="admin-volunteers" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -721,7 +721,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
 
-                <!-- Rating filter: only show volunteers at or above the chosen rating -->
+
                 <div class="card" style="margin-bottom: 16px; padding: 14px 18px;">
                     <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;">
                         <div class="form-group" style="margin-bottom: 0; min-width: 220px;">
@@ -754,7 +754,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- Tab 3: Help Requests Management -->
+
             <div id="admin-requests" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -796,7 +796,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- Tab 4: Safety Alerts -->
+
             <div id="admin-alerts" class="admin-tab-pane" style="display: none;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
                     <div>
@@ -805,7 +805,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                             <span>Опубликовать экстренное оповещение</span>
                         </h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 16px;">Предупреждение мгновенно появится на главной странице подопечных.</p>
-                        
+
                         <form id="alertForm">
                             <div class="form-group">
                                 <label class="form-label" for="alertInputTitle">Заголовок предупреждения:</label>
@@ -840,7 +840,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- Tab 5: Coordinator Watchdog View -->
+
             <div id="admin-watchdog" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -884,7 +884,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-            <!-- Tab 6: Access Recovery (coordinator-issued one-time codes) -->
+
             <div id="admin-access" class="admin-tab-pane" style="display: none;">
                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
                     <div class="card" style="margin-bottom:0;">
@@ -957,10 +957,10 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
             </div>
-            <!-- Tab 7: Request types (categories) + educational materials -->
+
             <div id="admin-content" class="admin-tab-pane" style="display: none;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
-                    <!-- Request types -->
+
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Виды заявок (категории помощи)</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
@@ -1009,7 +1009,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </div>
                     </div>
 
-                    <!-- Educational materials -->
+
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Набор обучающих материалов</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
@@ -1068,11 +1068,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 
     <?php if ($viewRole === 'volunteer'): ?>
-    <!-- ========================================================================= -->
-    <!-- 3. VOLUNTEER SECTION: TASKS, VERIFICATION, BADGE & EDUCATION             -->
-    <!-- ========================================================================= -->
+
+
+
     <div id="view-volunteer" class="role-view" style="display: block;">
-        <!-- Volunteer Verification Status Banner -->
+
         <div id="volunteerVerificationNotice" class="card card-accent-success">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <div>
@@ -1096,7 +1096,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </div>
 
-        <!-- Volunteer Active Tasks in Progress -->
+
         <div class="card card-accent-warning" id="volunteerActiveTasksCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                 <div>
@@ -1152,7 +1152,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             <div id="leaderboardList"></div>
         </div>
 
-        <!-- Volunteer Knowledge Base & Standards Card -->
+
         <div class="card" id="volunteerKnowledgeCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                 <div>
@@ -1176,7 +1176,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 </main>
 
-<!-- Volunteer Geolocation Completion Modal (Proof-of-Presence) -->
+
 <div id="geo-complete-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="geoModalTitle">
     <div class="modal-dialog" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1194,24 +1194,24 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         </p>
         <form id="geoCompleteForm" onsubmit="event.preventDefault(); submitGeoComplete();">
             <input type="hidden" id="geoCompleteRequestId" value="">
-            
+
             <div class="form-group">
                 <label class="form-label" for="geoSecretWordInput">Секретное проверочное слово подопечного:</label>
                 <input type="text" id="geoSecretWordInput" class="form-control" placeholder="Например: Василёк" required autocomplete="off" autofocus>
             </div>
-            
+
             <div class="form-group">
                 <label class="form-label">Текущие GPS-координаты волонтёра:</label>
                 <div id="geoCoordinatesDisplay" style="padding: 10px 14px; background: var(--card-subtle); border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 0.95em;">
                     Определение геолокации...
                 </div>
             </div>
-            
-            <!-- Дружелюбный блок оповещения о превышении расстояния -->
+
+
             <div id="geoDistanceErrorBox" class="alert-banner alert-banner-danger" style="display: none; margin-bottom: 16px;">
                 <div id="geoDistanceErrorText"></div>
             </div>
-            
+
             <div style="display: flex; gap: 10px; margin-top: 16px;">
                 <button type="submit" class="btn btn-success" id="confirmGeoCompleteBtn" style="flex: 1; min-height: 48px;">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1227,7 +1227,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     </div>
 </div>
 
-<!-- Volunteer Digital Badge Modal -->
+
 <div id="volunteer-badge-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="badgeModalTitle">
     <div class="modal-dialog" style="max-width: 460px; text-align: center;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1240,17 +1240,17 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </h3>
             <button type="button" class="btn btn-outline btn-xs" id="closeBadgeModalBtn" onclick="closeVolunteerBadgeModal()" aria-label="Закрыть">&times;</button>
         </div>
-        
+
         <div id="badgeUnverifiedNotice" class="alert-banner alert-banner-warning" style="display: none; text-align: left; margin-bottom: 16px;">
             <p>Ваш профиль ещё не верифицирован координатором ТЦСОН. Цифровой бейдж активируется после проверки документов.</p>
         </div>
-        
+
         <div id="badgeActiveContent">
             <div id="badgeQrCardContainer" style="text-align: center; margin-bottom: 16px;">
                 <div style="padding: 20px; color: var(--text-muted);">Загрузка цифрового бейджа...</div>
             </div>
-            
-            <!-- Dynamic 1h TTL countdown timer -->
+
+
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--card-subtle); border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--border-color);">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1281,7 +1281,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 </div>
 
 <?php if ($isAuthed): ?>
-<!-- Account security: password change & remote logout -->
+
 <div id="passwordModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="modal-dialog" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
