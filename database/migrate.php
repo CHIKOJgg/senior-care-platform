@@ -183,12 +183,27 @@ try {
         "CREATE INDEX IF NOT EXISTS idx_help_requests_status ON help_requests(status);",
         "CREATE INDEX IF NOT EXISTS idx_help_requests_is_overdue ON help_requests(is_overdue);",
         "CREATE INDEX IF NOT EXISTS idx_help_requests_assigned_at ON help_requests(assigned_at);",
+        "CREATE INDEX IF NOT EXISTS idx_help_requests_region_status ON help_requests(region_code, status);",
         "CREATE INDEX IF NOT EXISTS idx_volunteer_profiles_status ON volunteer_profiles(verification_status);",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_volunteer_profiles_badge_token ON volunteer_profiles(badge_token);",
     ];
     foreach ($indices as $idxSql) {
         $pdo->exec($idxSql);
     }
+
+    if ($driver === 'mysql') {
+        $regionIndex = $pdo->query("
+            SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'help_requests'
+              AND INDEX_NAME = 'idx_help_requests_region_status'
+        ")->fetchColumn();
+        if ((int)$regionIndex === 0) {
+            $pdo->exec("CREATE INDEX idx_help_requests_region_status ON help_requests (region_code, status)");
+            echo "[MIGRATE] Added index: idx_help_requests_region_status\n";
+        }
+    }
+
     echo "[MIGRATE] Indexes verified successfully.\n";
 
 

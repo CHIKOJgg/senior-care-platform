@@ -171,5 +171,6 @@ CREATE INDEX IF NOT EXISTS idx_sos_alerts_created_at ON sos_alerts(created_at);
 CREATE INDEX IF NOT EXISTS idx_help_requests_status ON help_requests(status);
 CREATE INDEX IF NOT EXISTS idx_help_requests_is_overdue ON help_requests(is_overdue);
 CREATE INDEX IF NOT EXISTS idx_help_requests_assigned_at ON help_requests(assigned_at);
+CREATE INDEX IF NOT EXISTS idx_help_requests_region_status ON help_requests(region_code, status);
 CREATE INDEX IF NOT EXISTS idx_volunteer_profiles_status ON volunteer_profiles(verification_status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_volunteer_profiles_badge_token ON volunteer_profiles(badge_token);
