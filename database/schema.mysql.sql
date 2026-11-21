@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS help_requests (
     KEY idx_help_requests_status (status),
     KEY idx_help_requests_is_overdue (is_overdue),
     KEY idx_help_requests_assigned_at (assigned_at),
+    KEY idx_help_requests_region_status (region_code, status),
     CONSTRAINT fk_requests_elderly FOREIGN KEY (elderly_id) REFERENCES users(id) ON DELETE CASCADE,
     CONSTRAINT fk_requests_volunteer FOREIGN KEY (volunteer_id) REFERENCES users(id) ON DELETE SET NULL,
     CONSTRAINT fk_requests_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
