@@ -34,7 +34,8 @@ if ($token !== '') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Официальная проверка волонтёра — Республика Беларусь</title>
-    <link rel="stylesheet" href="/css/accessibility.css">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="stylesheet" href="/css/accessibility.css">
     <style>
         .verify-card {
             max-width: 560px;
