@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-/**
- * Country-wide geography: all regions of the Republic of Belarus.
- *
- * Region codes are stable API values stored in the database. Short codes are used
- * in volunteer badge numbers (e.g. BY-BRE-2026-0007).
- */
+
+
+
+
+
+
 class RegionService
 {
-    /** @var array<string, array{name:string, short:string, center_lat:float, center_lon:float}> */
+
     public const REGIONS = [
         'MINSK_CITY' => [
             'name' => 'г. Минск',
@@ -92,9 +92,9 @@ class RegionService
         return self::REGIONS[$code]['short'] ?? self::REGIONS[self::DEFAULT_CODE]['short'];
     }
 
-    /**
-     * @return array{lat:float, lon:float}
-     */
+
+
+
     public static function center(?string $code): array
     {
         $code = strtoupper((string)$code);
@@ -102,9 +102,9 @@ class RegionService
         return ['lat' => $center['center_lat'], 'lon' => $center['center_lon']];
     }
 
-    /**
-     * Resolve a region from an explicit code or from coordinates (nearest regional centre).
-     */
+
+
+
     public static function normalize(?string $code, ?float $lat = null, ?float $lon = null): string
     {
         if (self::exists($code)) {

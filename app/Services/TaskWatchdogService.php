@@ -11,13 +11,13 @@ use PDO;
 
 class TaskWatchdogService
 {
-    public const TIMEOUT_PHARMACY_SECONDS = 3600;   // 60 minutes
-    public const TIMEOUT_GROCERIES_SECONDS = 7200;  // 120 minutes
-    public const TIMEOUT_DEFAULT_SECONDS = 10800;   // 180 minutes
+    public const TIMEOUT_PHARMACY_SECONDS = 3600;
+    public const TIMEOUT_GROCERIES_SECONDS = 7200;
+    public const TIMEOUT_DEFAULT_SECONDS = 10800;
 
-    /**
-     * Category name/code matching to timeout duration in seconds.
-     */
+
+
+
     public static function getTimeoutForCategory(string $category): int
     {
         $cat = mb_strtolower(trim($category), 'UTF-8');
@@ -33,26 +33,26 @@ class TaskWatchdogService
         return self::TIMEOUT_DEFAULT_SECONDS;
     }
 
-    /**
-     * Returns timeout in minutes for a category.
-     */
+
+
+
     public static function getTimeoutMinutesForCategory(string $category): int
     {
         return (int)(self::getTimeoutForCategory($category) / 60);
     }
 
-    /**
-     * Scans in-progress tasks, checks execution timeout, sets is_overdue = 1, and logs coordinator warnings.
-     *
-     * @param int|null $currentTime Optional unix timestamp for deterministic testing
-     * @return array<string, mixed>
-     */
+
+
+
+
+
+
     public static function checkOverdueTasks(?int $currentTime = null): array
     {
         $now = $currentTime ?? time();
         $pdo = Database::getConnection();
 
-        $sql = "SELECT hr.*, 
+        $sql = "SELECT hr.*,
                        c.code as category_code, c.title as category_title,
                        eu.name as elderly_name, eu.phone as elderly_phone,
                        vu.name as volunteer_name, vu.phone as volunteer_phone
@@ -75,7 +75,7 @@ class TaskWatchdogService
             $timeoutSeconds = self::getTimeoutForCategory($catIdentifier);
             $timeoutMinutes = (int)($timeoutSeconds / 60);
 
-            // Calculate elapsed time from assigned_at (or created_at fallback)
+
             $startTimeStr = $task['assigned_at'] ?: $task['created_at'];
             $startTimestamp = !empty($startTimeStr) ? strtotime((string)$startTimeStr) : $now;
             if ($startTimestamp === false) {
@@ -90,7 +90,7 @@ class TaskWatchdogService
                 $overdueFound++;
                 $overdueByMinutes = max(0, $elapsedMinutes - $timeoutMinutes);
 
-                // Update database flag if not already flagged
+
                 if ((int)$task['is_overdue'] !== 1) {
                     $upd = $pdo->prepare("UPDATE help_requests SET is_overdue = 1 WHERE id = :id");
                     $upd->execute(['id' => $task['id']]);
@@ -119,15 +119,15 @@ class TaskWatchdogService
         ];
     }
 
-    /**
-     * Get all currently overdue tasks (status = 'in_progress' AND is_overdue = 1)
-     */
+
+
+
     public static function getOverdueTasks(): array
     {
         $pdo = Database::getConnection();
         $now = time();
 
-        $sql = "SELECT hr.*, 
+        $sql = "SELECT hr.*,
                        c.code as category_code, c.title as category_title,
                        eu.name as elderly_name, eu.phone as elderly_phone,
                        vu.name as volunteer_name, vu.phone as volunteer_phone
@@ -165,9 +165,9 @@ class TaskWatchdogService
         return $tasks;
     }
 
-    /**
-     * Reassign an overdue or stalled task back to open neighborhood feed
-     */
+
+
+
     public static function reassignTask(int $requestId, ?int $coordinatorId = null): array
     {
         $req = HelpRequest::find($requestId);

@@ -32,7 +32,7 @@ class AntiFraudController
 
     public function alerts(): void
     {
-        // Public advisory feed: active anti-fraud warnings shown on the senior's home screen.
+
         $alerts = FraudAlert::getActiveAlerts();
         Router::json([
             'success' => true,

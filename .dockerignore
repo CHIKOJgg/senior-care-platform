@@ -5,6 +5,7 @@
 .env.production
 *.env.*
 monitoring/
+docs/
 *.docx
 *.pdf
 test_out.docx

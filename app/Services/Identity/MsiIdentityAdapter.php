@@ -26,9 +26,9 @@ class MsiIdentityAdapter implements IdentityProviderInterface
         'BI' => 'Вид на жительство иностранного гражданина в РБ',
     ];
 
-    /**
-     * @var array<string, array<string, mixed>>
-     */
+
+
+
     private static array $knownIdentities = [
         '3010190A001PB5' => [
             'first_name' => 'Алексей',
@@ -107,11 +107,11 @@ class MsiIdentityAdapter implements IdentityProviderInterface
         return self::PROVIDER_CODE;
     }
 
-    /**
-     * Валидация формата и корректности даты личного номера РБ.
-     *
-     * @return array{valid: bool, error?: string, parsed?: array<string, mixed>}
-     */
+
+
+
+
+
     public function validateFormat(string $personalNumber): array
     {
         $id = strtoupper(trim($personalNumber));
@@ -130,7 +130,7 @@ class MsiIdentityAdapter implements IdentityProviderInterface
             ];
         }
 
-        // Парсинг века и пола
+
         $firstDigit = (int)$id[0];
         $gender = ($firstDigit % 2 === 1) ? 'M' : 'F';
         $centuryBase = match ($firstDigit) {
@@ -140,7 +140,7 @@ class MsiIdentityAdapter implements IdentityProviderInterface
             default => 1900,
         };
 
-        // Парсинг даты
+
         $day = (int)substr($id, 1, 2);
         $month = (int)substr($id, 3, 2);
         $yearShort = (int)substr($id, 5, 2);
@@ -173,9 +173,9 @@ class MsiIdentityAdapter implements IdentityProviderInterface
         ];
     }
 
-    /**
-     * Маскирование личного номера по Закону РБ № 99-З: 3010190A***PB5
-     */
+
+
+
     public function maskPersonalNumber(string $personalNumber): string
     {
         $id = strtoupper(trim($personalNumber));
@@ -200,7 +200,7 @@ class MsiIdentityAdapter implements IdentityProviderInterface
             ];
         }
 
-        // Проверка специальных тестовых кейсов с отказом
+
         if (isset(self::$knownIdentities[$id]) && (self::$knownIdentities[$id]['status'] ?? '') !== 'VERIFIED') {
             $known = self::$knownIdentities[$id];
             return [
@@ -212,7 +212,7 @@ class MsiIdentityAdapter implements IdentityProviderInterface
             ];
         }
 
-        // Поиск известных персон либо динамическая генерация
+
         $claims = self::$knownIdentities[$id] ?? null;
         if (!$claims) {
             $p = $val['parsed'];
@@ -264,7 +264,7 @@ class MsiIdentityAdapter implements IdentityProviderInterface
             return $verify;
         }
 
-        // Проверка SMS-кода (если передан)
+
         $smsCode = trim((string)($credentials['sms_code'] ?? ''));
         if ($smsCode !== '' && $smsCode === '0000') {
             return [

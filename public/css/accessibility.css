@@ -1,7 +1,7 @@
-/* =========================================================================
-   Senior Care Platform («ЗаботаРядом») — Accessibility & UI System
-   Conforms to WCAG 2.1 AAA Accessibility Standards
-   ========================================================================= */
+
+
+
+
 
 :root {
     --bg-color: #f8fafc;
@@ -21,9 +21,9 @@
     --btn-height: 44px;
 }
 
-/* =========================================================================
-   Senior Mode (WCAG 2.1 AAA High Contrast & Ultra-Readable)
-   ========================================================================= */
+
+
+
 body.senior-mode {
     --bg-color: #ffffff;
     --text-color: #000000;
@@ -63,15 +63,15 @@ body {
     padding: 16px 20px;
 }
 
-/* Focus styles for keyboard navigation */
+
 :focus-visible {
     outline: 3px solid var(--border-focus);
     outline-offset: 2px;
 }
 
-/* =========================================================================
-   Top Bar: Quick Auth & System Live Status
-   ========================================================================= */
+
+
+
 .quick-auth-bar {
     background: #f8fafc;
     border-bottom: 1px solid var(--border-color);
@@ -132,9 +132,9 @@ body {
     100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
 
-/* =========================================================================
-   Header & Role Switcher
-   ========================================================================= */
+
+
+
 header {
     background: #ffffff;
     border-bottom: 2px solid var(--border-color);
@@ -230,9 +230,9 @@ body.senior-mode .role-btn.active {
     flex-shrink: 0;
 }
 
-/* =========================================================================
-   Buttons
-   ========================================================================= */
+
+
+
 .btn {
     display: inline-flex;
     align-items: center;
@@ -335,9 +335,9 @@ body.senior-mode .btn-xs {
     font-size: 0.95em !important;
 }
 
-/* =========================================================================
-   Cards & Layout
-   ========================================================================= */
+
+
+
 .card {
     background: var(--card-bg);
     border: 1px solid var(--border-color);
@@ -389,7 +389,7 @@ body.senior-mode .secret-code-box {
     border: 2px dashed #000000;
 }
 
-/* Alert Banner */
+
 .alert-banner {
     border-radius: 12px;
     padding: 16px 20px;
@@ -439,7 +439,7 @@ body.senior-mode .alert-banner-success {
     color: var(--text-color) !important;
 }
 
-/* User 2-Function Cards */
+
 .user-functions-nav {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -519,7 +519,7 @@ body.senior-mode .function-icon {
     color: var(--text-muted);
 }
 
-/* Category Grid */
+
 .category-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -595,7 +595,7 @@ body.senior-mode .category-icon {
     color: var(--text-color);
 }
 
-/* Voice Dictation Microphone */
+
 .voice-bar {
     display: flex;
     align-items: center;
@@ -634,7 +634,7 @@ body.senior-mode .category-icon {
     100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
 }
 
-/* Secret Code Box */
+
 .secret-code-banner {
     background: #ecfdf5;
     border: 3px solid var(--accent-color);
@@ -671,7 +671,7 @@ body.senior-mode .secret-word {
     white-space: nowrap;
 }
 
-/* Form Controls */
+
 .form-group {
     margin-bottom: 18px;
 }
@@ -717,9 +717,9 @@ body.senior-mode select {
     min-height: 60px;
 }
 
-/* =========================================================================
-   Admin Panel Styles & Sub-nav
-   ========================================================================= */
+
+
+
 .admin-badge {
     background: #1e293b;
     color: #f8fafc;
@@ -756,7 +756,7 @@ body.senior-mode select {
     color: #ffffff;
 }
 
-/* KPI Stat Grid */
+
 .stat-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -791,7 +791,7 @@ body.senior-mode .stat-num {
     font-size: 44px;
 }
 
-/* Category Progress Bars */
+
 .category-progress-item {
     margin-bottom: 16px;
 }
@@ -818,7 +818,7 @@ body.senior-mode .stat-num {
     transition: width 0.4s ease;
 }
 
-/* Data Table */
+
 .data-table-container {
     overflow-x: auto;
     border-radius: 12px;
@@ -852,9 +852,9 @@ body.senior-mode .stat-num {
     background: var(--card-subtle);
 }
 
-/* =========================================================================
-   Badges
-   ========================================================================= */
+
+
+
 .badge {
     display: inline-block;
     padding: 4px 10px;
@@ -876,14 +876,14 @@ body.senior-mode .stat-num {
 .badge-completed { background: #dcfce7; color: #15803d; }
 .badge-cancelled { background: #f1f5f9; color: #64748b; }
 
-/* Text Utilities */
+
 .text-muted {
     color: var(--text-muted);
 }
 
-/* =========================================================================
-   Vector Icon System (SVG Icons)
-   ========================================================================= */
+
+
+
 .ui-icon {
     display: inline-block;
     vertical-align: middle;
@@ -918,7 +918,7 @@ body.senior-mode .stat-num {
     height: 40px;
 }
 
-/* Spacing for icons inside interactive elements */
+
 .btn .ui-icon,
 .role-btn .ui-icon,
 .auth-chip .ui-icon,
@@ -930,7 +930,7 @@ body.senior-mode .stat-num {
     margin-right: 4px;
 }
 
-/* Modal Dialog */
+
 .modal-backdrop {
     position: fixed;
     top: 0;
@@ -956,9 +956,9 @@ body.senior-mode .stat-num {
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
 }
 
-/* =========================================================================
-   Fully Responsive Layout & Mobile Optimizations
-   ========================================================================= */
+
+
+
 @media (max-width: 860px) {
     header {
         position: relative;
@@ -1125,9 +1125,9 @@ body.senior-mode .stat-num {
     }
 }
 
-/* =========================================================================
-   M4: SOS Emergency & Priority 0 Animations (WCAG 2.1 AAA Accessible)
-   ========================================================================= */
+
+
+
 @keyframes pulse {
     0% {
         transform: scale(1);
@@ -1173,7 +1173,7 @@ body.senior-mode .stat-num {
     }
 }
 
-/* Dedicated High-Contrast Emergency SOS Button (WCAG 2.1 AAA 21:1 Contrast) */
+
 .sos-btn, #sosBtn, .btn-sos {
     background-color: #B00020;
     color: #FFFFFF;
@@ -1213,7 +1213,7 @@ body.senior-mode .sos-btn, body.senior-mode .btn-sos {
     border: 4px solid #000000;
 }
 
-/* QR Badge Card & Verification Styles */
+
 .badge-card {
     background: #FFFFFF;
     border: 2px solid var(--border-color);
@@ -1237,9 +1237,9 @@ body.senior-mode .sos-btn, body.senior-mode .btn-sos {
 }
 
 
-/* =========================================================================
-   Dedicated login page (staff / volunteers)
-   ========================================================================= */
+
+
+
 .login-body {
     background: var(--bg-color);
 }
@@ -1337,9 +1337,9 @@ body.senior-mode .sos-btn, body.senior-mode .btn-sos {
     }
 }
 
-/* =========================================================================
-   Smart narration / accessibility mode
-   ========================================================================= */
+
+
+
 .sr-only {
     position: absolute !important;
     width: 1px;

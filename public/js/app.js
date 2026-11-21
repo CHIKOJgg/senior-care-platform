@@ -1,13 +1,13 @@
-/**
- * Senior Care Platform — Main Frontend Application Script (Production v1.0)
- * Role Separation: User (2 functions only) / Admin (Management & Analytics) / Volunteer
- * JWT / Bearer Token Security, Real-Time Polling & Live Verification
- */
 
-// Global State
+
+
+
+
+
+
 let currentRole = document.body.getAttribute('data-initial-role') || 'guest';
 let currentUser = null;
-let currentVolunteerId = 2; // Set from the authenticated volunteer profile
+let currentVolunteerId = 2;
 let currentVolunteerCoords = { lat: 53.9168, lon: 27.5862 };
 let volunteerBlockedLowRating = false;
 let regionsCache = [];
@@ -20,7 +20,7 @@ function homeForRole(roleCode) {
     return '/';
 }
 
-// Centralized Vector SVG Icon Library (No Emojis)
+
 const Icons = {
     user: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
     volunteer: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
@@ -53,8 +53,8 @@ const Icons = {
     }
 };
 
-// Token storage: the pensioner's device keeps a long-lived token (localStorage),
-// staff sessions live only in the current tab (sessionStorage).
+
+
 const ELDER_TOKEN_KEY = 'elder_token';
 const STAFF_TOKEN_KEY = 'auth_token';
 
@@ -76,7 +76,7 @@ function clearTokens() {
     sessionStorage.removeItem(STAFF_TOKEN_KEY);
 }
 
-// Centralized Authenticated Fetch Wrapper
+
 async function authFetch(url, options = {}) {
     options.headers = options.headers || {};
     const token = getToken();
@@ -97,10 +97,10 @@ function handleSessionExpired() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Smart narration first: it reads browser accessibility preferences and
-    // prepares the aria-live channel before any UI announcement is made.
+
+
     try { SpeechHelper.initSmartNarration(); } catch (e) { console.error(e); }
-    // Login must bind first: it is the only critical function on the login page.
+
     initSessionGate();
     initPasswordRecovery();
     initResetCodeForm();
@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    // Initial session bootstrap: the server already rendered only this role's workspace.
+
     bootstrapSession().then((ok) => {
         if (ok) {
             loadRoleData();
@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Auto-polling for live updates every 25 seconds (current role only)
+
     setInterval(() => {
         if (!currentUser) return;
         if (currentRole === 'volunteer') {
@@ -144,17 +144,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 25000);
 });
 
-// =========================================================================
-// 1. Session Bootstrap
-// =========================================================================
+
+
+
 async function bootstrapSession() {
     if (IS_GUEST) {
         currentUser = null;
         return true;
     }
     try {
-        // The HttpOnly cookie is the single source of truth for the web UI; the server
-        // already rendered exactly this role from the same cookie.
+
+
         const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         if (data.success && data.user) {
@@ -163,7 +163,7 @@ async function bootstrapSession() {
                 clearTokens();
                 return false;
             }
-            // Drop any stale bearer token so API calls keep using the cookie identity.
+
             clearTokens();
             setCurrentUser(data.user);
             return true;
@@ -197,9 +197,9 @@ async function loginWithPhone(phone, password, showFeedback = true, remember = f
     }
 }
 
-// =========================================================================
-// Login gate: single entry point for every role
-// =========================================================================
+
+
+
 function initSessionGate() {
     const form = document.getElementById('sessionGateForm');
     if (!form) return;
@@ -259,7 +259,7 @@ function initSessionGate() {
         const result = await loginWithPhone(phone, password, true, remember);
         if (result === true) {
             form.reset();
-            // Full reload so the server renders only this account's role workspace.
+
             window.location.replace(homeForRole(currentUser ? currentUser.role_code : 'elderly'));
         } else {
             showError(result || 'Не удалось войти. Проверьте телефон и пароль.');
@@ -267,7 +267,7 @@ function initSessionGate() {
     });
 }
 
-// Top bar actions live outside the login gate and must work on every authenticated page.
+
 function initTopBarActions() {
     const logoutBtn = document.getElementById('btnLogout');
     if (!logoutBtn || logoutBtn.dataset.bound === '1') return;
@@ -308,7 +308,7 @@ function hideSessionGate() {
     if (gate) gate.style.display = 'none';
 }
 
-// Family mode: change password and revoke all devices
+
 function initSecurityControls() {
     const openBtn = document.getElementById('btnChangePassword');
     const modal = document.getElementById('passwordModal');
@@ -384,7 +384,7 @@ function initSecurityControls() {
     });
 }
 
-// Family login gate: "Забыли пароль?" with a coordinator-issued one-time code
+
 function initPasswordRecovery() {
     const showBtn = document.getElementById('showResetFormBtn');
     const box = document.getElementById('resetPasswordBox');
@@ -462,7 +462,7 @@ function initPasswordRecovery() {
     });
 }
 
-// Coordinator console: issue a one-time password reset code
+
 function initResetCodeForm() {
     const form = document.getElementById('resetCodeForm');
     if (!form) return;
@@ -551,9 +551,9 @@ function setCurrentUser(user) {
     }
 }
 
-// =========================================================================
-// 2. Role workspace: load data for the single server-rendered role only
-// =========================================================================
+
+
+
 function loadRoleData() {
     if (currentRole === 'user') {
         if (!IS_GUEST) {
@@ -577,9 +577,9 @@ function loadRoleData() {
     }
 }
 
-// =========================================================================
-// 3. User View: 3 Functions
-// =========================================================================
+
+
+
 function initUserFunctions() {
     const tabs = [
         { btn: document.getElementById('btnFuncRequest'), pane: document.getElementById('func-request'), label: 'Мне нужна помощь' },
@@ -599,7 +599,7 @@ function initUserFunctions() {
             SpeechHelper.speak('Открыт раздел: ' + tab.label);
         });
     });
-// Category selection in request form with dynamic helpful placeholders
+
     const catPlaceholders = {
         '1': 'Например: купите, пожалуйста, молоко 2.5% 1 пакет, буханку чёрного хлеба и десяток яиц...',
         '2': 'Например: купить в аптеке корвалол, аспирин и пластырь по рецепту врача...',
@@ -609,7 +609,7 @@ function initUserFunctions() {
         '6': 'Например: попить вместе чай, почитать свежую газету и пообщаться...'
     };
 
-    // Category cards: delegated handler so categories added via the admin panel work too
+
     const catGrid = document.getElementById('categoryGrid');
     if (catGrid && catGrid.dataset.bound !== '1') {
         catGrid.dataset.bound = '1';
@@ -630,7 +630,6 @@ function initUserFunctions() {
         });
     }
 
-    // Voice dictation for request
     const micBtn = document.getElementById('micBtn');
     const requestDesc = document.getElementById('requestDescription');
     if (micBtn && requestDesc) {
@@ -642,7 +641,6 @@ function initUserFunctions() {
         });
     }
 
-    // Voice dictation for fraud scanner
     const micFraudBtn = document.getElementById('micFraudBtn');
     const fraudInput = document.getElementById('fraudCheckInput');
     if (micFraudBtn && fraudInput) {
@@ -655,7 +653,6 @@ function initUserFunctions() {
     }
 }
 
-// Load request types from the API so admin-added categories appear for seniors
 async function loadCategoryCards() {
     const grid = document.getElementById('categoryGrid');
     if (!grid) return;
@@ -678,7 +675,7 @@ async function loadCategoryCards() {
     }
 }
 
-// Load the country-wide region catalogue (all regions of Belarus)
+
 async function loadRegions() {
     try {
         const res = await fetch('/api/regions', { headers: { 'Accept': 'application/json' } });
@@ -714,7 +711,7 @@ async function loadRegions() {
     }
 }
 
-// Load current user's active requests (with secret codes)
+
 async function rateRequest(requestId, rating) {
     if (!requestId || rating < 1 || rating > 5) return;
     try {
@@ -752,7 +749,7 @@ function renderRatingControl(req) {
             class="btn btn-outline btn-sm"
             style="min-width:44px; min-height:44px; font-size:1.2em; padding:4px 8px;"
             aria-label="Оценить на ${n}"
-            onclick="rateRequest(${req.id}, ${n})">★ ${n}</button>
+            onclick="rateRequest(${req.id}, ${n})">&#9733; ${n}</button>
     `).join('');
 
     return `
@@ -853,14 +850,14 @@ async function loadAdminAnalytics() {
             document.getElementById('statCompletedRequests').innerText = s.completed_requests;
             document.getElementById('statVerifiedVolunteers').innerText = `${s.verified_volunteers} / ${s.total_volunteers}`;
 
-            // Update pending badge
+
             const badge = document.getElementById('pendingCountBadge');
             if (badge) {
                 badge.innerText = s.pending_volunteers;
                 badge.style.display = s.pending_volunteers > 0 ? 'inline-block' : 'none';
             }
 
-            // Render category progress bars
+
             const barsContainer = document.getElementById('categoryAnalyticsBars');
             if (barsContainer && s.category_distribution) {
                 const maxCount = Math.max(...s.category_distribution.map(c => c.count), 1);
@@ -881,7 +878,6 @@ async function loadAdminAnalytics() {
             }
         }
 
-        // Load leaderboard into admin
         const adminLb = document.getElementById('adminLeaderboardList');
         if (adminLb) {
             const lbRes = await authFetch('/api/volunteers/leaderboard');
@@ -905,7 +901,7 @@ async function loadAdminAnalytics() {
     }
 }
 
-// Volunteer Verification Queue
+
 let volunteerFilterState = { filter: 'all', minRating: null };
 
 function applyRatingFilter() {
@@ -987,7 +983,7 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                     actions = `<button class="btn btn-success btn-xs" onclick="verifyVolunteer(${v.user_id})">${Icons.check} Верифицировать</button>`;
                 }
 
-                // Low rating -> offer the rehabilitation track (training + re-verification)
+
                 if (rating < 3.5 && verificationStatus !== 'BLOCKED_LOW_RATING' && rating >= 3) {
                     actions += `
                         <button class="btn btn-danger btn-xs" style="margin-left: 6px;" onclick="rehabilitateVolunteer(${v.user_id})">
@@ -1072,7 +1068,7 @@ async function rejectVolunteer(id) {
     }
 }
 
-// Rehabilitation track for volunteers with a low rating
+
 async function rehabilitateVolunteer(id) {
     if (!confirm('Направить волонтёра на реабилитацию? При низком рейтинге будет назначен набор обучающих материалов, рейтинг сброшен на 4.0, а доступ к заявкам приостановлен до повторной проверки.')) return;
     try {
@@ -1095,9 +1091,9 @@ async function rehabilitateVolunteer(id) {
     }
 }
 
-// =========================================================================
-// 4b. Admin: request types (categories) and educational materials
-// =========================================================================
+
+
+
 let adminCategoriesCache = [];
 
 function showFormMessage(elementId, text, ok) {
@@ -1436,9 +1432,9 @@ async function deleteAdminAlert(id) {
     }
 }
 
-// =========================================================================
-// 5. Volunteer View & Strict Verification Enforcement
-// =========================================================================
+
+
+
 async function checkVolunteerStatus() {
     const notice = document.getElementById('volunteerVerificationNotice');
     const title = document.getElementById('volVerifyTitle');
@@ -1627,9 +1623,9 @@ async function acceptRequest(id) {
     }
 }
 
-// =========================================================================
-// M4: Geofenced Completion with Navigator Geolocation (Proof-of-Presence)
-// =========================================================================
+
+
+
 let currentCompletingRequestId = null;
 
 function openCompleteModal(id, addressHint = '') {
@@ -1686,7 +1682,7 @@ function openCompleteModal(id, addressHint = '') {
     if (modal) modal.style.display = 'flex';
 }
 window.openCompleteModal = openCompleteModal;
-window.completeRequestPrompt = openCompleteModal; // Backward-compatible upgrade
+window.completeRequestPrompt = openCompleteModal;
 
 function closeCompleteModal() {
     const modal = document.getElementById('geo-complete-modal');
@@ -1815,11 +1811,7 @@ async function loadLeaderboard() {
     }
 }
 
-// =========================================================================
-// 6. Shared Forms (Create Request, Anti-Fraud, Alerts)
-// =========================================================================
 function initForms() {
-    // Submit Help Request
     const helpForm = document.getElementById('helpForm');
     const selectedCatInput = document.getElementById('selectedCategory');
     const requestDesc = document.getElementById('requestDescription');
@@ -1872,7 +1864,6 @@ function initForms() {
                     reqLon = pos.coords.longitude;
                     gpsCaptured = true;
                 } catch (geoErr) {
-                    // Keep the regional centre as a fallback.
                 }
             }
 
@@ -1908,7 +1899,7 @@ function initForms() {
         });
     }
 
-    // Anti-Fraud Express Scanner
+
     const runFraudBtn = document.getElementById('runFraudCheckBtn');
     const fraudInput = document.getElementById('fraudCheckInput');
     const fraudResultBox = document.getElementById('fraudResultBox');
@@ -1953,7 +1944,7 @@ function initForms() {
         });
     }
 
-    // Anti-Fraud Quick Sample Buttons
+
     document.querySelectorAll('.fraud-sample-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const sampleText = btn.getAttribute('data-text');
@@ -1964,7 +1955,7 @@ function initForms() {
         });
     });
 
-    // Alert Form for Admin
+
     const alertForm = document.getElementById('alertForm');
     if (alertForm) {
         alertForm.addEventListener('submit', async (e) => {
@@ -2135,7 +2126,7 @@ function renderVolunteerKnowledgeCards(category = 'all') {
     if (!container) return;
     selectedVolunteerKnowledgeCategory = category;
 
-    // Filter relevant categories for volunteers
+
     const volunteerCategories = ['Волонтёрство', 'Реабилитация', 'Безопасность', 'Здоровье', 'Бытовая безопасность', 'Социальная помощь'];
     const relevantMaterials = allEducationMaterialsCache.filter(m => volunteerCategories.includes(m.category));
 
@@ -2212,9 +2203,9 @@ async function loadAlerts() {
     }
 }
 
-// =========================================================================
-// 7. Accessibility Helpers & Escaping
-// =========================================================================
+
+
+
 function initAccessibility() {
     const toggleSeniorBtn = document.getElementById('toggleSeniorMode');
     if (toggleSeniorBtn) {
@@ -2271,9 +2262,6 @@ function escapeJs(str) {
         .replace(/\n/g, ' ');
 }
 
-// =========================================================================
-// M4: Senior Emergency SOS Implementation
-// =========================================================================
 async function triggerSos(customReason = 'Экстренная тревога подопечного: требуется срочная помощь') {
     const sosBtn = document.getElementById('sosBtn');
     if (sosBtn) {
@@ -2283,10 +2271,10 @@ async function triggerSos(customReason = 'Экстренная тревога п
 
     SpeechHelper.speak('Сигнал бедствия активирован. Передаём ваши координаты координатору ТЦСОН и в службу спасения 112.');
 
-    let latitude = 53.9168; // Default Minsk Sovetsky district fallback
+    let latitude = 53.9168;
     let longitude = 27.5862;
 
-    // Fast Geolocation attempt with 3.5s timeout
+
     if (navigator.geolocation) {
         try {
             const pos = await new Promise((resolve, reject) => {
@@ -2375,9 +2363,9 @@ function showSosConfirmationModal(data) {
     modal.style.display = 'flex';
 }
 
-// =========================================================================
-// M4: Coordinator Web Audio API Siren & Incident Console
-// =========================================================================
+
+
+
 let sirenAudioCtx = null;
 let sirenOscillator = null;
 let sirenGainNode = null;
@@ -2402,7 +2390,7 @@ function playSiren() {
     if (!sirenAudioCtx) return;
 
     if (sirenOscillator) {
-        return; // Already active
+        return;
     }
 
     try {
@@ -2541,9 +2529,9 @@ async function resolveSosAlert(id) {
 }
 window.resolveSosAlert = resolveSosAlert;
 
-// =========================================================================
-// M4: Coordinator Watchdog View & Task Reassignment
-// =========================================================================
+
+
+
 async function loadWatchdogTasks() {
     const tableBody = document.getElementById('watchdogTableBody');
     const badge = document.getElementById('overdueTasksCountBadge') || document.getElementById('overdueCountBadge');
@@ -2627,9 +2615,9 @@ async function reassignOverdueTask(id) {
 }
 window.reassignOverdueTask = reassignOverdueTask;
 
-// =========================================================================
-// M4: Volunteer Dynamic Digital QR Badge Modal
-// =========================================================================
+
+
+
 let badgeCountdownTimer = null;
 
 async function showVolunteerBadge() {
@@ -2745,9 +2733,9 @@ function closeVolunteerBadgeModal() {
 }
 window.closeVolunteerBadgeModal = closeVolunteerBadgeModal;
 
-// =========================================================================
-// M4: Senior Anonymization / Right to be Forgotten (Law 99-Z / GDPR)
-// =========================================================================
+
+
+
 async function requestRightToBeForgotten() {
     const confirmation = confirm(
         'ВНИМАНИЕ! В соответствии с Законом РБ № 99-З «О защите персональных данных» вы собираетесь безвозвратно обезличить ваши персональные данные.\n\n' +

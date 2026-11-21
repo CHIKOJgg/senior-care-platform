@@ -1,7 +1,7 @@
-/**
- * Adversarial V8 / Node.js Stress Test for Voice Emergency Regex
- * File: public/js/speech.js line 89
- */
+
+
+
+
 
 const fs = require('fs');
 const path = require('path');
@@ -21,9 +21,9 @@ console.log(`[INFO] Extracted regex: /${pattern}/${flags}`);
 
 const regex = new RegExp(pattern, flags);
 
-// 1. Positive Test Suite (MUST return true)
+
 const positiveSuite = [
-    // Direct keywords
+
     'помощь',
     'помогите',
     'тревога',
@@ -33,7 +33,7 @@ const positiveSuite = [
     'срочно помощь',
     'вызовите помощь',
 
-    // Case insensitivity
+
     'ПОМОЩЬ',
     'ПОМОГИТЕ',
     'ТРЕВОГА',
@@ -49,7 +49,7 @@ const positiveSuite = [
     'Срочно помощь',
     'ВЫЗОВИТЕ ПОМОЩЬ',
 
-    // Leading and trailing punctuation
+
     '!помощь!',
     '?помогите?',
     '...тревога...',
@@ -66,7 +66,7 @@ const positiveSuite = [
     '~спасите~',
     'помогите!!!',
 
-    // Cyrillic & typographical quotes
+
     '«помощь»',
     '„помощь“',
     '“помогите”',
@@ -77,7 +77,7 @@ const positiveSuite = [
     '‹тревога›',
     '»помощь«',
 
-    // Parentheses, brackets, and braces
+
     '(помощь)',
     '[помогите]',
     '{тревога}',
@@ -86,16 +86,16 @@ const positiveSuite = [
     '<помощь>',
     '({[помогите]})',
 
-    // Whitespace variants (tabs, newlines, non-breaking spaces)
+
     '   помощь   ',
     '\tтревога\t',
     '\nспасите\n',
     '\r\nпомогите\r\n',
-    '\u00A0помогите\u00A0', // Non-breaking space
-    '\u2003сос\u2003',     // Em space
-    '\u2002тревога\u2002', // En space
+    '\u00A0помогите\u00A0',
+    '\u2003сос\u2003',
+    '\u2002тревога\u2002',
 
-    // Realistic speech recognition sentences
+
     'Мне нужна помощь, упал на пол',
     'Помогите мне пожалуйста',
     'Объявлена тревога',
@@ -111,9 +111,9 @@ const positiveSuite = [
     'вызовите помощь пожалуйста'
 ];
 
-// 2. Negative Test Suite (False Positives - MUST return false)
+
 const negativeSuite = [
-    // Substrings of помощь
+
     'беспомощный',
     'беспомощная',
     'беспомощность',
@@ -131,7 +131,7 @@ const negativeSuite = [
     'первопомощник',
     'скоропомощник',
 
-    // Substrings of тревога
+
     'тревогатель',
     'тревожный',
     'тревожная',
@@ -140,14 +140,14 @@ const negativeSuite = [
     'встревоженный',
     'тревожность',
 
-    // Substrings of спасите
+
     'спаситель',
     'спасительница',
     'спасительный',
     'спасительное',
     'спасение',
 
-    // Substrings of сос / sos
+
     'соска',
     'сосочек',
     'насос',
@@ -165,14 +165,14 @@ const negativeSuite = [
     'isosceles',
     'microdosos',
 
-    // Ordinary non-emergency sentences
+
     'чистый воздух',
     'сегодня хорошая погода',
     'принесите хлеба и молока',
     'координатор ТЦСОН позвонил утром',
     'социальный работник пришёл вовремя',
 
-    // Alphanumeric boundary collisions (embedded with letters or numbers)
+
     '1помощь',
     'помощь2',
     '123sos456',

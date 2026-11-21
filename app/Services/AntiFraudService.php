@@ -173,7 +173,7 @@ PROMPT;
 
         $content = $decoded['choices'][0]['message']['content'] ?? null;
         if (is_array($content)) {
-            // Some providers return structured content parts.
+
             $parts = [];
             foreach ($content as $part) {
                 if (is_string($part)) {
@@ -194,13 +194,13 @@ PROMPT;
     private static function parseAiResult(string $content): ?array
     {
         $content = trim($content);
-        // Strip markdown fences if present
+
         if (preg_match('/```(?:json)?\s*(\{.*\})\s*```/si', $content, $m)) {
             $content = $m[1];
         }
         $json = json_decode($content, true);
         if (!is_array($json)) {
-            // Try to extract first JSON object
+
             if (preg_match('/(\{(?:[^{}]|(?1))*\})/s', $content, $m)) {
                 $json = json_decode($m[1], true);
             }
@@ -222,7 +222,7 @@ PROMPT;
         $dangerMatches = self::normalizeMatches($json['danger_matches'] ?? []);
         $warningMatches = self::normalizeMatches($json['warning_matches'] ?? []);
 
-        // Keep risk consistent with matches where possible
+
         if ($risk === 'safe' && (!empty($dangerMatches) || !empty($warningMatches))) {
             $risk = !empty($dangerMatches) ? 'danger' : 'warning';
         }

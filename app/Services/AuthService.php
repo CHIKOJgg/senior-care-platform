@@ -30,9 +30,9 @@ class AuthService
         return (getenv('APP_ENV') ?: 'local') === 'production';
     }
 
-    /**
-     * Create an HMAC-SHA256 signed stateless token
-     */
+
+
+
     public static function createToken(array $user, int $ttlSeconds = self::TTL_SESSION): string
     {
         $payload = [
@@ -52,9 +52,9 @@ class AuthService
         return $payloadEncoded . '.' . $signature;
     }
 
-    /**
-     * Verify and decode token
-     */
+
+
+
     public static function verifyToken(string $token): ?array
     {
         $parts = explode('.', $token);
@@ -81,15 +81,15 @@ class AuthService
         }
 
         if (time() > $payload['exp']) {
-            return null; // Expired
+            return null;
         }
 
         return $payload;
     }
 
-    /**
-     * Get current user from Authorization header or cookie
-     */
+
+
+
     public static function getCurrentUser(): ?array
     {
         $token = null;
@@ -114,7 +114,7 @@ class AuthService
                 return null;
             }
 
-            // Tokens are revoked by incrementing token_version (password change / logout everywhere)
+
             if ((int)($fresh['token_version'] ?? 1) !== (int)($decoded['tv'] ?? 1)) {
                 Logger::security('Revoked token rejected', ['user_id' => $decoded['user_id']]);
                 return null;
@@ -130,7 +130,7 @@ class AuthService
             ];
         }
 
-        // Explicit demo user header for testing
+
         $demoUserId = $_SERVER['HTTP_X_DEMO_USER'] ?? null;
         if ($demoUserId && (getenv('APP_ENV') !== 'production')) {
             $user = User::getWithProfile((int)$demoUserId);
@@ -145,7 +145,7 @@ class AuthService
             }
         }
 
-        // In local development mode without explicit token, default to admin for seamless UX
+
         $env = getenv('APP_ENV') ?: 'local';
         if ($env === 'local') {
             return [
@@ -160,9 +160,9 @@ class AuthService
         return null;
     }
 
-    /**
-     * Enforce authentication and role permissions
-     */
+
+
+
     public static function requireAuth(array $allowedRoles = []): array
     {
         $user = self::getCurrentUser();
@@ -173,7 +173,7 @@ class AuthService
 
         if (!empty($allowedRoles)) {
             $roleCode = $user['role_code'] ?? 'user';
-            $hasAccess = in_array($roleCode, $allowedRoles, true) || 
+            $hasAccess = in_array($roleCode, $allowedRoles, true) ||
                          ($roleCode === 'admin' && in_array('coordinator', $allowedRoles, true));
 
             if (!$hasAccess) {

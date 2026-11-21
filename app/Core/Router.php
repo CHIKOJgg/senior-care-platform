@@ -43,7 +43,7 @@ class Router
 
     public function dispatch(string $method, string $uri): void
     {
-        // Remove query string
+
         $path = parse_url($uri, PHP_URL_PATH);
         $path = rtrim($path, '/');
         if ($path === '') {
@@ -78,7 +78,7 @@ class Router
             $duration = microtime(true) - (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
             MetricsService::recordRequest(self::$currentRoute, $status, $duration);
         } catch (\Throwable $e) {
-            // Never let metrics break a response
+
         }
 
         http_response_code($status);

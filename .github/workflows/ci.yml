@@ -56,6 +56,11 @@ jobs:
       - name: Execute Frontend WCAG Tests
         run: php tests/test_frontend_wcag.php
 
+      - name: Execute Node ADR & Regex Tests
+        run: |
+          node tests/test_adr_and_emoji.js
+          node tests/test_v8_regex.js
+
       - name: Execute Comprehensive E2E Tests
         run: |
           php -d display_errors=1 -d error_reporting=E_ALL -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &

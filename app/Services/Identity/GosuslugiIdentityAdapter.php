@@ -10,9 +10,9 @@ class GosuslugiIdentityAdapter implements IdentityProviderInterface
 
     private const SNILS_REGEX = '/^(?:\d{3}-\d{3}-\d{3}\s\d{2}|\d{11})$/';
 
-    /**
-     * @var array<string, array<string, mixed>>
-     */
+
+
+
     private static array $knownIdentities = [
         '11223344595' => [
             'first_name' => 'Екатерина',
@@ -51,11 +51,11 @@ class GosuslugiIdentityAdapter implements IdentityProviderInterface
         return self::PROVIDER_CODE;
     }
 
-    /**
-     * Валидация СНИЛС с вычислением контрольной суммы.
-     *
-     * @return array{valid: bool, error?: string, clean_snils?: string}
-     */
+
+
+
+
+
     public function validateSnils(string $snils): array
     {
         $trimmed = trim($snils);
@@ -75,18 +75,18 @@ class GosuslugiIdentityAdapter implements IdentityProviderInterface
             ];
         }
 
-        // Пропуск специальных тестовых мок-номеров
+
         if (isset(self::$knownIdentities[$digits])) {
             return ['valid' => true, 'clean_snils' => $digits];
         }
 
-        // Число меньше либо равно 001-001-998 не проверяется по контрольной сумме
+
         $numPart = (int)substr($digits, 0, 9);
         if ($numPart <= 1001998) {
             return ['valid' => true, 'clean_snils' => $digits];
         }
 
-        // Расчёт контрольной суммы
+
         $sum = 0;
         for ($i = 0; $i < 9; $i++) {
             $sum += (int)$digits[$i] * (9 - $i);
@@ -113,9 +113,9 @@ class GosuslugiIdentityAdapter implements IdentityProviderInterface
         return ['valid' => true, 'clean_snils' => $digits];
     }
 
-    /**
-     * Маскирование СНИЛС: ***-***-445 95
-     */
+
+
+
     public function maskSnils(string $snils): string
     {
         $digits = preg_replace('/\D/', '', trim($snils));
@@ -142,7 +142,7 @@ class GosuslugiIdentityAdapter implements IdentityProviderInterface
 
         $clean = $val['clean_snils'];
 
-        // Отработка тестовых отказов
+
         if (isset(self::$knownIdentities[$clean]) && (self::$knownIdentities[$clean]['status'] ?? '') !== 'CONFIRMED') {
             $known = self::$knownIdentities[$clean];
             return [

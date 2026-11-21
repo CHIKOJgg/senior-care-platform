@@ -1,18 +1,18 @@
 <?php
 declare(strict_types=1);
 
-/**
- * INDEPENDENT ADVERSARIAL STRESS TEST
- * Challenger M4-r2-1
- * 
- * Verifies:
- * 1. WCAG 2.1 AAA Contrast Ratio Mathematics
- * 2. Touch target minimum boundaries (>=60px min-height & min-width)
- * 3. Keyboard focus (:focus-visible >= 3px)
- * 4. Reduced motion animation disabling
- * 5. Zero emojis across all frontend and plan files
- * 6. CSS Specificity & Cascade simulation
- */
+
+
+
+
+
+
+
+
+
+
+
+
 
 $rootDir = dirname(__DIR__);
 $testsRun = 0;
@@ -35,9 +35,9 @@ function check(string $id, string $desc, bool $condition, string $detail = ''): 
 
 echo "=== INDEPENDENT EMPIRICAL CHALLENGER VERIFICATION (M4-r2-1) ===" . PHP_EOL;
 
-// ==========================================
-// 1. WCAG 2.1 AAA Contrast Ratio Mathematics
-// ==========================================
+
+
+
 echo PHP_EOL . "--- [1] Mathematical Luminance & Contrast Calculation ---" . PHP_EOL;
 
 function srgbToLinear(float $val): float {
@@ -67,7 +67,7 @@ check(
     sprintf('Computed: %.4f:1', $crSenior)
 );
 
-// SOS button #B00020
+
 $lumAlert = calcRelLuminance(176, 0, 32);
 $crSosOnWhite = contrastRatio($lumWhite, $lumAlert);
 check(
@@ -85,7 +85,7 @@ check(
     sprintf('Computed: %.4f:1 (Threshold: 7.0:1)', $crWhiteOnSos)
 );
 
-// Focus outline #0056B3 on white
+
 $lumFocusBlue = calcRelLuminance(0, 86, 179);
 $crFocusBlue = contrastRatio($lumWhite, $lumFocusBlue);
 check(
@@ -95,14 +95,14 @@ check(
     sprintf('Computed: %.4f:1 (Threshold: 3.0:1)', $crFocusBlue)
 );
 
-// ==========================================
-// 2. CSS Rules Parsing & Boundary Enforcement
-// ==========================================
+
+
+
 echo PHP_EOL . "--- [2] CSS Rules Parsing & Boundary Enforcement ---" . PHP_EOL;
 
 $css = (string)file_get_contents($rootDir . '/public/css/accessibility.css');
 
-// Extract body.senior-mode block
+
 preg_match('/body\.senior-mode\s*\{([^}]+)\}/is', $css, $mSeniorVars);
 $seniorVars = $mSeniorVars[1] ?? '';
 
@@ -127,7 +127,7 @@ check(
     'Verified --border-focus: #000000'
 );
 
-// Focus-visible outline
+
 preg_match('/:focus-visible\s*\{([^}]+)\}/is', $css, $mFocus);
 $focusProps = $mFocus[1] ?? '';
 preg_match('/outline:\s*(\d+)px/i', $focusProps, $mOutline);
@@ -140,7 +140,7 @@ check(
     "Outline width: {$outlineWidth}px"
 );
 
-// SOS button focus outline
+
 preg_match('/(?:#sosBtn|\.sos-btn)[^{]*:focus-visible[^{]*\{([^}]+)\}/is', $css, $mSosFocus);
 $sosFocusProps = $mSosFocus[1] ?? '';
 preg_match('/outline:\s*(\d+)px/i', $sosFocusProps, $mSosOutline);
@@ -153,7 +153,7 @@ check(
     "SOS outline width: {$sosOutlineWidth}px"
 );
 
-// Reduced motion
+
 preg_match('/@media\s*\(\s*prefers-reduced-motion:\s*reduce\s*\)\s*\{([^}]+(?:\{[^}]+\}[^}]*)*)\}/is', $css, $mRedMotion);
 $redMotionContent = $mRedMotion[1] ?? '';
 
@@ -171,7 +171,7 @@ check(
     'animation: none confirmed'
 );
 
-// Senior mode button touch targets
+
 preg_match('/body\.senior-mode\s+\.btn\s*\{([^}]+)\}/is', $css, $mSeniorBtn);
 $seniorBtnProps = $mSeniorBtn[1] ?? '';
 preg_match('/min-height:\s*(\d+)px/i', $seniorBtnProps, $mBtnMinH);
@@ -193,7 +193,7 @@ check(
     "Min width: {$btnMinW}px"
 );
 
-// Senior mode .btn-sm
+
 preg_match('/body\.senior-mode\s+\.btn-sm\s*\{([^}]+)\}/is', $css, $mSeniorBtnSm);
 $seniorBtnSmProps = $mSeniorBtnSm[1] ?? '';
 $btnSmMinH60 = strpos($seniorBtnSmProps, 'min-height: 60px !important') !== false;
@@ -207,7 +207,7 @@ check(
     'Verified !important override for senior mode .btn-sm'
 );
 
-// Senior mode .btn-xs
+
 preg_match('/body\.senior-mode\s+\.btn-xs\s*\{([^}]+)\}/is', $css, $mSeniorBtnXs);
 $seniorBtnXsProps = $mSeniorBtnXs[1] ?? '';
 $btnXsMinH60 = strpos($seniorBtnXsProps, 'min-height: 60px !important') !== false;
@@ -221,7 +221,7 @@ check(
     'Verified !important override for senior mode .btn-xs'
 );
 
-// Form control, inputs, selects in senior mode
+
 preg_match('/body\.senior-mode\s+(?:\.form-control|input|select)[^{]*\{([^}]+)\}/is', $css, $mSeniorForm);
 $seniorFormProps = $mSeniorForm[1] ?? '';
 preg_match('/min-height:\s*(\d+)px/i', $seniorFormProps, $mFormMinH);
@@ -243,7 +243,7 @@ check(
     "Form min width: {$formMinW}px"
 );
 
-// SOS button touch target
+
 preg_match('/\.sos-btn,\s*#sosBtn[^{]*\{([^}]+)\}/is', $css, $mSosBtn);
 $sosBtnProps = $mSosBtn[1] ?? '';
 preg_match('/min-height:\s*(\d+)px/i', $sosBtnProps, $mSosMinH);
@@ -258,7 +258,7 @@ check(
     "min-height: {$sosMinH}px, min-width: {$sosMinW}px"
 );
 
-// Senior mode SOS button
+
 preg_match('/body\.senior-mode\s+\.sos-btn[^{]*\{([^}]+)\}/is', $css, $mSeniorSos);
 $seniorSosProps = $mSeniorSos[1] ?? '';
 preg_match('/min-height:\s*(\d+)px/i', $seniorSosProps, $mSeniorSosMinH);
@@ -273,14 +273,14 @@ check(
     "min-height: {$seniorSosMinH}px, min-width: {$seniorSosMinW}px"
 );
 
-// ==========================================
-// 3. Index.php Verification
-// ==========================================
+
+
+
 echo PHP_EOL . "--- [3] HTML DOM & Inline Style Verification (public/index.php) ---" . PHP_EOL;
 
 $indexPhp = (string)file_get_contents($rootDir . '/public/index.php');
 
-// Verify #btnAnonymizeProfile
+
 preg_match('/<button[^>]+id="btnAnonymizeProfile"[^>]*>/is', $indexPhp, $mAnonBtn);
 $anonBtnTag = $mAnonBtn[0] ?? '';
 
@@ -312,7 +312,7 @@ check(
     'Cleaned up obsolete 48px'
 );
 
-// Verify SOS button in index.php
+
 preg_match('/<button[^>]+id="sosBtn"[^>]*>/is', $indexPhp, $mSosHtml);
 $sosHtmlTag = $mSosHtml[0] ?? '';
 
@@ -323,9 +323,9 @@ check(
     'Found #sosBtn with explicit dimensions'
 );
 
-// ==========================================
-// 4. Exhaustive Zero-Emoji Scan
-// ==========================================
+
+
+
 echo PHP_EOL . "--- [4] Exhaustive Zero-Emoji Scan Across Frontend & Plan ---" . PHP_EOL;
 
 $emojiPattern = '/[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}]/u';
@@ -367,7 +367,7 @@ check(
     empty($emojisFound) ? '0 emojis detected across all files' : 'EMOJIS DETECTED: ' . json_encode($emojisFound)
 );
 
-// Also check app/ files for sanity
+
 $appFiles = getFiles($rootDir . '/app');
 $appEmojis = [];
 foreach ($appFiles as $f) {
@@ -384,9 +384,9 @@ check(
     empty($appEmojis) ? '0 emojis in app/' : 'EMOJIS: ' . json_encode($appEmojis)
 );
 
-// ==========================================
-// SUMMARY
-// ==========================================
+
+
+
 echo PHP_EOL . "==========================================================" . PHP_EOL;
 printf("INDEPENDENT SUITE COMPLETE: %d Run | %d Passed | %d Failed" . PHP_EOL, $testsRun, $testsPassed, $testsFailed);
 

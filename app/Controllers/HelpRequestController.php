@@ -24,7 +24,7 @@ class HelpRequestController
         $volLat = isset($_GET['lat']) ? (float)$_GET['lat'] : null;
         $volLon = isset($_GET['lon']) ? (float)$_GET['lon'] : null;
 
-        // Country-wide feed: optional region filter (?region=BREST).
+
         $regionFilter = isset($_GET['region']) ? strtoupper(trim((string)$_GET['region'])) : '';
         if ($regionFilter !== '' && RegionService::exists($regionFilter)) {
             $requests = array_values(array_filter(
@@ -49,13 +49,13 @@ class HelpRequestController
             usort($requests, fn($a, $b) => $a['distance_km'] <=> $b['distance_km']);
         }
 
-        // Law 99-Z Privacy Enforcement:
-        // Mask elderly phone and apartment in open feed unless explicitly authenticated coordinator/admin
+
+
         $currentUser = AuthService::getCurrentUser();
-        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) || 
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) ||
                            !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ||
-                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) || 
-                           !empty($_COOKIE['auth_token']) || 
+                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) ||
+                           !empty($_COOKIE['auth_token']) ||
                            !empty($_SERVER['HTTP_X_DEMO_USER']);
         $effectiveUser = $hasExplicitAuth ? $currentUser : null;
 
@@ -126,10 +126,10 @@ class HelpRequestController
         }
 
         $currentUser = AuthService::getCurrentUser();
-        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) || 
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) ||
                            !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ||
-                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) || 
-                           !empty($_COOKIE['auth_token']) || 
+                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) ||
+                           !empty($_COOKIE['auth_token']) ||
                            !empty($_SERVER['HTTP_X_DEMO_USER']);
         $effectiveUser = $hasExplicitAuth ? $currentUser : null;
 
@@ -194,7 +194,7 @@ class HelpRequestController
             $title = mb_substr($description, 0, 60);
         }
 
-        // MySQL columns are VARCHAR(255); never let an over-long dictated title become a 500.
+
         if (mb_strlen($title, 'UTF-8') > 255) {
             $title = mb_substr($title, 0, 255, 'UTF-8');
         }
@@ -202,7 +202,7 @@ class HelpRequestController
             $description = mb_substr($description, 0, 5000, 'UTF-8');
         }
 
-        // Generate friendly secret safety code
+
         $secretCode = SecurityService::generateSecretCode();
 
         $requestId = HelpRequest::create([
@@ -220,7 +220,7 @@ class HelpRequestController
 
         Logger::info("New help request #{$requestId} created by elderly user #{$elderlyId}");
 
-        // Keep elderly profile location fresh when the request was created with real GPS.
+
         $gpsCaptured = filter_var($input['gps_captured'] ?? false, FILTER_VALIDATE_BOOLEAN) && $hasCoords;
         if ($elderlyId && $gpsCaptured) {
             try {
@@ -238,7 +238,7 @@ class HelpRequestController
             }
         }
 
-        // Find matching nearby volunteers
+
         $verifiedVolunteers = VolunteerProfile::getVerified();
         $reqData = ['latitude' => $lat, 'longitude' => $lon];
         $matchedVolunteers = GeoMatchingService::rankVolunteers($reqData, $verifiedVolunteers, 5.0);
@@ -276,7 +276,7 @@ class HelpRequestController
             Router::json(['error' => 'Заявка уже взята другим волонтёром или завершена'], 400);
         }
 
-                // Verification and rating check: only verified volunteers with acceptable rating can accept
+
         $volunteer = VolunteerProfile::find($volunteerId);
         if (!$volunteer) {
             Router::json(['error' => 'Профиль волонтёра не найден'], 404);
@@ -367,7 +367,7 @@ class HelpRequestController
             ], 400);
         }
 
-        // Proof-of-Presence Geofencing Check: Valid GPS coordinates strictly required
+
         $coordsMissing = !isset($input['latitude']) || !isset($input['longitude']);
         $hasNullCoords = (array_key_exists('latitude', $input) && $input['latitude'] === null)
             || (array_key_exists('longitude', $input) && $input['longitude'] === null);
@@ -385,8 +385,8 @@ class HelpRequestController
             Router::json(['error' => 'Некорректные GPS-координаты волонтёра'], 400);
         }
 
-        // Resolve target coordinates: use the place where the request was created.
-        // This keeps geofence validation tied to the request itself, not a stale profile address.
+
+
         $targetLat = (float)$req['latitude'];
         $targetLon = (float)$req['longitude'];
 
@@ -414,7 +414,7 @@ class HelpRequestController
             'distance_to_target' => $distanceToTarget
         ]);
 
-        // Add karma points to volunteer
+
         if ($req['volunteer_id']) {
             $vp = VolunteerProfile::find((int)$req['volunteer_id']);
             if ($vp) {

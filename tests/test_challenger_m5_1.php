@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-/**
- * Milestone 5 Adversarial Challenger Stress Harness
- * Agent: Challenger M5-1
- * 
- * Verifies:
- * 1. Master E2E Suite strict execution
- * 2. Coordinate requirement & geofence bypass analysis
- * 3. Exact 150m boundary stress testing
- * 4. 5-attempt brute-force lockout defense
- * 5. Full codebase emoji audit across all tiers
- */
+
+
+
+
+
+
+
+
+
+
+
 
 $testCount = 0;
 $passCount = 0;
@@ -65,9 +65,9 @@ echo "==========================================================================
 echo "  EMPIRICAL CHALLENGER M5-1: INDEPENDENT STRESS & BOUNDARY HARNESS" . PHP_EOL;
 echo "================================================================================" . PHP_EOL;
 
-// -----------------------------------------------------------------------------
-// SECTION 1: Coordinate Requirement Stress Testing & Bypass Check
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "--- [SECTION 1] Coordinate Requirement & Geofence Bypass Stress Testing ---" . PHP_EOL;
 
 function createAndAccept(string $title, float $lat = 53.9168, float $lon = 27.5862): array {
@@ -87,7 +87,7 @@ function createAndAccept(string $title, float $lat = 53.9168, float $lon = 27.58
     return [$reqId, $secretCode];
 }
 
-// 1.1 Omitted coordinates with ADV5 in title
+
 [$reqOmitted1, $secOmitted1] = createAndAccept('ADV5-CHALLENGE-01 Omitted Coords Title Trigger');
 $resOmitted1 = curlApi('POST', "/api/requests/{$reqOmitted1}/complete", [
     'secret_code' => $secOmitted1
@@ -99,7 +99,7 @@ assertChallenge(
     "HTTP {$resOmitted1['code']}, Error: " . ($resOmitted1['data']['error'] ?? '')
 );
 
-// 1.2 Omitted coordinates with X-Require-Geofence header
+
 [$reqOmitted2, $secOmitted2] = createAndAccept('Generic Delivery Task');
 $resOmitted2 = curlApi('POST', "/api/requests/{$reqOmitted2}/complete", [
     'secret_code' => $secOmitted2
@@ -111,7 +111,7 @@ assertChallenge(
     "HTTP {$resOmitted2['code']}, Error: " . ($resOmitted2['data']['error'] ?? '')
 );
 
-// 1.2b Adversarial Check: Omitted coordinates on standard production request (without ADV5 title or X-Require-Geofence header)
+
 [$reqBypass, $secBypass] = createAndAccept('Купить хлеб в магазине Соседи');
 $resBypass = curlApi('POST', "/api/requests/{$reqBypass}/complete", [
     'secret_code' => $secBypass
@@ -121,12 +121,12 @@ assertChallenge(
     'CH-COORD-02B',
     'Universal coordinate enforcement: standard request WITHOUT title=ADV5 or header rejects omitted coords',
     !$isBypassed,
-    $isBypassed 
+    $isBypassed
         ? "DEFECT: Geofence bypassed! HTTP 200 returned on standard request when coordinates omitted (HelpRequestController.php:274 test facade)"
         : "Protected: HTTP {$resBypass['code']}"
 );
 
-// 1.3 Completion with latitude: null, longitude: null (unconditional 400)
+
 [$reqNull1, $secNull1] = createAndAccept('Generic Delivery Task Null Both');
 $resNull1 = curlApi('POST', "/api/requests/{$reqNull1}/complete", [
     'secret_code' => $secNull1,
@@ -140,7 +140,7 @@ assertChallenge(
     "HTTP {$resNull1['code']}, Error: " . ($resNull1['data']['error'] ?? '')
 );
 
-// 1.4 Completion with latitude: null and numeric longitude
+
 [$reqNull2, $secNull2] = createAndAccept('Generic Delivery Task Null Lat');
 $resNull2 = curlApi('POST', "/api/requests/{$reqNull2}/complete", [
     'secret_code' => $secNull2,
@@ -154,7 +154,7 @@ assertChallenge(
     "HTTP {$resNull2['code']}, Error: " . ($resNull2['data']['error'] ?? '')
 );
 
-// 1.5 Completion with numeric latitude and longitude: null
+
 [$reqNull3, $secNull3] = createAndAccept('Generic Delivery Task Null Lon');
 $resNull3 = curlApi('POST', "/api/requests/{$reqNull3}/complete", [
     'secret_code' => $secNull3,
@@ -168,7 +168,7 @@ assertChallenge(
     "HTTP {$resNull3['code']}, Error: " . ($resNull3['data']['error'] ?? '')
 );
 
-// 1.6 Completion with non-numeric coordinates ("invalid")
+
 [$reqNonNum, $secNonNum] = createAndAccept('Generic Delivery Task Non Numeric');
 $resNonNum = curlApi('POST', "/api/requests/{$reqNonNum}/complete", [
     'secret_code' => $secNonNum,
@@ -182,7 +182,7 @@ assertChallenge(
     "HTTP {$resNonNum['code']}, Error: " . ($resNonNum['data']['error'] ?? '')
 );
 
-// 1.7 Out-of-range coordinates: latitude: 95.0 (> 90.0)
+
 [$reqRange1, $secRange1] = createAndAccept('Generic Delivery Task Range Lat > 90');
 $resRange1 = curlApi('POST', "/api/requests/{$reqRange1}/complete", [
     'secret_code' => $secRange1,
@@ -196,7 +196,7 @@ assertChallenge(
     "HTTP {$resRange1['code']}, Error: " . ($resRange1['data']['error'] ?? '')
 );
 
-// 1.8 Out-of-range coordinates: latitude: -95.0 (< -90.0)
+
 $resRange2 = curlApi('POST', "/api/requests/{$reqRange1}/complete", [
     'secret_code' => $secRange1,
     'latitude' => -95.0,
@@ -209,7 +209,7 @@ assertChallenge(
     "HTTP {$resRange2['code']}, Error: " . ($resRange2['data']['error'] ?? '')
 );
 
-// 1.9 Out-of-range coordinates: longitude: 185.0 (> 180.0)
+
 $resRange3 = curlApi('POST', "/api/requests/{$reqRange1}/complete", [
     'secret_code' => $secRange1,
     'latitude' => 53.9168,
@@ -222,7 +222,7 @@ assertChallenge(
     "HTTP {$resRange3['code']}, Error: " . ($resRange3['data']['error'] ?? '')
 );
 
-// 1.10 Out-of-range coordinates: longitude: -185.0 (< -180.0)
+
 $resRange4 = curlApi('POST', "/api/requests/{$reqRange1}/complete", [
     'secret_code' => $secRange1,
     'latitude' => 53.9168,
@@ -235,12 +235,12 @@ assertChallenge(
     "HTTP {$resRange4['code']}, Error: " . ($resRange4['data']['error'] ?? '')
 );
 
-// -----------------------------------------------------------------------------
-// SECTION 2: Exact 150m Boundary Stress Testing
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "--- [SECTION 2] Exact 150m Boundary Stress Testing ---" . PHP_EOL;
 
-// 2.1 Boundary: 149.95m distance
+
 [$reqB149, $secB149] = createAndAccept('Boundary Test 149.95m');
 $resB149 = curlApi('POST', "/api/requests/{$reqB149}/complete", [
     'secret_code' => $secB149,
@@ -254,7 +254,7 @@ assertChallenge(
     "HTTP {$resB149['code']}, distance_meters: " . ($resB149['data']['distance_meters'] ?? 'null')
 );
 
-// 2.2 Boundary: 150.00m distance
+
 [$reqB150, $secB150] = createAndAccept('Boundary Test 150.00m');
 $resB150 = curlApi('POST', "/api/requests/{$reqB150}/complete", [
     'secret_code' => $secB150,
@@ -268,7 +268,7 @@ assertChallenge(
     "HTTP {$resB150['code']}, distance_meters: " . ($resB150['data']['distance_meters'] ?? 'null')
 );
 
-// 2.3 Boundary: 150.05m distance (must FAIL with 400)
+
 [$reqB150_05, $secB150_05] = createAndAccept('Boundary Test 150.05m');
 $resB150_05 = curlApi('POST', "/api/requests/{$reqB150_05}/complete", [
     'secret_code' => $secB150_05,
@@ -282,7 +282,7 @@ assertChallenge(
     "HTTP {$resB150_05['code']}, Error: " . ($resB150_05['data']['error'] ?? '')
 );
 
-// 2.4 Boundary: 151.00m distance (must FAIL with 400)
+
 $deltaLat151 = (151.0 / 6371000.0) * (180.0 / M_PI);
 $resB151 = curlApi('POST', "/api/requests/{$reqB150_05}/complete", [
     'secret_code' => $secB150_05,
@@ -296,7 +296,7 @@ assertChallenge(
     "HTTP {$resB151['code']}, Error: " . ($resB151['data']['error'] ?? '')
 );
 
-// 2.5 Remote distance: 320.00m distance (must FAIL with 400)
+
 $deltaLat320 = (320.0 / 6371000.0) * (180.0 / M_PI);
 $resB320 = curlApi('POST', "/api/requests/{$reqB150_05}/complete", [
     'secret_code' => $secB150_05,
@@ -310,14 +310,14 @@ assertChallenge(
     "HTTP {$resB320['code']}, Error: " . ($resB320['data']['error'] ?? '')
 );
 
-// -----------------------------------------------------------------------------
-// SECTION 3: 5-Attempt Brute-Force Lockout Defense
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "--- [SECTION 3] 5-Attempt Brute-Force Lockout Defense ---" . PHP_EOL;
 
 [$reqLock, $validSecret] = createAndAccept('Lockout Defense Stress Test');
 
-// Perform attempts 1 through 4 (should return HTTP 400 with decrementing remaining attempts)
+
 $attemptsOk = true;
 $attemptDetails = [];
 for ($i = 1; $i <= 4; $i++) {
@@ -340,7 +340,7 @@ assertChallenge(
     $attemptsOk ? 'All 4 attempts correctly reported remaining counts' : implode('; ', $attemptDetails)
 );
 
-// 5th failed attempt: should trigger lockout
+
 $resLock5 = curlApi('POST', "/api/requests/{$reqLock}/complete", [
     'secret_code' => "WrongAttempt_5",
     'latitude' => 53.9168,
@@ -354,7 +354,7 @@ assertChallenge(
     "HTTP {$resLock5['code']}, Error: " . ($resLock5['data']['error'] ?? '')
 );
 
-// 6th attempt with VALID, AUTHENTIC secret code: MUST BE REJECTED!
+
 $resLock6 = curlApi('POST', "/api/requests/{$reqLock}/complete", [
     'secret_code' => $validSecret,
     'latitude' => 53.9168,
@@ -368,7 +368,7 @@ assertChallenge(
     "HTTP {$resLock6['code']}, Error: " . ($resLock6['data']['error'] ?? '')
 );
 
-// Verify database state: request must NOT be completed!
+
 $dbCheck = curlApi('GET', "/api/requests/{$reqLock}");
 $reqStatus = $dbCheck['data']['data']['status'] ?? '';
 $reqFailedAttempts = (int)($dbCheck['data']['data']['failed_attempts'] ?? 0);
@@ -379,16 +379,16 @@ assertChallenge(
     "status: '{$reqStatus}', failed_attempts: {$reqFailedAttempts}"
 );
 
-// -----------------------------------------------------------------------------
-// SECTION 4: Exhaustive Codebase Zero-Emoji Audit
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "--- [SECTION 4] Exhaustive Codebase Zero-Emoji Audit ---" . PHP_EOL;
 
 $emojiRegex = '/[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{1F700}-\x{1F77F}\x{1F780}-\x{1F7FF}\x{1F800}-\x{1F8FF}\x{1F900}-\x{1F9FF}\x{1FA00}-\x{1FA6F}\x{1FA70}-\x{1FAFF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}]/u';
 
 $baseDir = is_dir('/var/www/html') ? '/var/www/html' : dirname(__DIR__);
 
-// 4.1 Frontend UI files (public/) and Architecture documentation (plan/)
+
 $frontendFiles = [];
 $frontendDirs = ["{$baseDir}/public", "{$baseDir}/plan"];
 foreach ($frontendDirs as $d) {
@@ -412,7 +412,7 @@ assertChallenge(
     empty($frontendEmojiHits) ? "All " . count($frontendFiles) . " files 100% SVG Vector Clean" : "Found in " . json_encode($frontendEmojiHits)
 );
 
-// 4.2 Backend MVC Source Code (app/)
+
 $appFiles = [];
 $itApp = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$baseDir}/app", RecursiveDirectoryIterator::SKIP_DOTS));
 foreach ($itApp as $f) {
@@ -432,7 +432,7 @@ assertChallenge(
     empty($appEmojiHits) ? "All " . count($appFiles) . " PHP classes clean" : "Found in " . json_encode($appEmojiHits)
 );
 
-// 4.3 Database DDL & Seed (database/)
+
 $dbFiles = ["{$baseDir}/database/schema.sql", "{$baseDir}/database/migrate.php", "{$baseDir}/database/seed.php"];
 $dbEmojiHits = [];
 foreach ($dbFiles as $fp) {
@@ -450,7 +450,7 @@ assertChallenge(
     empty($dbEmojiHits) ? "Database files clean" : "DEFECT: Found emojis in database files: " . json_encode($dbEmojiHits, JSON_UNESCAPED_UNICODE)
 );
 
-// 4.4 Test Suites (tests/)
+
 $testFiles = [];
 $itTests = new RecursiveIteratorIterator(new RecursiveDirectoryIterator("{$baseDir}/tests", RecursiveDirectoryIterator::SKIP_DOTS));
 foreach ($itTests as $f) {
@@ -472,7 +472,7 @@ assertChallenge(
     empty($testEmojiHits) ? "All test suites clean" : "DEFECT: Found emojis in test files: " . json_encode($testEmojiHits, JSON_UNESCAPED_UNICODE)
 );
 
-// 4.5 Root Project Documentation (README.md, TEST_INFRA.md, etc.)
+
 $rootDocs = ["{$baseDir}/README.md", "{$baseDir}/TEST_INFRA.md", "{$baseDir}/PROJECT.md", "{$baseDir}/TEST_READY.md"];
 $docEmojiHits = [];
 foreach ($rootDocs as $fp) {
@@ -490,9 +490,9 @@ assertChallenge(
     empty($docEmojiHits) ? "Root markdown clean" : "DEFECT: Found emojis in docs: " . json_encode($docEmojiHits, JSON_UNESCAPED_UNICODE)
 );
 
-// -----------------------------------------------------------------------------
-// SUMMARY & VERDICT
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "================================================================================" . PHP_EOL;
 echo "  CHALLENGER STRESS HARNESS SUMMARY" . PHP_EOL;
 echo "================================================================================" . PHP_EOL;

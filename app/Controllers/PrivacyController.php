@@ -45,7 +45,7 @@ class PrivacyController
         $records = [];
         $policyVersion = $input['policy_version'] ?? PrivacyService::CURRENT_POLICY_VERSION;
 
-        // Поддержка пакетной и единичной фиксации
+
         $consentList = isset($input['consents']) && is_array($input['consents'])
             ? $input['consents']
             : [['consent_type' => $input['consent_type'] ?? '']];
@@ -109,8 +109,8 @@ class PrivacyController
 
         Router::json([
             'success' => true,
-            'message' => $revoked 
-                ? "Согласие [{$consentType}] успешно отозвано" 
+            'message' => $revoked
+                ? "Согласие [{$consentType}] успешно отозвано"
                 : "Активное согласие данного типа не найдено",
             'revoked' => $revoked,
             'consent_type' => $consentType
@@ -127,7 +127,7 @@ class PrivacyController
             Router::json(['error' => 'Для необратимого обезличивания персональных данных требуется явное подтверждение (confirm: true)'], 400);
         }
 
-        // Если передан target user_id (координатор/админ обезличивает подопечного)
+
         if (!empty($input['user_id']) && (int)$input['user_id'] !== $userId) {
             if (!in_array($user['role_code'] ?? '', ['admin', 'coordinator'], true)) {
                 Router::json(['error' => 'Недостаточно прав для обезличивания стороннего пользователя'], 403);
@@ -138,7 +138,7 @@ class PrivacyController
         try {
             $result = $this->privacyService->anonymizeUser($userId);
 
-            // Если пользователь обезличил сам себя — сбрасываем куки сессии
+
             if ($userId === (int)($user['user_id'] ?? $user['id'] ?? 0)) {
                 @setcookie('auth_token', '', [
                     'expires' => time() - 3600,

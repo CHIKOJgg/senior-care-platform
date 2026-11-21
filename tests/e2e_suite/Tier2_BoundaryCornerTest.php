@@ -39,57 +39,57 @@ class Tier2_BoundaryCornerTest
         $this->testSanitizationAndStressBoundaries();
     }
 
-    // Category 1: Haversine & Geofencing Boundaries (10 tests)
+
     private function testHaversineBoundaries(): void
     {
         echo "[Tier 2.1] Haversine Geofencing Boundaries (10 tests):\n";
 
-        // T2-GEO-01: Exactly 0.0m
+
         $d0 = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.9168, 27.5862);
         $this->harness->assert('T2-GEO-01: Zero offset distance is exactly 0.000 km', $d0 === 0.0, "Got {$d0}", 'Tier 2');
 
-        // T2-GEO-02: 1 meter offset
+
         $d1 = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.916809, 27.5862);
         $meters1 = (int)($d1 * 1000);
         $this->harness->assert('T2-GEO-02: Micro-offset (~1m) computes correctly without precision loss', $meters1 >= 0 && $meters1 <= 3, "Got {$meters1}m", 'Tier 2');
 
-        // T2-GEO-03: Boundary value <= 150m
+
         $d150 = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.9180, 27.5862);
         $m150 = $d150 * 1000;
         $this->harness->assert('T2-GEO-03: ~133m offset is within 150m boundary threshold', $m150 < 150.0, "Got {$m150}m", 'Tier 2');
 
-        // T2-GEO-04: Breach > 150m
+
         $dBreach = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.9185, 27.5862);
         $mBreach = $dBreach * 1000;
         $this->harness->assert('T2-GEO-04: ~189m offset strictly exceeds 150m boundary threshold', $mBreach > 150.0, "Got {$mBreach}m", 'Tier 2');
 
-        // T2-GEO-05: 500m distance
+
         $d500 = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.9213, 27.5862);
         $m500 = (int)($d500 * 1000);
         $this->harness->assert('T2-GEO-05: 500m distance correctly identified as outside local geofence', $m500 >= 480 && $m500 <= 520, "Got {$m500}m", 'Tier 2');
 
-        // T2-GEO-06: 15km distance (MKAD Ring Road)
+
         $dMkad = GeoMatchingService::calculateDistance(53.9168, 27.5862, 53.8000, 27.5000);
         $this->harness->assert('T2-GEO-06: Long distance across Minsk (~14km) calculates accurately', $dMkad >= 12.0 && $dMkad <= 16.0, "Got {$dMkad} km", 'Tier 2');
 
-        // T2-GEO-07: Antipodal points (numerical stability clamp)
+
         $dAnti = GeoMatchingService::calculateDistance(0.0, 0.0, 0.0, 180.0);
         $this->harness->assert('T2-GEO-07: Maximum spherical distance does not produce NaN', !is_nan($dAnti) && $dAnti > 19000.0, "Got {$dAnti} km", 'Tier 2');
 
-        // T2-GEO-08: Invalid latitude > 90
+
         $resLat = $this->harness->apiCall('GET', '/api/requests?lat=95.0&lon=27.5862');
         $this->harness->assert('T2-GEO-08: Out-of-bounds latitude (>90) handled gracefully', in_array($resLat['code'], [200, 400, 422]), "Code: {$resLat['code']}", 'Tier 2');
 
-        // T2-GEO-09: Invalid longitude > 180
+
         $resLon = $this->harness->apiCall('GET', '/api/requests?lat=53.9168&lon=195.0');
         $this->harness->assert('T2-GEO-09: Out-of-bounds longitude (>180) handled gracefully', in_array($resLon['code'], [200, 400, 422]), "Code: {$resLon['code']}", 'Tier 2');
 
-        // T2-GEO-10: Non-numeric coordinates string
+
         $resStr = $this->harness->apiCall('GET', '/api/requests?lat=not_a_number&lon=abc');
         $this->harness->assert('T2-GEO-10: Non-numeric coordinate strings do not crash server', in_array($resStr['code'], [200, 400, 422]), "Code: {$resStr['code']}", 'Tier 2');
     }
 
-    // Category 2: Secret Code Validation & Hardening (8 tests)
+
     private function testSecretCodeBoundaries(): void
     {
         echo "\n[Tier 2.2] Secret Code Validation & Hardening (8 tests):\n";
@@ -98,7 +98,7 @@ class Tier2_BoundaryCornerTest
         $this->harness->assert('T2-SEC-01: Exact match confirms secret code', SecurityService::verifyCode('Ромашка', $original), '', 'Tier 2');
         $this->harness->assert('T2-SEC-02: Lowercase variant confirms secret code', SecurityService::verifyCode('ромашка', $original), '', 'Tier 2');
         $this->harness->assert('T2-SEC-03: Uppercase variant confirms secret code', SecurityService::verifyCode('РОМАШКА', $original), '', 'Tier 2');
-        
+
         $codeYo = 'Василёк';
         $this->harness->assertMilestone('M3', 'T2-SEC-04: "е" matches "ё" in Cyrillic normalization', function() use ($codeYo) {
             $m = SecurityService::verifyCode('василек', $codeYo);
@@ -107,7 +107,7 @@ class Tier2_BoundaryCornerTest
             }
             return ['pass' => true, 'details' => 'Normalized'];
         }, 'Tier 2');
-        
+
         $this->harness->assert('T2-SEC-05: Leading/trailing whitespace trimmed during verification', SecurityService::verifyCode('   Ромашка   ', $original), '', 'Tier 2');
         $this->harness->assertMilestone('M3', 'T2-SEC-06: Quotes around code trimmed during verification', function() use ($original) {
             $m = SecurityService::verifyCode('«Ромашка»', $original) || SecurityService::verifyCode('"Ромашка"', $original);
@@ -116,12 +116,12 @@ class Tier2_BoundaryCornerTest
             }
             return ['pass' => true, 'details' => 'Trimmed'];
         }, 'Tier 2');
-        
+
         $this->harness->assert('T2-SEC-07: Empty string rejected as secret code', !SecurityService::verifyCode('', $original), '', 'Tier 2');
         $this->harness->assert('T2-SEC-08: Arbitrary incorrect word rejected', !SecurityService::verifyCode('Колокольчик', $original), '', 'Tier 2');
     }
 
-    // Category 3: Authentication, Tokens & RBAC Boundaries (10 tests)
+
     private function testAuthRbacBoundaries(): void
     {
         echo "\n[Tier 2.3] Authentication, Tokens & RBAC Boundaries (10 tests):\n";
@@ -152,7 +152,7 @@ class Tier2_BoundaryCornerTest
         $resElderlyStats = $this->harness->apiCall('GET', '/api/coordinator/stats', null, ["Authorization: Bearer {$elderlyToken}"]);
         $this->harness->assert('T2-AUTH-09: Elderly token forbidden from coordinator stats (403)', $resElderlyStats['code'] === 403, "Code: {$resElderlyStats['code']}", 'Tier 2');
 
-        // Unverified volunteer cannot accept requests
+
         $volReg = $this->harness->registerUser(2, 'Неверифицированный Волонтёр');
         $newReq = $this->harness->createHelpRequest(1, 1, 'Проверка блокировки неверифицированного');
         $reqId = $newReq['data']['request_id'];
@@ -160,7 +160,7 @@ class Tier2_BoundaryCornerTest
         $this->harness->assert('T2-AUTH-10: Unverified volunteer strictly blocked from accepting request (403)', $resAcceptBlocked['code'] === 403, "Code: {$resAcceptBlocked['code']}", 'Tier 2');
     }
 
-    // Category 4: Data Protection, Masking & Crypto Boundaries (10 tests)
+
     private function testDataProtectionBoundaries(): void
     {
         echo "\n[Tier 2.4] Data Protection, Masking & Crypto Boundaries (10 tests):\n";
@@ -261,7 +261,7 @@ class Tier2_BoundaryCornerTest
         }, 'Tier 2');
     }
 
-    // Category 5: SOS & Emergency Response Boundaries (8 tests)
+
     private function testSosEmergencyBoundaries(): void
     {
         echo "\n[Tier 2.5] SOS & Emergency Response Boundaries (8 tests):\n";
@@ -360,7 +360,7 @@ class Tier2_BoundaryCornerTest
         }, 'Tier 2');
     }
 
-    // Category 6: Help Request Lifecycle & State Transitions (8 tests)
+
     private function testRequestLifecycleBoundaries(): void
     {
         echo "\n[Tier 2.6] Help Request Lifecycle & State Transitions (8 tests):\n";
@@ -368,7 +368,7 @@ class Tier2_BoundaryCornerTest
         RateLimiter::clear("create_request:127.0.0.1");
         RateLimiter::clear("create_request:");
 
-        // T2-REQ-01: Create request with minimum required fields
+
         $resMin = $this->harness->apiCall('POST', '/api/requests', [
             'elderly_id' => 1,
             'category_id' => 1,
@@ -381,7 +381,7 @@ class Tier2_BoundaryCornerTest
         RateLimiter::clear("create_request:127.0.0.1");
         RateLimiter::clear("create_request:");
 
-        // T2-REQ-02: Empty title AND empty description -> 400
+
         $resEmpty = $this->harness->apiCall('POST', '/api/requests', [
             'elderly_id' => 1,
             'category_id' => 1,
@@ -390,12 +390,12 @@ class Tier2_BoundaryCornerTest
         ]);
         $this->harness->assert('T2-REQ-02: Create request with empty title and empty description rejected with 400', $resEmpty['code'] === 400, "Code: {$resEmpty['code']}", 'Tier 2');
 
-        // T2-REQ-03: Double accept -> 400
+
         $this->harness->apiCall('POST', "/api/requests/{$minReqId}/accept", ['volunteer_id' => 2]);
         $resDoubleAccept = $this->harness->apiCall('POST', "/api/requests/{$minReqId}/accept", ['volunteer_id' => 2]);
         $this->harness->assert('T2-REQ-03: Accepting already accepted task (in_progress) rejected with 400', $resDoubleAccept['code'] === 400, "Code: {$resDoubleAccept['code']}", 'Tier 2');
 
-        // T2-REQ-04: Complete without accept on an open task
+
         $openReq = $this->harness->createHelpRequest(1, 1, 'Непринятая заявка');
         $openId = $openReq['data']['request_id'];
         $resEarlyComplete = $this->harness->apiCall('POST', "/api/requests/{$openId}/complete", [
@@ -405,7 +405,7 @@ class Tier2_BoundaryCornerTest
         ]);
         $this->harness->assert('T2-REQ-04: Completing open task without taking into work rejected with 400', $resEarlyComplete['code'] === 400, "Code: {$resEarlyComplete['code']}", 'Tier 2');
 
-        // T2-REQ-05: Complete the accepted task
+
         $resComp = $this->harness->apiCall('POST', "/api/requests/{$minReqId}/complete", [
             'secret_code' => $minSecret,
             'latitude' => 53.9168,
@@ -413,7 +413,7 @@ class Tier2_BoundaryCornerTest
         ]);
         $this->harness->assert('T2-REQ-05: Complete in_progress task with valid code succeeds (200)', $resComp['code'] === 200, "Code: {$resComp['code']}", 'Tier 2');
 
-        // T2-REQ-06: Complete already completed task -> 400
+
         $resDoubleComp = $this->harness->apiCall('POST', "/api/requests/{$minReqId}/complete", [
             'secret_code' => $minSecret,
             'latitude' => 53.9168,
@@ -421,7 +421,7 @@ class Tier2_BoundaryCornerTest
         ]);
         $this->harness->assert('T2-REQ-06: Completing already completed task rejected with 400', $resDoubleComp['code'] === 400, "Code: {$resDoubleComp['code']}", 'Tier 2');
 
-        // T2-REQ-07: Cancel open task then try to accept
+
         $resCancel = $this->harness->apiCall('POST', "/api/requests/{$openId}/cancel");
         $this->harness->assert('T2-REQ-07: Cancel open task succeeds (200)', $resCancel['code'] === 200, "Code: {$resCancel['code']}", 'Tier 2');
 
@@ -429,7 +429,7 @@ class Tier2_BoundaryCornerTest
         $this->harness->assert('T2-REQ-08: Accepting cancelled task rejected with 400', $resAcceptCancelled['code'] === 400, "Code: {$resAcceptCancelled['code']}", 'Tier 2');
     }
 
-    // Category 7: Rate Limiting, Input Sanitization & Stress (8 tests)
+
     private function testSanitizationAndStressBoundaries(): void
     {
         echo "\n[Tier 2.7] Rate Limiting, Input Sanitization & Stress (8 tests):\n";
@@ -442,21 +442,21 @@ class Tier2_BoundaryCornerTest
         $this->harness->assert('T2-SAN-04: RateLimiter strictly rejects request 4 (exceeded limit)', !RateLimiter::check($key, 3, 30), '', 'Tier 2');
         RateLimiter::clear($key);
 
-        // Long title stress (1000 characters)
+
         $longTitle = str_repeat('А', 1000);
         $resLong = $this->harness->createHelpRequest(1, 1, $longTitle);
         $this->harness->assert('T2-SAN-05: 1000-character long title handled safely without crash', in_array($resLong['code'], [201, 400]), "Code: {$resLong['code']}", 'Tier 2');
 
-        // Cyrillic, Latin and punctuation in description
+
         $mixedDesc = 'Пожалуйста, buy 2 packages of творог 5% & кефир. Спасибо!';
         $resMixed = $this->harness->createHelpRequest(1, 1, 'Смешанное описание', $mixedDesc);
         $this->harness->assert('T2-SAN-06: Mixed Cyrillic/Latin/Symbols description accepted intact', $resMixed['code'] === 201, "Code: {$resMixed['code']}", 'Tier 2');
 
-        // Anti-fraud danger detection
+
         $fraudRes = AntiFraudService::analyze('Сообщите код из смс и CVV карты для перевода пенсии');
         $this->harness->assert('T2-SAN-07: AntiFraudService flags phishing pattern as danger', ($fraudRes['risk_level'] ?? '') === 'danger', '', 'Tier 2');
 
-        // Anti-fraud safe detection
+
         $safeRes = AntiFraudService::analyze('Купите пожалуйста буханку нарезного батона и пакет кефира');
         $this->harness->assert('T2-SAN-08: AntiFraudService flags benign request as safe', ($safeRes['risk_level'] ?? '') === 'safe', '', 'Tier 2');
     }

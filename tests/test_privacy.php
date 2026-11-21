@@ -27,7 +27,6 @@ require_once __DIR__ . '/../app/Models/User.php';
 require_once __DIR__ . '/../app/Models/ElderlyProfile.php';
 require_once __DIR__ . '/../app/Models/VolunteerProfile.php';
 require_once __DIR__ . '/../app/Models/HelpRequest.php';
-require_once __DIR__ . '/../app/Models/UserConsent.php';
 require_once __DIR__ . '/../app/Models/SosAlert.php';
 require_once __DIR__ . '/../app/Services/CryptoService.php';
 require_once __DIR__ . '/../app/Services/DataMaskingService.php';
@@ -39,7 +38,6 @@ use App\Models\User;
 use App\Models\ElderlyProfile;
 use App\Models\VolunteerProfile;
 use App\Models\HelpRequest;
-use App\Models\UserConsent;
 use App\Services\CryptoService;
 use App\Services\DataMaskingService;
 use App\Services\PrivacyService;
@@ -86,9 +84,9 @@ function apiCall(string $method, string $path, array $data = null, array $header
     return ['code' => $code, 'data' => json_decode($response ?: '', true)];
 }
 
-// -------------------------------------------------------------
-// SUITE 1: Cryptographic Engine (AES-256-GCM)
-// -------------------------------------------------------------
+
+
+
 echo "[TEST SUITE 1] AES-256-GCM Cryptographic Service:\n";
 
 $sampleText = "Пациент имеет ограниченную подвижность: перелом шейки бедра, 2 группа инвалидности. Нужен пандус.";
@@ -111,20 +109,20 @@ assertTest('CSPRNG IV ensures two encryptions produce different ciphertexts',
     "Ciphertexts should be unique due to random IV"
 );
 
-// Idempotency: encrypting already encrypted payload does not re-encrypt
+
 $doubleEnc = CryptoService::encrypt($encrypted);
 assertTest('Double encryption is prevented (idempotent)',
     $doubleEnc === $encrypted,
     "Re-encrypting returned different result"
 );
 
-// Backward compatibility: unencrypted plaintext passed to decrypt() is returned as-is
+
 $legacyPlain = "Обычный текст без шифрования";
 assertTest('Legacy unencrypted data passes through decrypt without error',
     CryptoService::decrypt($legacyPlain) === $legacyPlain
 );
 
-// Tamper resistance: modifying a single bit in the ciphertext or tag causes decryption failure
+
 $tampered = substr($encrypted, 0, -2) . 'AA';
 $tamperDetected = false;
 try {
@@ -134,15 +132,15 @@ try {
 }
 assertTest('Tampered ciphertext or tag throws DecryptionException', $tamperDetected);
 
-// Key derivation testing
+
 $genKey = CryptoService::generateKey();
 assertTest('Key generator creates base64 encoded 256-bit key',
     str_starts_with($genKey, 'base64:') && strlen(CryptoService::normalizeKey($genKey)) === 32
 );
 
-// -------------------------------------------------------------
-// SUITE 2: Model-Level Transparent Encryption (ElderlyProfile)
-// -------------------------------------------------------------
+
+
+
 echo "\n[TEST SUITE 2] Transparent Model Encryption (ElderlyProfile):\n";
 
 $testUserPhone = '+37529' . rand(1000000, 9999999);
@@ -164,7 +162,7 @@ ElderlyProfile::create([
     'emergency_contact' => '+375291234567'
 ]);
 
-// Verify database raw value is encrypted
+
 $pdo = Database::getConnection();
 $stmtRaw = $pdo->prepare("SELECT mobility_notes FROM elderly_profiles WHERE user_id = :uid");
 $stmtRaw->execute(['uid' => $tempUserId]);
@@ -175,14 +173,14 @@ assertTest('Raw database record is genuinely encrypted with enc:v1: prefix',
     "Raw value in DB: {$rawDbValue}"
 );
 
-// Verify ElderlyProfile::find() decrypts transparently
+
 $loadedProfile = ElderlyProfile::find($tempUserId);
 assertTest('ElderlyProfile::find transparently decrypts mobility_notes',
     $loadedProfile !== null && $loadedProfile['mobility_notes'] === $medicalNotes,
     "Got: " . ($loadedProfile['mobility_notes'] ?? 'NULL')
 );
 
-// Verify ElderlyProfile::update() re-encrypts updated notes
+
 $updatedNotes = "Обновление: состояние улучшилось, ходит самостоятельно.";
 ElderlyProfile::update($tempUserId, ['mobility_notes' => $updatedNotes]);
 
@@ -197,9 +195,9 @@ assertTest('Reloaded updated profile decrypts to new notes',
     $reloadedProfile['mobility_notes'] === $updatedNotes
 );
 
-// -------------------------------------------------------------
-// SUITE 3: Data Masking Service (Law 99-Z)
-// -------------------------------------------------------------
+
+
+
 echo "\n[TEST SUITE 3] PII Data Masking Service (Law 99-Z):\n";
 
 assertTest('Masks Belarusian standard phone (+375291112233)',
@@ -238,7 +236,7 @@ assertTest('Preserves private house / address without apartment unchanged',
     DataMaskingService::maskAddress('ул. Орловская, 12') === 'ул. Орловская, 12'
 );
 
-// Access control matrix tests
+
 $mockRequest = [
     'elderly_id' => 10,
     'volunteer_id' => 20,
@@ -273,14 +271,14 @@ assertTest('Other volunteer viewing in_progress task sees masked details',
     DataMaskingService::canViewUnmasked($inProgressReq, ['user_id' => 999, 'role_code' => 'volunteer']) === false
 );
 
-// -------------------------------------------------------------
-// SUITE 4: PrivacyService & Electronic Consent (Law 99-Z)
-// -------------------------------------------------------------
+
+
+
 echo "\n[TEST SUITE 4] Electronic Consent Ledger (PrivacyService):\n";
 
 $privacyService = new PrivacyService();
 
-// Record consent
+
 $consentResult = $privacyService->recordConsent($tempUserId, PrivacyService::CONSENT_DATA_PROCESSING, '1.0.0');
 assertTest('Record valid electronic consent returns active record',
     $consentResult['id'] > 0 && $consentResult['consent_type'] === PrivacyService::CONSENT_DATA_PROCESSING
@@ -305,19 +303,19 @@ assertTest('Invalid consent type is rejected with InvalidArgumentException',
     })()
 );
 
-// Revoke consent
+
 $revoked = $privacyService->revokeConsent($tempUserId, PrivacyService::CONSENT_DATA_PROCESSING);
 assertTest('revokeConsent successfully marks record as revoked', $revoked === true);
 assertTest('hasActiveConsent returns false after revocation',
     $privacyService->hasActiveConsent($tempUserId, PrivacyService::CONSENT_DATA_PROCESSING) === false
 );
 
-// -------------------------------------------------------------
-// SUITE 5: Right to be Forgotten (Anonymization & Referential Integrity)
-// -------------------------------------------------------------
+
+
+
 echo "\n[TEST SUITE 5] Right to be Forgotten (Cryptographic Anonymization):\n";
 
-// Create a second disposable user to test active task blocking
+
 $anonUserPhone = '+37529' . rand(1000000, 9999999);
 $anonUserId = (int)User::create([
     'role_id' => 1,
@@ -335,7 +333,7 @@ ElderlyProfile::create([
     'emergency_contact' => '+375449876543'
 ]);
 
-// Create an active request for this user
+
 $activeReqId = (int)HelpRequest::create([
     'elderly_id' => $anonUserId,
     'category_id' => 1,
@@ -348,13 +346,13 @@ $activeReqId = (int)HelpRequest::create([
     'status' => 'open'
 ]);
 
-// Active task must block anonymization!
+
 $checkBefore = $privacyService->canAnonymizeUser($anonUserId);
 assertTest('Active request blocks user anonymization (canAnonymizeUser allowed = false)',
     $checkBefore['allowed'] === false && $checkBefore['active_requests_count'] === 1
 );
 
-// Complete the active request
+
 HelpRequest::update($activeReqId, [
     'status' => 'completed',
     'completed_at' => date('Y-m-d H:i:s')
@@ -365,13 +363,13 @@ assertTest('Completed request allows user anonymization (canAnonymizeUser allowe
     $checkAfter['allowed'] === true && $checkAfter['active_requests_count'] === 0
 );
 
-// Perform anonymization
+
 $anonResult = $privacyService->anonymizeUser($anonUserId, 'Тестовый аудит права на забвение');
 assertTest('anonymizeUser executes successfully without database errors',
     $anonResult['success'] === true && $anonResult['user_id'] === $anonUserId
 );
 
-// Inspect database state after anonymization
+
 $anonymizedUser = User::find($anonUserId);
 assertTest('User name is replaced with pseudonym',
     $anonymizedUser['name'] === "Анонимизированный пользователь #{$anonUserId}"
@@ -398,7 +396,7 @@ assertTest('Profile coordinates coarsened to district centroid',
     abs((float)$anonymizedProfile['latitude'] - PrivacyService::SOVETSKY_CENTROID_LAT) < 0.0001
 );
 
-// Help request sanitization
+
 $sanitizedReq = HelpRequest::find($activeReqId);
 assertTest('Historical request address coarsened to district',
     $sanitizedReq['address'] === PrivacyService::ANONYMIZED_ADDRESS
@@ -408,13 +406,13 @@ assertTest('Historical request secret safety code wiped to [REDACTED]',
     $sanitizedReq['secret_code'] === '[REDACTED]'
 );
 
-// Referential integrity: foreign keys and records are preserved
+
 $elderlyRequests = HelpRequest::getByElderly($anonUserId);
 assertTest('Referential integrity preserved: request record count retained for state reporting',
     count($elderlyRequests) === 1 && (int)$elderlyRequests[0]['id'] === $activeReqId
 );
 
-// Anonymize multiple users sequentially to ensure NO unique phone collision
+
 $user3Phone = '+37529' . rand(1000000, 9999999);
 $user3Id = (int)User::create([
     'role_id' => 1,
@@ -437,12 +435,12 @@ assertTest('Multiple users anonymized without phone UNIQUE collision',
     $u2['phone'] !== $u3['phone'] && str_starts_with($u3['phone'], '+375 (00) 000-')
 );
 
-// -------------------------------------------------------------
-// SUITE 6: REST API Privacy Endpoints (E2E Integration)
-// -------------------------------------------------------------
+
+
+
 echo "\n[TEST SUITE 6] REST API Privacy Endpoints:\n";
 
-// Login as Admin (user #4)
+
 $loginRes = apiCall('POST', '/api/auth/login', [
     'phone' => '+375299999999',
     'password' => 'password123'
@@ -450,7 +448,7 @@ $loginRes = apiCall('POST', '/api/auth/login', [
 $adminToken = $loginRes['data']['token'] ?? '';
 assertTest('Admin login generates valid bearer token', !empty($adminToken));
 
-// Create temporary user for API test
+
 $apiTestPhone = '+37529' . rand(1000000, 9999999);
 $apiUserId = (int)User::create([
     'role_id' => 1,
@@ -473,7 +471,7 @@ $apiUserToken = AuthService::createToken([
     'name' => 'API Подопечный Тест'
 ]);
 
-// 1. POST /api/consent
+
 $consentRes = apiCall('POST', '/api/consent', [
     'consent_type' => 'DATA_PROCESSING_99Z',
     'policy_version' => '1.0.0'
@@ -483,21 +481,21 @@ assertTest('POST /api/consent records consent and returns 201 Created',
     "Got code {$consentRes['code']}, data: " . json_encode($consentRes['data'], JSON_UNESCAPED_UNICODE)
 );
 
-// 2. GET /api/consent
+
 $getConsentRes = apiCall('GET', '/api/consent', null, ["Authorization: Bearer {$apiUserToken}"]);
 assertTest('GET /api/consent returns 200 with consent list',
     $getConsentRes['code'] === 200 && count($getConsentRes['data']['data'] ?? []) >= 1,
     "Got code {$getConsentRes['code']}, data: " . json_encode($getConsentRes['data'], JSON_UNESCAPED_UNICODE)
 );
 
-// 3. POST /api/privacy/anonymize without confirm -> 400
+
 $anonFailRes = apiCall('POST', '/api/privacy/anonymize', ['confirm' => false], ["Authorization: Bearer {$apiUserToken}"]);
 assertTest('POST /api/privacy/anonymize without confirm: true returns 400 Bad Request',
     $anonFailRes['code'] === 400,
     "Got code {$anonFailRes['code']}, data: " . json_encode($anonFailRes['data'], JSON_UNESCAPED_UNICODE)
 );
 
-// 4. POST /api/privacy/anonymize with open task -> 409 Conflict
+
 $openTaskRes = apiCall('POST', '/api/requests', [
     'elderly_id' => $apiUserId,
     'category_id' => 1,
@@ -515,12 +513,12 @@ assertTest('POST /api/privacy/anonymize with open task returns 409 Conflict',
     "Got code {$anonConflictRes['code']}, data: " . json_encode($anonConflictRes['data'], JSON_UNESCAPED_UNICODE)
 );
 
-// Cancel the open task
+
 if ($openTaskId > 0) {
     apiCall('POST', "/api/requests/{$openTaskId}/cancel", null, ["Authorization: Bearer {$apiUserToken}"]);
 }
 
-// 5. POST /api/elderly/{id}/anonymize by volunteer -> 403 Forbidden
+
 $volToken = AuthService::createToken([
     'id' => 2,
     'role_id' => 2,
@@ -533,7 +531,7 @@ assertTest('POST /api/elderly/{id}/anonymize by volunteer is blocked with 403 Fo
     $forbiddenRes['code'] === 403
 );
 
-// 6. POST /api/elderly/{id}/anonymize by coordinator/admin -> 200 OK
+
 $coordRes = apiCall('POST', "/api/elderly/{$apiUserId}/anonymize", [
     'confirm' => true,
     'reason' => 'Письменное обращение в ТЦСОН'
@@ -542,7 +540,7 @@ assertTest('POST /api/elderly/{id}/anonymize by admin returns 200 OK and anonymi
     $coordRes['code'] === 200 && $coordRes['data']['success'] === true
 );
 
-// Verify anonymized user state via fresh database query
+
 Database::resetConnection();
 $checkApiUser = User::find($apiUserId);
 assertTest('Target elderly user successfully anonymized via admin API endpoint',
@@ -550,7 +548,7 @@ assertTest('Target elderly user successfully anonymized via admin API endpoint',
     "Got user: " . json_encode($checkApiUser, JSON_UNESCAPED_UNICODE)
 );
 
-// 7. Verify open feed masking via GET /api/requests
+
 $openFeedRes = apiCall('GET', '/api/requests');
 assertTest('GET /api/requests returns 200 OK', $openFeedRes['code'] === 200);
 

@@ -54,7 +54,7 @@ class CoordinatorController
             }
         }
 
-        // Category breakdown: single query to prevent N+1 overhead
+
         $categoryStats = Category::query(
             "SELECT c.id, c.code, c.title, c.icon, COUNT(r.id) AS count
              FROM categories c
@@ -90,9 +90,9 @@ class CoordinatorController
     public function pendingVolunteers(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
-        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at 
-                FROM volunteer_profiles vp 
-                JOIN users u ON u.id = vp.user_id 
+        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at
+                FROM volunteer_profiles vp
+                JOIN users u ON u.id = vp.user_id
                 WHERE vp.is_verified = 0 OR vp.verification_status = 'PENDING'
                 ORDER BY u.created_at DESC";
         $list = VolunteerProfile::query($sql);
@@ -128,10 +128,10 @@ class CoordinatorController
         ]);
     }
 
-    // --- Category management (admin adds types of help requests) ---
-    /**
-     * Public catalogue of help-request types, used by the request form and admin UI.
-     */
+
+
+
+
     public function categories(): void
     {
         $list = Category::query(
@@ -202,7 +202,7 @@ class CoordinatorController
         if (!$cat) {
             Router::json(['error' => 'Категория не найдена'], 404);
         }
-        // Prevent deleting categories in use (efficient single-row check)
+
         $inUse = HelpRequest::query("SELECT 1 FROM help_requests WHERE category_id = :cat_id LIMIT 1", ['cat_id' => $catId]);
         if (!empty($inUse)) {
             Router::json(['error' => 'Нельзя удалить категорию, используемую в заявках'], 409);
@@ -211,7 +211,7 @@ class CoordinatorController
         Router::json(['success' => true, 'message' => 'Категория удалена']);
     }
 
-    // --- Rehabilitation for low-rated volunteers ---
+
     public function rehabilitateVolunteer(string $id): void
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
@@ -224,11 +224,11 @@ class CoordinatorController
         $currentRating = (float)($vp['rating'] ?? 5.0);
         $needsRehab = $currentRating < $threshold;
 
-        // Assign educational materials set for retraining
+
         $materials = EducationalMaterial::all();
         $rehabMaterials = array_slice($materials, 0, 5);
 
-        // Reset rating to baseline and mark as pending re-verification if low
+
         if ($needsRehab) {
             VolunteerProfile::update($uid, [
                 'rating' => 4.0,
@@ -449,10 +449,10 @@ class CoordinatorController
         ]);
     }
 
-    /**
-     * Active security & SOS alerts for coordinator
-     * Route: GET /api/coordinator/alerts
-     */
+
+
+
+
     public function alerts(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -468,10 +468,10 @@ class CoordinatorController
         ]);
     }
 
-    /**
-     * Watchdog overdue tasks feed
-     * Routes: GET /api/coordinator/watchdog, GET /api/coordinator/tasks/overdue, GET /api/requests/overdue
-     */
+
+
+
+
     public function watchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -486,10 +486,10 @@ class CoordinatorController
         ]);
     }
 
-    /**
-     * Manually trigger watchdog scan
-     * Route: POST /api/tasks/watchdog/run
-     */
+
+
+
+
     public function runWatchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -497,10 +497,10 @@ class CoordinatorController
         Router::json($result);
     }
 
-    /**
-     * Reassign overdue/stalled request back to neighborhood feed
-     * Route: POST /api/coordinator/requests/{id}/reassign
-     */
+
+
+
+
     public function reassignRequest(string $id): void
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);

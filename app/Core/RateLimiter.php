@@ -26,7 +26,7 @@ class RateLimiter
 
                 if ($now < $expiresAt) {
                     if ($attempts >= $maxAttempts) {
-                        return false; // Rate limit exceeded!
+                        return false;
                     }
                     $data['attempts'] = $attempts + 1;
                     file_put_contents($file, json_encode($data), LOCK_EX);
@@ -35,7 +35,7 @@ class RateLimiter
             }
         }
 
-        // Fresh or expired window
+
         $data = [
             'attempts' => 1,
             'expires_at' => $now + $decaySeconds

@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-/**
- * Milestone 4: Comprehensive Frontend UI, WCAG 2.1 AAA & Zero-Emoji Test Suite
- * Platform: «ЗаботаРядом» (Советский район г. Минска)
- */
+
+
+
+
 
 $totalTests = 0;
 $passedTests = 0;
@@ -33,9 +33,9 @@ $cssContent = (string)@file_get_contents($baseDir . '/public/css/accessibility.c
 $appJs = (string)@file_get_contents($baseDir . '/public/js/app.js');
 $speechJs = (string)@file_get_contents($baseDir . '/public/js/speech.js');
 
-// -----------------------------------------------------------------------------
-// SUITE 1: Senior Screen DOM & Accessibility (Feature 15 & Law 99-Z)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 1] Senior Screen DOM Elements & Accessibility:" . PHP_EOL;
 
 assertTest(
@@ -68,9 +68,9 @@ assertTest(
     strpos($indexHtml, 'id="btnAnonymizeProfile"') !== false && strpos($indexHtml, 'requestRightToBeForgotten') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 2: Volunteer Screen DOM & Modals (Features 18 & 19)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 2] Volunteer Screen Proof-of-Presence & Badge Modals:" . PHP_EOL;
 
 assertTest(
@@ -103,9 +103,9 @@ assertTest(
     strpos($indexHtml, 'id="badgeCountdownTimer"') !== false && strpos($indexHtml, 'id="refreshBadgeBtn"') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 3: Coordinator Screen & Watchdog (Features 16 & 17)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 3] Coordinator Console, Siren & Watchdog Panel:" . PHP_EOL;
 
 assertTest(
@@ -128,9 +128,9 @@ assertTest(
     strpos($indexHtml, 'runWatchdogScan()') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 4: Public Verification View (Feature 20)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 4] Public Volunteer Badge Verification View (public/verify.php):" . PHP_EOL;
 
 assertTest(
@@ -158,9 +158,9 @@ assertTest(
     strpos($verifyHtml, 'href="/css/accessibility.css"') !== false && strpos($verifyHtml, 'senior-mode') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 5: Accessible CSS & High Contrast (Feature 21)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 5] WCAG 2.1 AAA Accessibility & Animations (public/css/accessibility.css):" . PHP_EOL;
 
 assertTest(
@@ -188,9 +188,9 @@ assertTest(
     strpos($cssContent, '.sos-btn') !== false && strpos($cssContent, '.sos-pulse-banner') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 6: Client JavaScript Implementations (public/js/speech.js & public/js/app.js)
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 6] Client JavaScript APIs & Web Speech / Web Audio:" . PHP_EOL;
 
 assertTest(
@@ -228,65 +228,68 @@ assertTest(
     strpos($appJs, 'requestRightToBeForgotten') !== false && strpos($appJs, '/api/privacy/anonymize') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 7: Architectural Plan Suite in /plan (Feature 22)
-// -----------------------------------------------------------------------------
-echo PHP_EOL . "[SUITE 7] Architectural Documentation Suite (/plan):" . PHP_EOL;
 
-$planDir = $baseDir . '/plan';
 
-assertTest('F22-PLN-01: Directory /plan exists in project root', is_dir($planDir));
+
+echo PHP_EOL . "[SUITE 7] Architectural Documentation Suite (docs/adr):" . PHP_EOL;
+
+$adrDir = $baseDir . '/docs/adr';
+$adrIndex = (string)@file_get_contents($adrDir . '/README.md');
+$adr1 = (string)@file_get_contents($adrDir . '/0001-php82-custom-mvc.md');
+$adr2 = (string)@file_get_contents($adrDir . '/0002-vanilla-js-frontend-wcag.md');
+$adr3 = (string)@file_get_contents($adrDir . '/0003-database-sqlite-mysql.md');
+$adr4 = (string)@file_get_contents($adrDir . '/0004-pdo-idempotent-migrations.md');
+$adr5 = (string)@file_get_contents($adrDir . '/0005-hmac-auth-and-rate-limiting.md');
+$adr7 = (string)@file_get_contents($adrDir . '/0007-aes256gcm-and-data-masking.md');
+$adr8 = (string)@file_get_contents($adrDir . '/0008-identity-provider-adapters.md');
+$adr9 = (string)@file_get_contents($adrDir . '/0009-emergency-112-adapter.md');
+$adr12 = (string)@file_get_contents($adrDir . '/0012-custom-test-harness.md');
+
+assertTest('F22-ADR-01: Directory docs/adr exists', is_dir($adrDir));
 
 assertTest(
-    'F22-PLN-02: 01_SYSTEM_OVERVIEW.md exists and exceeds 500 bytes',
-    file_exists($planDir . '/01_SYSTEM_OVERVIEW.md') && filesize($planDir . '/01_SYSTEM_OVERVIEW.md') > 500
+    'F22-ADR-02: ADR index exists and exceeds 500 bytes',
+    file_exists($adrDir . '/README.md') && filesize($adrDir . '/README.md') > 500
 );
 
-$p2 = (string)@file_get_contents($planDir . '/02_GEOFENCING_AND_SECURITY.md');
 assertTest(
-    'F22-PLN-03: 02_GEOFENCING_AND_SECURITY.md details Haversine and 6371',
-    strpos($p2, 'Haversine') !== false && (strpos($p2, '6371') !== false || strpos($p2, '6 371') !== false)
+    'F22-ADR-03: ADR-0001/0002 document custom MVC and WCAG frontend',
+    strpos($adr1, 'MVC') !== false && strpos($adr2, 'WCAG') !== false && strpos($adr2, 'Vanilla') !== false
 );
 
-$p3 = (string)@file_get_contents($planDir . '/03_VOLUNTEER_VERIFICATION_AND_BADGES.md');
 assertTest(
-    'F22-PLN-04: 03_VOLUNTEER_VERIFICATION_AND_BADGES.md details MSI and Gosuslugi SNILS',
-    strpos($p3, 'МСИ') !== false && (strpos($p3, 'СНИЛС') !== false || strpos($p3, '101') !== false)
+    'F22-ADR-04: ADR-0003 documents SQLite and MySQL',
+    strpos($adr3, 'SQLite') !== false && strpos($adr3, 'MySQL') !== false
 );
 
-$p4 = (string)@file_get_contents($planDir . '/04_DATA_PROTECTION_AND_PRIVACY.md');
 assertTest(
-    'F22-PLN-05: 04_DATA_PROTECTION_AND_PRIVACY.md details Law 99-Z and AES-256-GCM',
-    strpos($p4, '99-З') !== false && strpos($p4, 'AES-256-GCM') !== false
+    'F22-ADR-05: ADR-0007 documents Law 99-Z and AES-256-GCM',
+    strpos($adr7, '99-З') !== false && strpos($adr7, 'AES-256-GCM') !== false
 );
 
-$p5 = (string)@file_get_contents($planDir . '/05_EMERGENCY_SOS_AND_WATCHDOG.md');
 assertTest(
-    'F22-PLN-06: 05_EMERGENCY_SOS_AND_WATCHDOG.md details Priority 0 and Watchdog timeouts',
-    strpos($p5, 'Priority 0') !== false || strpos($p5, 'Приоритет 0') !== false
+    'F22-ADR-06: ADR-0008 documents MSI and SNILS identity adapters',
+    strpos($adr8, 'МСИ') !== false && (strpos($adr8, 'СНИЛС') !== false || strpos($adr8, '101') !== false)
 );
 
-$p6 = (string)@file_get_contents($planDir . '/06_DATABASE_MIGRATIONS.md');
 assertTest(
-    'F22-PLN-07: 06_DATABASE_MIGRATIONS.md details SQLite schema and 11 indexes',
-    strpos($p6, 'индекс') !== false && strpos($p6, 'migrate.php') !== false
+    'F22-ADR-07: ADR-0009 documents Priority 0 SOS and the 112 adapter',
+    strpos($adr9, 'Priority 0') !== false || strpos($adr9, 'Приоритет 0') !== false
 );
 
-$p7 = (string)@file_get_contents($planDir . '/07_REST_API_SPECIFICATION.md');
 assertTest(
-    'F22-PLN-08: 07_REST_API_SPECIFICATION.md documents /api/requests catalog',
-    strpos($p7, '/api/requests') !== false && strpos($p7, 'RBAC') !== false
+    'F22-ADR-08: ADR-0004 documents idempotent migrations and migrate.php',
+    strpos($adr4, 'migrate.php') !== false && strpos($adr4, 'индекс') !== false
 );
 
-$p8 = (string)@file_get_contents($planDir . '/08_TESTING_AND_AUDIT.md');
 assertTest(
-    'F22-PLN-09: 08_TESTING_AND_AUDIT.md details 5-tier testing architecture and regression audit',
-    strpos($p8, 'Tier') !== false && strpos($p8, 'run_e2e.php') !== false
+    'F22-ADR-09: ADR-0005/0012 document HMAC auth and the tiered test harness',
+    strpos($adr5, 'HMAC') !== false && strpos($adr12, 'Tier') !== false && strpos($adr12, 'run_e2e.php') !== false
 );
 
-// -----------------------------------------------------------------------------
-// SUITE 8: Strict Zero-Emoji Compliance Across All Frontend Files
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "[SUITE 8] Strict Zero-Emoji Compliance Audit:" . PHP_EOL;
 
 $emojiRegex = '/[\x{1F600}-\x{1F64F}\x{1F300}-\x{1F5FF}\x{1F680}-\x{1F6FF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{1F900}-\x{1F9FF}\x{1F1E0}-\x{1F1FF}]/u';
@@ -297,14 +300,16 @@ $filesToAudit = [
     'public/css/accessibility.css' => $cssContent,
     'public/js/app.js' => $appJs,
     'public/js/speech.js' => $speechJs,
-    'plan/01_SYSTEM_OVERVIEW.md' => (string)@file_get_contents($planDir . '/01_SYSTEM_OVERVIEW.md'),
-    'plan/02_GEOFENCING_AND_SECURITY.md' => $p2,
-    'plan/03_VOLUNTEER_VERIFICATION_AND_BADGES.md' => $p3,
-    'plan/04_DATA_PROTECTION_AND_PRIVACY.md' => $p4,
-    'plan/05_EMERGENCY_SOS_AND_WATCHDOG.md' => $p5,
-    'plan/06_DATABASE_MIGRATIONS.md' => $p6,
-    'plan/07_REST_API_SPECIFICATION.md' => $p7,
-    'plan/08_TESTING_AND_AUDIT.md' => $p8,
+    'docs/adr/README.md' => $adrIndex,
+    'docs/adr/0001-php82-custom-mvc.md' => $adr1,
+    'docs/adr/0002-vanilla-js-frontend-wcag.md' => $adr2,
+    'docs/adr/0003-database-sqlite-mysql.md' => $adr3,
+    'docs/adr/0004-pdo-idempotent-migrations.md' => $adr4,
+    'docs/adr/0005-hmac-auth-and-rate-limiting.md' => $adr5,
+    'docs/adr/0007-aes256gcm-and-data-masking.md' => $adr7,
+    'docs/adr/0008-identity-provider-adapters.md' => $adr8,
+    'docs/adr/0009-emergency-112-adapter.md' => $adr9,
+    'docs/adr/0012-custom-test-harness.md' => $adr12,
 ];
 
 foreach ($filesToAudit as $filename => $content) {
@@ -316,9 +321,9 @@ foreach ($filesToAudit as $filename => $content) {
     );
 }
 
-// -----------------------------------------------------------------------------
-// SUMMARY
-// -----------------------------------------------------------------------------
+
+
+
 echo PHP_EOL . "--------------------------------------------------------" . PHP_EOL;
 echo "TEST RESULTS: Total: {$totalTests} | Passed: {$passedTests} | Failed: {$failedTests}" . PHP_EOL;
 echo "========================================================" . PHP_EOL;
