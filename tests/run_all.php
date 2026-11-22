@@ -166,6 +166,9 @@ if (!healthOk($baseUrl)) {
 
     if (!healthOk($baseUrl)) {
         fwrite(STDERR, "Could not start test server. See {$serverLog}" . PHP_EOL);
+        if (file_exists($serverLog)) {
+            fwrite(STDERR, file_get_contents($serverLog) . PHP_EOL);
+        }
         if (is_resource($serverProcess)) {
             proc_terminate($serverProcess);
         }
