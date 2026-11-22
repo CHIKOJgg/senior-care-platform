@@ -47,6 +47,11 @@ jobs:
           extensions: pdo, pdo_mysql, curl, json, mbstring
           coverage: none
 
+      - name: Initialize Storage Directories
+        run: |
+          mkdir -p storage/data storage/logs storage/cache storage/metrics storage/cache/rate_limits
+          chmod -R 777 storage
+
       - name: Check PHP Syntax & Lint
         run: |
           find app public tests database -type f -name "*.php" -exec php -l {} +
@@ -139,6 +144,11 @@ jobs:
           php-version: '8.2'
           extensions: pdo, pdo_mysql, curl, json, mbstring
 
+      - name: Initialize Storage Directories
+        run: |
+          mkdir -p storage/data storage/logs storage/cache storage/metrics storage/cache/rate_limits
+          chmod -R 777 storage
+
       - name: Migrate and seed MySQL
         run: |
           php database/migrate.php
@@ -150,12 +160,16 @@ jobs:
           APP_PID=$!
           trap 'kill $APP_PID 2>/dev/null || true' EXIT
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health > /dev/null; then
+            if curl -fsS http://127.0.0.1:8080/api/health > /dev/null 2>&1; then
               break
             fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8080/api/health
+          if ! curl -fsS http://127.0.0.1:8080/api/health; then
+            echo "=== Health check failed. Server log: ==="
+            cat /tmp/care-app-mysql.log || true
+            exit 1
+          fi
           curl -fsS -X POST -H "Content-Type: application/json" \
             -d '{"phone":"+375291112233","password":"password123","remember":true}' \
             http://127.0.0.1:8080/api/auth/login | grep -Eq '"success"[[:space:]]*:[[:space:]]*true'

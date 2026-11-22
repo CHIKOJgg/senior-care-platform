@@ -959,6 +959,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                             Памятки по безопасности, здоровью и волонтёрству. Материалы также используются при реабилитации волонтёров с низким рейтингом.
                         </p>
                         <form id="educationForm" onsubmit="return submitEducationForm(event)">
+                            <input type="hidden" id="eduId" value="">
                             <div class="form-group">
                                 <label class="form-label" for="eduTitle">Заголовок:</label>
                                 <input type="text" id="eduTitle" class="form-control" placeholder="Как распознать телефонных мошенников" required>
@@ -983,7 +984,10 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                                 <label class="form-label" for="eduContent">Текст материала:</label>
                                 <textarea id="eduContent" class="form-control" rows="3" placeholder="Короткий и понятный текст памятки" required></textarea>
                             </div>
-                            <button type="submit" class="btn btn-primary">Добавить материал</button>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="submit" class="btn btn-primary" id="eduSubmitBtn">Добавить материал</button>
+                                <button type="button" class="btn btn-outline" onclick="resetEducationForm()">Очистить</button>
+                            </div>
                         </form>
                         <div id="educationFormMessage" class="alert-banner" role="status" aria-live="polite" style="display: none; margin-top: 14px;"></div>
 

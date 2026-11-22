@@ -482,7 +482,7 @@ function scanDirectoryForEmojis(string $dir, string $regex, array $excludeFiles 
     return $hits;
 }
 
-$baseDir = is_dir('/var/www/html') ? '/var/www/html' : dirname(__DIR__);
+$baseDir = dirname(__DIR__);
 
 // 2.1 Backend MVC (app/)
 $appHits = scanDirectoryForEmojis("{$baseDir}/app", $standardEmojiRegex);
@@ -627,9 +627,9 @@ assertTest(
 // -----------------------------------------------------------------------------
 echo PHP_EOL . "--- [PART 4] Authentic SOS Priority 0 Assertion in Tier 2 ---" . PHP_EOL;
 
-$tier2Path = __DIR__ . '/../tests/e2e_suite/Tier2_BoundaryCornerTest.php';
+$tier2Path = __DIR__ . '/e2e_suite/Tier2_BoundaryCornerTest.php';
 if (!file_exists($tier2Path)) {
-    $tier2Path = '/var/www/html/tests/e2e_suite/Tier2_BoundaryCornerTest.php';
+    $tier2Path = dirname(__DIR__) . '/tests/e2e_suite/Tier2_BoundaryCornerTest.php';
 }
 $tier2Content = file_exists($tier2Path) ? (string)file_get_contents($tier2Path) : '';
 $hasStaticPass = str_contains($tier2Content, "'pass' => true, 'details' => 'Priority 0 default configured'");

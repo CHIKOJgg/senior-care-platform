@@ -29,19 +29,30 @@ class HealthController
                 $dbStatus = 'connected';
                 $dbLatency = round((microtime(true) - $startTime) * 1000, 2);
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $healthy = false;
             $dbStatus = 'error';
             $errorMsg = null;
             Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
-        $storageChecks = [
-            'logs' => is_writable(__DIR__ . '/../../storage/logs'),
-            'cache' => is_writable(__DIR__ . '/../../storage/cache'),
-            'metrics' => is_writable(__DIR__ . '/../../storage/metrics'),
+        $storagePaths = [
+            'logs' => __DIR__ . '/../../storage/logs',
+            'cache' => __DIR__ . '/../../storage/cache',
+            'metrics' => __DIR__ . '/../../storage/metrics',
         ];
-        $storageWritable = !in_array(false, $storageChecks, true);
+        $storageChecks = [];
+        $storageWritable = true;
+        foreach ($storagePaths as $name => $path) {
+            if (!is_dir($path)) {
+                @mkdir($path, 0775, true);
+            }
+            $writable = is_dir($path) && is_writable($path);
+            $storageChecks[$name] = $writable;
+            if (!$writable) {
+                $storageWritable = false;
+            }
+        }
         if (!$storageWritable) {
             $healthy = false;
             Logger::error('Health check storage failure', ['writable' => $storageChecks]);

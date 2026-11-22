@@ -12,11 +12,17 @@ test_out.docx
 tests/e2e_report.json
 
 # Logs, metrics & runtime data
-logs/
+/logs/
 *.log
-cache/
-storage/metrics/
-storage/data/
+/cache/
+storage/metrics/*
+!storage/metrics/.gitkeep
+storage/data/*
+!storage/data/.gitkeep
+storage/logs/*
+!storage/logs/.gitkeep
+storage/cache/*
+!storage/cache/.gitkeep
 
 # Vendor & Dependencies
 vendor/
