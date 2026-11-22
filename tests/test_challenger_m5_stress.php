@@ -10,7 +10,7 @@ declare(strict_types=1);
  * 2. Dynamic QR badge HMAC tampering (bit-flips, exp+1s, future iat)
  * 3. Anonymization: volunteer accreditation instant revocation (badge valid: false)
  * 4. EMERCOM ticket burst: 1,000 tickets, verify 0 collisions + boundary validation
- * 5. SOS burst: 10 concurrent requests (curl_multi & parallel processes), verify no SQLite deadlocks
+ * 5. SOS burst: 10 concurrent requests (curl_multi & parallel processes), verify no MySQL deadlocks
  */
 
 require_once __DIR__ . '/../app/Core/Database.php';
@@ -448,7 +448,7 @@ assertStress(
     "HTTP 201 count: {$http201Count}/10, Unique IDs: " . count(array_unique($createdSosIds))
 );
 
-// Part B: Direct multiprocess concurrency stress on SQLite
+// Part B: Direct multiprocess concurrency stress on MySQL
 // Launch 10 independent background CLI processes simultaneously inserting into database
 $scriptPath = __DIR__ . '/_tmp_sos_worker.php';
 $workerCode = <<<'PHP'
@@ -523,7 +523,7 @@ foreach ($procHandles as $i => $proc) {
 
 assertStress(
     'CHAL-SOS-02',
-    'Multiprocess SQLite contention: 10 parallel processes insert without database lock exceptions',
+    'Multiprocess MySQL contention: 10 parallel processes insert without database lock exceptions',
     $procSuccessCount === 10,
     "Success count: {$procSuccessCount}/10. Errors: " . implode('; ', $procErrors)
 );

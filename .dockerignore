@@ -11,11 +11,9 @@ test_out.docx
 Идея.docx
 logs/
 storage/logs/
-storage/*.sqlite
 storage/tmp_*
 storage/metrics/
 cache/
-database/*.sqlite
 .agents/
 plan/
 .idea/

@@ -345,16 +345,23 @@ assertStress("Migration script executes 5 times in rapid succession with exit co
     $migrationSuccessCount === 5, 
     implode("; ", $migrationErrors)
 );
-assertStress("Zero duplicate column or SQLite DDL errors observed during rapid migrations", 
-    count($migrationErrors) === 0, 
+assertStress("Zero duplicate column or MySQL DDL errors observed during rapid migrations",
+    count($migrationErrors) === 0,
     implode("; ", $migrationErrors)
 );
 
-// 4.2 SQLite database integrity check
+// 4.2 MySQL table integrity check
 $pdo = Database::getConnection();
-$integrityStmt = $pdo->query("PRAGMA integrity_check;");
-$integrityResult = $integrityStmt ? $integrityStmt->fetchColumn() : 'failed';
-assertStress("SQLite database passes PRAGMA integrity_check with 'ok'", $integrityResult === 'ok', "Result: {$integrityResult}");
+$integrityErrors = [];
+foreach (['users', 'help_requests', 'elderly_profiles', 'volunteer_profiles', 'sos_alerts'] as $table) {
+    $rows = $pdo->query("CHECK TABLE `{$table}`")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as $row) {
+        if (strtolower((string)($row['Msg_type'] ?? '')) === 'error') {
+            $integrityErrors[] = $table . ': ' . ($row['Msg_text'] ?? 'unknown');
+        }
+    }
+}
+assertStress('MySQL CHECK TABLE passes for all core tables', $integrityErrors === [], implode('; ', $integrityErrors));
 
 // 4.3 Verify data consistency after 5 migrations
 $stmtProfile = $pdo->query("SELECT user_id, mobility_notes FROM elderly_profiles WHERE user_id = 1;");

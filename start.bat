@@ -1,15 +1,11 @@
 @echo off
 chcp 65001 > nul
 echo ===================================================
-echo   Запуск платформы «ЗаботаРядом» (PHP 8+)
+echo   Запуск «ЗаботаРядом» (MySQL + PHP)
 echo ===================================================
-
-echo [1/3] Применение миграций базы данных...
-php database/migrate.php
-
-echo [2/3] Наполнение демонстрационными данными...
-php database/seed.php
-
-echo [3/3] Запуск локального веб-сервера на http://localhost:8000...
-echo Для остановки нажмите Ctrl+C
-php -S 0.0.0.0:8000 router.php
+echo.
+echo Запускаю development-стек: MySQL 8 + PHP 8.2.
+echo После старта откройте http://localhost:8000
+echo Остановка: Ctrl+C, затем "docker compose down".
+echo.
+docker compose up --build

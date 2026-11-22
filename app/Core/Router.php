@@ -90,7 +90,7 @@ class Router
         }
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
         $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
-        if (getenv('APP_ENV') !== 'production') {
+        if (\App\Services\AuthService::isDevMode()) {
             $allowedHeaders .= ', X-Demo-User';
         }
         header('Access-Control-Allow-Headers: ' . $allowedHeaders);

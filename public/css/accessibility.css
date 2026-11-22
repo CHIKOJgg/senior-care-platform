@@ -6,16 +6,16 @@
 :root {
     --bg-color: #f8fafc;
     --text-color: #0f172a;
-    --text-muted: #64748b;
+    --text-muted: #334155;
     --card-bg: #ffffff;
     --card-subtle: #f8fafc;
-    --primary-color: #0284c7;
-    --primary-hover: #0369a1;
-    --accent-color: #16a34a;
-    --danger-color: #dc2626;
-    --warning-color: #d97706;
+    --primary-color: #075985;
+    --primary-hover: #0c4a6e;
+    --accent-color: #166534;
+    --danger-color: #991b1b;
+    --warning-color: #92400e;
     --border-color: #e2e8f0;
-    --border-focus: #0284c7;
+    --border-focus: #075985;
     --font-size-base: 16px;
     --font-size-title: 24px;
     --btn-height: 44px;
@@ -67,6 +67,23 @@ body {
 :focus-visible {
     outline: 3px solid var(--border-focus);
     outline-offset: 2px;
+}
+
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10000;
+    background: var(--card-bg);
+    color: var(--text-color);
+    border: 3px solid var(--border-focus);
+    padding: 10px 16px;
+    font-weight: 800;
+}
+
+.skip-link:focus {
+    left: 12px;
+    top: 12px;
 }
 
 /* =========================================================================
@@ -305,8 +322,9 @@ body.senior-mode .btn {
 }
 
 .btn-sm {
-    height: 36px !important;
-    padding: 0 14px !important;
+    min-height: 44px !important;
+    height: auto !important;
+    padding: 8px 14px !important;
     font-size: 0.88em !important;
     border-radius: 8px !important;
     flex-shrink: 0;
@@ -321,8 +339,9 @@ body.senior-mode .btn-sm {
 }
 
 .btn-xs {
-    height: 30px !important;
-    padding: 0 10px !important;
+    min-height: 44px !important;
+    height: auto !important;
+    padding: 8px 10px !important;
     font-size: 0.82em !important;
     border-radius: 6px !important;
 }
@@ -421,6 +440,16 @@ body.senior-mode .secret-code-box {
     color: #b45309;
 }
 
+.alert-banner-info {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1e3a8a;
+}
+
+.alert-banner-info h3 {
+    color: #1e40af;
+}
+
 .alert-banner-success {
     background: #f0fdf4;
     border-color: #bbf7d0;
@@ -433,6 +462,7 @@ body.senior-mode .secret-code-box {
 
 body.senior-mode .alert-banner-danger,
 body.senior-mode .alert-banner-warning,
+body.senior-mode .alert-banner-info,
 body.senior-mode .alert-banner-success {
     background: var(--card-bg) !important;
     border: 2px solid #000000 !important;
@@ -702,7 +732,8 @@ select {
 
 .form-control:focus {
     border-color: var(--primary-color);
-    outline: none;
+    outline: 3px solid var(--border-focus);
+    outline-offset: 2px;
 }
 
 textarea.form-control {
@@ -953,6 +984,8 @@ body.senior-mode .stat-num {
     padding: 24px;
     max-width: 440px;
     width: 100%;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
 }
 

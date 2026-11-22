@@ -94,6 +94,13 @@ class DataMaskingService
             return self::cleanPunctuation((string)$masked);
         }
 
+        // Pattern 3: Any remaining unit marker (офис, помещение, комната, ...)
+        $patternUnit = '/(?:,?\s*(?:кв(?:артира|\.)?|комн(?:ата|\.)?|офис|пом(?:ещение|\.)?)\s*[№#]?\s*\d+[a-zA-Zа-яА-Я]?)/iu';
+        if (preg_match($patternUnit, $trimmed)) {
+            $masked = preg_replace($patternUnit, ', пом. ***', $trimmed);
+            return self::cleanPunctuation((string)$masked);
+        }
+
         return $trimmed;
     }
 
@@ -160,6 +167,16 @@ class DataMaskingService
         if (isset($request['volunteer_phone']) && !empty($request['volunteer_phone'])) {
             $request['volunteer_phone'] = self::maskPhone((string)$request['volunteer_phone']);
         }
+
+        // The secret word is a proof-of-presence factor: only the author, the
+        // assigned volunteer and coordinators may ever see it. Public feeds and
+        // unrelated authenticated accounts must never receive it.
+        unset(
+            $request['secret_code'],
+            $request['volunteer_feedback'],
+            $request['latitude'],
+            $request['longitude']
+        );
 
         return $request;
     }

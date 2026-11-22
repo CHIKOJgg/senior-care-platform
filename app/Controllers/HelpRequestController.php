@@ -77,7 +77,7 @@ class HelpRequestController
         $elderlyId = null;
         if ($currentUser && $currentUser['role_code'] === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
-        } elseif (getenv('APP_ENV') !== 'production' && isset($_GET['elderly_id'])) {
+        } elseif (AuthService::isDevMode() && isset($_GET['elderly_id'])) {
             $elderlyId = (int)$_GET['elderly_id'];
         }
         if ($elderlyId === null) {
@@ -100,7 +100,7 @@ class HelpRequestController
         $volunteerId = null;
         if ($currentUser && $currentUser['role_code'] === 'volunteer') {
             $volunteerId = (int)$currentUser['user_id'];
-        } elseif (getenv('APP_ENV') !== 'production' && isset($_GET['volunteer_id'])) {
+        } elseif (AuthService::isDevMode() && isset($_GET['volunteer_id'])) {
             $volunteerId = (int)$_GET['volunteer_id'];
         }
         if ($volunteerId === null) {
@@ -150,7 +150,7 @@ class HelpRequestController
         $elderlyId = null;
         if ($currentUser && $currentUser['role_code'] === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
-        } elseif (getenv('APP_ENV') !== 'production') {
+        } elseif (AuthService::isDevMode()) {
             $elderlyId = (int)($input['elderly_id'] ?? 1);
         }
         if ($elderlyId === null) {
@@ -159,9 +159,13 @@ class HelpRequestController
         }
 
         $categoryId = (int)($input['category_id'] ?? 1);
-        $title = trim($input['title'] ?? '');
-        $description = trim($input['description'] ?? '');
-        $address = trim((string)($input['address'] ?? ''));
+        $title = is_string($input['title'] ?? null) ? trim($input['title']) : '';
+        $description = is_string($input['description'] ?? null) ? trim($input['description']) : '';
+        $address = is_string($input['address'] ?? null) ? trim($input['address']) : '';
+
+        if (!\App\Models\Category::find($categoryId)) {
+            Router::json(['error' => 'Выбранная категория помощи не найдена'], 400);
+        }
 
         $hasCoords = isset($input['latitude'], $input['longitude']);
         $latInput = $hasCoords ? (float)$input['latitude'] : null;
@@ -185,6 +189,7 @@ class HelpRequestController
         if ($address === '') {
             $address = 'Республика Беларусь, ' . RegionService::name($regionCode);
         }
+        $address = mb_substr($address, 0, 500, 'UTF-8');
 
         if (!$title && !$description) {
             Router::json(['error' => 'Укажите или надиктуйте, какая помощь требуется'], 400);
@@ -241,7 +246,7 @@ class HelpRequestController
         $volunteerId = null;
         if ($currentUser && $currentUser['role_code'] === 'volunteer') {
             $volunteerId = (int)$currentUser['user_id'];
-        } elseif (getenv('APP_ENV') !== 'production') {
+        } elseif (AuthService::isDevMode()) {
             $volunteerId = (int)($input['volunteer_id'] ?? 2);
         }
         if ($volunteerId === null) {
@@ -267,11 +272,10 @@ class HelpRequestController
             ], 403);
         }
 
-        HelpRequest::update((int)$id, [
-            'volunteer_id' => $volunteerId,
-            'status' => 'in_progress',
-            'assigned_at' => date('Y-m-d H:i:s')
-        ]);
+        // Atomic claim: two simultaneous accepts must not overwrite each other.
+        if (!HelpRequest::tryAccept((int)$id, (int)$volunteerId)) {
+            Router::json(['error' => 'Заявка уже взята другим волонтёром или завершена'], 409);
+        }
 
         Logger::info("Request #{$id} accepted by verified volunteer #{$volunteerId}");
 
@@ -285,7 +289,7 @@ class HelpRequestController
     public function complete(string $id): void
     {
         $input = Router::getJsonInput();
-        $secretWord = trim((string)($input['secret_code'] ?? ''));
+        $secretWord = is_string($input['secret_code'] ?? null) ? trim($input['secret_code']) : '';
 
         $req = HelpRequest::find((int)$id);
         if (!$req) {
@@ -293,13 +297,19 @@ class HelpRequestController
         }
 
         $currentUser = AuthService::getCurrentUser();
+        $completingVolunteerId = null;
         if ($currentUser) {
             $role = $currentUser['role_code'] ?? '';
             $uid = (int)$currentUser['user_id'];
-            if ($role === 'volunteer' && (int)($req['volunteer_id'] ?? 0) !== $uid) {
-                Router::json(['error' => 'Доступ запрещён: завершить можно только свою заявку'], 403);
+            if ($role === 'volunteer') {
+                if ((int)($req['volunteer_id'] ?? 0) !== $uid) {
+                    Router::json(['error' => 'Доступ запрещён: завершить можно только свою заявку'], 403);
+                }
+                $completingVolunteerId = $uid;
+            } elseif (!in_array($role, ['admin', 'coordinator'], true)) {
+                Router::json(['error' => 'Доступ запрещён: завершать заявки могут волонтёры и координаторы'], 403);
             }
-        } elseif (getenv('APP_ENV') === 'production') {
+        } elseif (!AuthService::isDevMode()) {
             AuthService::requireAuth();
         }
 
@@ -320,8 +330,7 @@ class HelpRequestController
         }
 
         if (!SecurityService::verifyCode($secretWord, (string)$req['secret_code'])) {
-            $failedAttempts++;
-            HelpRequest::update((int)$id, ['failed_attempts' => $failedAttempts]);
+            $failedAttempts = HelpRequest::registerFailedAttempt((int)$id);
             Logger::security("Invalid secret code entered for request #{$id}. Attempt {$failedAttempts}/5");
 
             if ($failedAttempts >= 5) {
@@ -330,7 +339,7 @@ class HelpRequestController
                 ], 400);
             }
 
-            $remaining = 5 - $failedAttempts;
+            $remaining = max(0, 5 - $failedAttempts);
             Router::json([
                 'error' => "Неверный проверочный код безопасности! Кодовое слово не совпадает. Осталось попыток: {$remaining}"
             ], 400);
@@ -381,24 +390,22 @@ class HelpRequestController
         $completedLon = $vLon;
         $distanceToTarget = round($distMeters, 1);
 
-        HelpRequest::update((int)$id, [
-            'status' => 'completed',
-            'completed_at' => date('Y-m-d H:i:s'),
-            'failed_attempts' => 0,
-            'completed_lat' => $completedLat,
-            'completed_lon' => $completedLon,
-            'distance_to_target' => $distanceToTarget
-        ]);
+        // Conditional update is the concurrency guard: only the first completion
+        // of an in-progress request can transition it to completed.
+        $completed = HelpRequest::completeIfInProgress(
+            (int)$id,
+            $completingVolunteerId,
+            $completedLat,
+            $completedLon,
+            $distanceToTarget
+        );
+        if (!$completed) {
+            Router::json(['error' => 'Заявка уже завершена или более не находится в работе'], 400);
+        }
 
-        // Add karma points to volunteer
+        // Add karma points to volunteer (atomic increment prevents lost updates)
         if ($req['volunteer_id']) {
-            $vp = VolunteerProfile::find((int)$req['volunteer_id']);
-            if ($vp) {
-                VolunteerProfile::update((int)$req['volunteer_id'], [
-                    'points' => (int)$vp['points'] + 50,
-                    'completed_tasks_count' => (int)$vp['completed_tasks_count'] + 1
-                ]);
-            }
+            VolunteerProfile::addCompletion((int)$req['volunteer_id'], 50);
         }
 
         Logger::info("Request #{$id} successfully completed. Secret code confirmed" . ($distanceToTarget !== null ? " at {$distanceToTarget}m." : "."));
@@ -432,8 +439,12 @@ class HelpRequestController
             if (!$allowed) {
                 Router::json(['error' => 'Доступ запрещён: нельзя отменить чужую заявку'], 403);
             }
-        } elseif (getenv('APP_ENV') === 'production') {
+        } elseif (!AuthService::isDevMode()) {
             AuthService::requireAuth();
+        }
+
+        if (!in_array($req['status'], ['open', 'in_progress'], true)) {
+            Router::json(['error' => 'Отменить можно только открытую или выполняющуюся заявку'], 409);
         }
 
         HelpRequest::updateStatus($reqId, 'cancelled');

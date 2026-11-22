@@ -58,7 +58,7 @@ app/Services/Emergency/
 
 - Кнопка SOS с `min-height: 60px`, `aria-label`, подтверждением и озвучиванием.
 - Пульсирующий баннер `sos-pulse-banner`, `aria-live="assertive"`.
-- Сирена на Web Audio API (см. ADR-0014).
+- Громкие звуковые эффекты намеренно не используются (см. ADR-0014).
 
 ## Обоснование
 
@@ -109,7 +109,7 @@ app/Services/Emergency/
 - `app/Services/Emergency/MchsEmergencyAdapter.php`
 - `app/Controllers/SosController.php`
 - `app/Models/SosAlert.php`
-- `database/schema.sql` — таблица `sos_alerts`.
+- `database/schema.mysql.sql` - таблица `sos_alerts`.
 - `monitoring/prometheus/alerts.yml` — алерт `CareActiveSOS`.
 - `plan/05_EMERGENCY_SOS_AND_WATCHDOG.md`
 - `PROJECT.md` — «Priority 0 SOS Alerting», «Modular EMERCOM / MChS Adapter».

@@ -1,16 +1,11 @@
 FROM php:8.2-cli-alpine
 
-# Install SQLite and PDO dependencies
-RUN apk add --no-cache sqlite-dev sqlite mysql-client mariadb-connector-c-dev \
-    && docker-php-ext-install pdo pdo_sqlite pdo_mysql
+# MySQL client libraries + PDO MySQL only.
+RUN apk add --no-cache mariadb-connector-c-dev \
+    && docker-php-ext-install pdo pdo_mysql
 
 WORKDIR /var/www/html
 
 COPY . /var/www/html
 
-# Run migrations and seeders on container startup
-RUN php database/migrate.php && php database/seed.php
-
 EXPOSE 8000
-
-CMD ["php", "-S", "0.0.0.0:8000", "router.php"]

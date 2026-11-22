@@ -6,13 +6,13 @@ declare(strict_types=1);
  * Challenger M5-r2-2: Concurrency & SOS Priority 0 Empirical Adversarial Harness
  * 
  * Objectives:
- * 1. Empirically verify SQLite WAL mode and concurrent write resilience:
- *    - PRAGMA checks: journal_mode = WAL, busy_timeout >= 5000, synchronous = 1 (NORMAL), foreign_keys = ON.
- *    - Multi-process / burst load stress tests against SQLite database inside container.
+ * 1. Empirically verify MySQL storage configuration and concurrent write resilience:
+ *    - InnoDB engine, utf8mb4 charset, declared foreign keys, durable commits.
+ *    - Multi-process / burst load stress tests against MySQL database inside container.
  *    - Rapid sequential and concurrent transactions (SOS creation, task assignment, completion, profile anonymization, consent logging)
- *      with ZERO SQLITE_BUSY / database is locked errors.
+ *      with ZERO deadlocks / lock-wait timeouts.
  * 2. Empirically verify SOS Emergency Priority 0:
- *    - SOS alerts default to Priority 0 both in API response and in SQLite sos_alerts.priority.
+ *    - SOS alerts default to Priority 0 both in API response and in MySQL sos_alerts.priority.
  *    - Resolving SOS alert with valid resolution note properly transitions status to RESOLVED and records resolution timestamp.
  */
 
@@ -77,40 +77,49 @@ echo "==========================================================================
 $pdo = Database::getConnection();
 
 // =============================================================================
-// SECTION 1: SQLite WAL Mode & Pragma Configuration Verification
+// SECTION 1: MySQL Storage Engine, Charset & Foreign-Key Verification
 // =============================================================================
-echo "--- [SECTION 1] SQLite WAL Mode & Pragma Verification ---\n";
+echo "--- [SECTION 1] MySQL Storage Engine & Foreign-Key Verification ---\n";
 
-$journalMode = strtolower((string)$pdo->query("PRAGMA journal_mode")->fetchColumn());
+$engine = strtolower((string)$pdo->query("
+    SELECT ENGINE FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn());
 assertChallenger(
-    'CHAL-WAL-01',
-    'SQLite journal_mode is configured as WAL (Write-Ahead Logging)',
-    $journalMode === 'wal',
-    "Actual journal_mode: {$journalMode}"
+    'CHAL-DB-01',
+    'MySQL uses InnoDB for transactional help_requests',
+    $engine === 'innodb',
+    "Actual engine: {$engine}"
 );
 
-$busyTimeout = (int)$pdo->query("PRAGMA busy_timeout")->fetchColumn();
+$charset = strtolower((string)$pdo->query("
+    SELECT DEFAULT_CHARACTER_SET_NAME FROM INFORMATION_SCHEMA.SCHEMATA
+    WHERE SCHEMA_NAME = DATABASE()
+")->fetchColumn());
 assertChallenger(
-    'CHAL-WAL-02',
-    'SQLite busy_timeout is set to at least 5000ms',
-    $busyTimeout >= 5000,
-    "Actual busy_timeout: {$busyTimeout}ms"
+    'CHAL-DB-02',
+    'MySQL database uses utf8mb4 for Cyrillic and emoji-safe text',
+    $charset === 'utf8mb4',
+    "Actual charset: {$charset}"
 );
 
-$synchronous = (int)$pdo->query("PRAGMA synchronous")->fetchColumn();
+$foreignKeys = (int)$pdo->query("
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn();
 assertChallenger(
-    'CHAL-WAL-03',
-    'SQLite synchronous pragma is NORMAL (1) for high-performance WAL writes',
-    $synchronous === 1,
-    "Actual synchronous: {$synchronous}"
+    'CHAL-DB-03',
+    'MySQL foreign keys are declared for help_requests',
+    $foreignKeys > 0,
+    "Foreign keys: {$foreignKeys}"
 );
 
-$foreignKeys = (int)$pdo->query("PRAGMA foreign_keys")->fetchColumn();
+$flush = (int)$pdo->query('SELECT @@innodb_flush_log_at_trx_commit')->fetchColumn();
 assertChallenger(
-    'CHAL-WAL-04',
-    'SQLite foreign_keys pragma is enabled (1)',
-    $foreignKeys === 1,
-    "Actual foreign_keys: {$foreignKeys}"
+    'CHAL-DB-04',
+    'InnoDB is configured for durable commits (innodb_flush_log_at_trx_commit = 1)',
+    $flush === 1,
+    "Actual innodb_flush_log_at_trx_commit: {$flush}"
 );
 
 // =============================================================================
@@ -143,11 +152,11 @@ assertChallenger(
     "HTTP {$sosApiRes['code']}, Priority=" . var_export($sosApiRes['data']['priority'] ?? null, true)
 );
 
-// 2.2 Direct SQLite verification of Priority 0 in database
+// 2.2 Direct MySQL verification of Priority 0 in database
 $dbSos = SosAlert::find($sosId);
 assertChallenger(
     'CHAL-SOS-PRIO-02',
-    'SQLite database table sos_alerts stores priority = 0 and status = ACTIVE',
+    'MySQL database table sos_alerts stores priority = 0 and status = ACTIVE',
     $dbSos !== null
         && (int)$dbSos['priority'] === 0
         && $dbSos['status'] === 'ACTIVE'
@@ -163,7 +172,7 @@ $dbSchemaAlert = SosAlert::find($schemaAlertId);
 
 assertChallenger(
     'CHAL-SOS-PRIO-03',
-    'SQLite DDL default constraint automatically assigns priority 0 when omitted from INSERT',
+    'MySQL DDL default constraint automatically assigns priority 0 when omitted from INSERT',
     $dbSchemaAlert !== null && (int)$dbSchemaAlert['priority'] === 0,
     "Schema default priority: " . var_export($dbSchemaAlert['priority'] ?? null, true)
 );
@@ -316,7 +325,7 @@ assertChallenger(
 );
 
 // 3.2: Multi-Process Concurrent Stress Test: 20 Parallel CLI Processes
-// Each process opens its own SQLite PDO connection and performs multi-statement write transactions
+// Each process opens its own MySQL PDO connection and performs multi-statement write transactions
 $workerScript = __DIR__ . '/_tmp_concurrency_worker.php';
 $workerCode = <<<'PHP'
 <?php
@@ -446,8 +455,9 @@ foreach ($procHandles as $i => $proc) {
         $createdWorkerSosIds[] = (int)($parts[2] ?? 0);
         $createdWorkerReqIds[] = (int)($parts[3] ?? 0);
     } else {
-        if (str_contains($outTrim, 'database is locked') || str_contains($stderr, 'database is locked')
-            || str_contains($outTrim, 'SQLITE_BUSY') || str_contains($stderr, 'SQLITE_BUSY')) {
+        if (str_contains($outTrim, 'Deadlock found') || str_contains($stderr, 'Deadlock found')
+            || str_contains($outTrim, 'Lock wait timeout') || str_contains($stderr, 'Lock wait timeout')
+            || str_contains($outTrim, 'SQLSTATE[40001]') || str_contains($stderr, 'SQLSTATE[40001]')) {
             $lockBusyErrors++;
         }
         $otherErrors[] = "Worker {$i}: exit={$exitCode}, out={$outTrim}, err={$stderr}";
@@ -465,7 +475,7 @@ assertChallenger(
 
 assertChallenger(
     'CHAL-CONCUR-03',
-    'Zero SQLITE_BUSY or database is locked occurrences during parallel 20-process burst',
+    'Zero MySQL deadlocks or lock-wait timeouts during parallel 20-process burst',
     $lockBusyErrors === 0,
     "Lock Busy Count: {$lockBusyErrors}"
 );

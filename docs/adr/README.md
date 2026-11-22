@@ -23,7 +23,7 @@
 |---|---|---|---|
 | [ADR-0001](0001-php82-custom-mvc.md) | PHP 8.2 и собственное MVC-ядро без фреймворка | Фреймворк / backend | Принято |
 | [ADR-0002](0002-vanilla-js-frontend-wcag.md) | Vanilla JS + CSS без фронтенд-фреймворка и сборки | Фреймворк / frontend | Принято |
-| [ADR-0003](0003-database-sqlite-mysql.md) | SQLite 3 (dev/test) и MySQL 8 (production), без ORM | База данных | Принято |
+| [ADR-0003](0003-database-mysql.md) | MySQL 8 для dev, test и production, без ORM | База данных | Принято |
 | [ADR-0004](0004-pdo-idempotent-migrations.md) | PDO и идемпотентные миграции на чистом PHP | База данных | Принято |
 | [ADR-0005](0005-hmac-auth-and-rate-limiting.md) | Stateless HMAC-токены, `token_version` и файловый rate limiter | Безопасность | Принято |
 | [ADR-0006](0006-zero-composer-custom-libraries.md) | Нулевые Composer-зависимости и собственные библиотеки | Библиотеки | Принято |
@@ -34,7 +34,7 @@
 | [ADR-0011](0011-docker-caddy-nginx-phpfpm.md) | Docker, Caddy, Nginx + PHP-FPM | Инфраструктура | Принято |
 | [ADR-0012](0012-custom-test-harness.md) | Собственный тест-харнесс и 5 уровней тестирования | Тестирование | Принято |
 | [ADR-0013](0013-backups-secrets-healthchecks.md) | Бэкапы MySQL, секреты окружения и healthcheck | Эксплуатация | Принято |
-| [ADR-0014](0014-web-speech-and-audio-api.md) | Web Speech API и Web Audio API для доступности | Интеграция / браузер | Принято |
+| [ADR-0014](0014-web-speech-and-audio-api.md) | Web Speech API для голосового ввода и озвучивания | Интеграция / браузер | Принято |
 
 ## Сводка по стеку
 
@@ -44,8 +44,7 @@
 | Архитектура backend | MVC + сервисный слой, front controllers | ADR-0001 |
 | Язык frontend | Vanilla JavaScript ES6+ | ADR-0002 |
 | Стили | CSS3 custom properties, WCAG 2.1 AAA | ADR-0002 |
-| СУБД dev/test | SQLite 3 (WAL, foreign keys) | ADR-0003 |
-| СУБД production | MySQL 8.0 (InnoDB, utf8mb4) | ADR-0003 |
+| СУБД | MySQL 8.0 (InnoDB, utf8mb4) — dev, test, production | ADR-0003 |
 | Доступ к данным | PDO, prepared statements, singleton | ADR-0004 |
 | Миграции | Собственный идемпотентный `migrate.php` | ADR-0004 |
 | Аутентификация | HMAC-SHA256 stateless-токены | ADR-0005 |
@@ -63,13 +62,12 @@
 | Тестирование | Собственный harness + 5 tiers | ADR-0012 |
 | Резервное копирование | `mysqldump` в отдельном контейнере | ADR-0013 |
 | Голос | Web Speech API (STT/TTS) | ADR-0014 |
-| Сирена | Web Audio API | ADR-0014 |
 
 ## Важные оговорки по фактическому состоянию кода
 
 Эти наблюдения важны, чтобы ADR описывали реальную систему, а не только заявленные намерения:
 
-1. **PostgreSQL не реализован.** `README.md` упоминает PostgreSQL, но `app/Core/Database.php` поддерживает только `sqlite` и `mysql` (ветка `else` всегда строит MySQL DSN). См. ADR-0003.
+1. **PostgreSQL не реализован.** Поддерживается только MySQL 8; любые другие значения `DB_CONNECTION` отклоняются. См. ADR-0003.
 2. **«JWT» — это не стандартный JWT.** Токен имеет формат `base64(payload).hex(HMAC-SHA256)`, без JWT-заголовка и `alg`. Это stateless HMAC-токен, а не RFC 7519. См. ADR-0005.
 3. **Слой `views/` пуст.** HTML-шаблон находится в `public/index.php`, а клиентская логика — в `public/js/app.js`. «View» в MVC реализован как PHP-шаблон + SPA-скрипт, а не отдельный шаблонизатор. См. ADR-0001, ADR-0002.
 4. **Composer отсутствует.** Нет `composer.json`, `vendor/` и автозагрузчика Composer; используется ручной `spl_autoload_register` в `public/api.php`. См. ADR-0006.

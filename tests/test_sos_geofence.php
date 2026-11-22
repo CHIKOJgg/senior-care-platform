@@ -322,6 +322,16 @@ assertM3('SG-SOS-05: Empty payload resolves default coordinates from elderly pro
     $resMinimal['code'] === 201 && !empty($resMinimal['data']['sos_id'])
 );
 
+// 3b. Elderly sees their own active call after reload (used by the home screen)
+$resMyActive = $harness->apiCall('GET', '/api/sos/my-active', null, ["Authorization: Bearer {$elderlyToken}"]);
+$myActiveIds = array_map(static fn($a) => (int)($a['id'] ?? 0), $resMyActive['data']['data'] ?? []);
+assertM3('SG-SOS-05b: Elderly GET /api/sos/my-active returns own active alert',
+    $resMyActive['code'] === 200 && in_array($sosId, $myActiveIds, true)
+);
+assertM3('SG-SOS-05c: SOS response is explicit that 112 dispatch is simulated in this deployment',
+    ($resSos['data']['dispatch_mode'] ?? '') === 'simulated' && ($resSos['data']['emercom_notified'] ?? true) === false
+);
+
 // 4. Coordinator active alerts list
 $resActive = $harness->apiCall('GET', '/api/sos/active', null, ["Authorization: Bearer {$coordinatorToken}"]);
 assertM3('SG-SOS-06: Coordinator GET /api/sos/active returns 200 with active alerts',

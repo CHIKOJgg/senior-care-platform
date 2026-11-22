@@ -38,7 +38,7 @@
 | Watchdog | `app/Services/TaskWatchdogService.php` | тайм-ауты категорий |
 | Адаптеры | `app/Services/Identity/*`, `Emergency/*` | МСИ, ЕСИА, МЧС 112 |
 
-Используются только встроенные расширения PHP: `pdo`, `pdo_sqlite`, `pdo_mysql`, `openssl`, `mbstring`, `json`, `curl` (для healthcheck/CI).
+Используются только встроенные расширения PHP: `pdo`, `pdo_mysql`, `pdo_mysql`, `openssl`, `mbstring`, `json`, `curl` (для healthcheck/CI).
 
 ## Обоснование
 

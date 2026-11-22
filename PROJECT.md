@@ -3,7 +3,7 @@
 ## Architecture
 - **Environment**: Containerized PHP 8.2. Development uses the built-in server (`senior_care_platform`, port 8000). Production runs Nginx + PHP-FPM behind Caddy, with MySQL 8, Prometheus, Grafana, Loki and Promtail (`docker-compose.prod.yml`).
 - **Backend Architecture**: Lightweight, PSR-4 compliant MVC in `app/` without external Composer dependencies.
-  - `app/Core/`: Router, Database (SQLite PDO with foreign keys), Model, Controller.
+  - `app/Core/`: Router, Database (MySQL PDO with foreign keys), Model, Controller.
   - `app/Controllers/`: Auth, HelpRequest, Elderly, Volunteer, Admin, SosAlert, Privacy, Identity.
   - `app/Services/`:
     - `CryptoService`: AES-256-GCM authenticated encryption/decryption for sensitive health data.
@@ -25,7 +25,7 @@
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Database Migrations | Non-destructive SQLite schema migrations for new tables and columns | M1 | R5 |
+| 1 | Database Migrations | Non-destructive MySQL schema migrations for new tables and columns | M1 | R5 |
 | 2 | Sensitive Data Encryption | AES-256-GCM encryption of medical notes in database | M1 | R3 |
 | 3 | PII Data Masking | Masking phones and apartments in open request feeds (Law 99-Z) | M1 | R3 |
 | 4 | Electronic Consent Ledger | Table and API for recording user consent per Law 99-Z | M1 | R3 |
@@ -40,7 +40,7 @@
 | 13 | Modular EMERCOM / MChS Adapter | Adapter emulating dispatch to 112 / MChS emergency services | M3 | R4 |
 | 14 | Task Watchdog & Stale Monitor | Automated timeout monitoring for in-progress tasks | M3 | R4 |
 | 15 | Elderly SOS Screen & Button | High-contrast SOS button with audio/speech confirmation | M4 | R4 |
-| 16 | Coordinator SOS Alert Console | Visual pulse banner & Web Audio API siren for incoming SOS | M4 | R4 |
+| 16 | Coordinator SOS Alert Console | Visual pulse banner for incoming SOS | M4 | R4 |
 | 17 | Coordinator Watchdog View | Dashboard view of overdue tasks requiring coordinator attention | M4 | R4 |
 | 18 | Volunteer GPS Complete Modal | Geolocation capture modal with friendly out-of-range feedback | M4 | R1 |
 | 19 | Volunteer Digital Badge Modal | Modal displaying verifiable SVG QR code badge | M4 | R2 |
@@ -53,10 +53,10 @@
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| 1 | M1: DB Migrations, Cryptography & Privacy | SQLite migrations, AES-256-GCM encryption, phone/apartment masking, consent logging, anonymization endpoint | None | DONE |
+| 1 | M1: DB Migrations, Cryptography & Privacy | MySQL migrations, AES-256-GCM encryption, phone/apartment masking, consent logging, anonymization endpoint | None | DONE |
 | 2 | M2: Volunteer Verification & QR Badge | Identity adapters (MSI BY, Gosuslugi), moderation queue, HMAC-signed dynamic QR badge, public verification API | M1 | DONE |
 | 3 | M3: Geofencing, SOS Protocol & Watchdog | Haversine proof-of-presence validation, secret code verification, SOS endpoint, EMERCOM adapter, task watchdog | M1 | DONE |
-| 4 | M4: Frontend UI/UX, WCAG & Plan Docs | Elderly SOS button, Coordinator SOS siren/watchdog, Volunteer GPS modal & QR badge modal, `/plan` architecture docs | M1, M2, M3 | DONE |
+| 4 | M4: Frontend UI/UX, WCAG & Plan Docs | Elderly SOS button, Coordinator SOS console/watchdog, Volunteer GPS modal & QR badge modal, `/plan` architecture docs | M1, M2, M3 | DONE |
 | 5 | M5: E2E Acceptance & Adversarial Hardening | Comprehensive test suite (Tiers 1-4), Tier 5 adversarial tests, Forensic Integrity Audit, 100% pass | M1, M2, M3, M4 | DONE |
 
 ## Interface Contracts
@@ -100,7 +100,8 @@
 - **Headers**: `Authorization: Bearer <token>`
 - **Payload**: `{"latitude": 53.9168, "longitude": 27.5856, "reason": "Плохое самочувствие"}`
 - **Responses**:
-  - `201 Created`: `{"success": true, "sos_id": 1, "status": "ACTIVE", "emercom_notified": true}`
+  - `201 Created`: `{"success": true, "sos_id": 1, "status": "ACTIVE", "priority": 0, "emercom_notified": false, "dispatch_mode": "simulated"}`
+    (`emercom_notified` becomes `true` only when a real MCHS/112 gateway is configured; the bundled adapter is an emulator.)
 
 ### Client ↔ API: Right to be Forgotten (Privacy)
 - **Endpoint**: `POST /api/privacy/anonymize`
@@ -110,8 +111,8 @@
   - `200 OK`: `{"success": true, "message": "Персональные данные успешно обезличены в соответствии с Законом РБ № 99-З"}`
 
 ## Code Layout
-- `app/Core/`: Base framework classes (`Router.php`, `Database.php`, `Model.php`, `Controller.php`)
-- `app/Controllers/`: REST controllers (`HelpRequestController.php`, `VolunteerController.php`, `ElderlyController.php`, `AdminController.php`, `SosController.php`, `PrivacyController.php`)
+- `app/Core/`: Base framework classes (`Router.php`, `Database.php`, `Model.php`, `Logger.php`, `MetricsService.php`, `RateLimiter.php`, `Url.php`)
+- `app/Controllers/`: REST controllers (`AuthController.php`, `HelpRequestController.php`, `VolunteerController.php`, `CoordinatorController.php`, `SosController.php`, `PrivacyController.php`, `AntiFraudController.php`, `EducationController.php`, `ChatController.php`, `RegionController.php`, `HealthController.php`, `MetricsController.php`)
 - `app/Services/`:
   - `CryptoService.php` (AES-256-GCM)
   - `DataMaskingService.php` (Law 99-Z masking)
@@ -119,9 +120,10 @@
   - `GeoMatchingService.php` (Haversine distance)
   - `BadgeService.php` (Dynamic QR badges)
   - `TaskWatchdogService.php` (Overdue tasks)
+  - `SecurityService.php`, `AntiFraudService.php`, `AuthService.php`, `PasswordResetService.php`, `RegionService.php`
   - `Identity/`: `IdentityProviderInterface.php`, `MsiIdentityAdapter.php`, `GosuslugiIdentityAdapter.php`
   - `Emergency/`: `MchsEmergencyAdapter.php`
-- `database/`: `schema.sql`, `migrate.php`, `seed.php`, `database.sqlite`
-- `public/`: `index.php`, `api.php`, `css/accessibility.css`, `js/app.js`, `js/speech.js`
-- `tests/`: `run_tests.php`, `test_api_requests.php`, `test_geofencing.php`, `test_privacy.php`, `test_sos.php`, `test_badge.php`
+- `database/`: `schema.mysql.sql`, `migrate.php`, `reset.php`, `seed.php`, `watchdog.php`
+- `public/`: `index.php`, `api.php`, `verify.php`, `css/accessibility.css`, `js/app.js`, `js/speech.js`
+- `tests/`: `run_all.php`, `run_tests.php`, `test_api_requests.php`, `test_privacy.php`, `test_badge.php`, `test_sos_geofence.php`, `test_race_conditions.php`, `test_e2e_comprehensive.php`
 - `plan/`: Comprehensive architecture documentation (`01_SYSTEM_OVERVIEW.md`, `02_GEOFENCING_AND_SECURITY.md`, `03_VOLUNTEER_VERIFICATION_AND_BADGES.md`, `04_DATA_PROTECTION_AND_PRIVACY.md`, `05_EMERGENCY_SOS_AND_WATCHDOG.md`, `06_DATABASE_MIGRATIONS.md`, `07_REST_API_SPECIFICATION.md`, `08_TESTING_AND_AUDIT.md`)

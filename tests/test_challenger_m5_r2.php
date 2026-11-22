@@ -14,7 +14,7 @@ declare(strict_types=1);
  *    - Valid coordinates <= 150m, DB state verification, karma point increment
  *    - Completed task idempotency / replay prevention
  * 2. Repository-wide strict Zero-Emoji compliance via standard regex
- * 3. Database WAL mode and concurrency configuration
+ * 3. MySQL storage engine, charset and foreign-key configuration
  * 4. Authentic assertion integrity in Tier 2 SOS Priority 0 test
  */
 
@@ -503,7 +503,7 @@ assertTest(
 );
 
 // 2.3 Database schema and seed files (database/)
-$dbHits = scanDirectoryForEmojis("{$baseDir}/database", $standardEmojiRegex, ['database.sqlite', 'database.sqlite-wal', 'database.sqlite-shm']);
+$dbHits = scanDirectoryForEmojis("{$baseDir}/database", $standardEmojiRegex);
 assertTest(
     'R2-CH-EMOJI-DBFILES',
     'Strict Zero-Emoji compliance across all database/ source scripts',
@@ -511,12 +511,18 @@ assertTest(
     empty($dbHits) ? 'database/ scripts are 100% emoji-free' : 'DEFECT: Found emojis in: ' . json_encode($dbHits, JSON_UNESCAPED_UNICODE)
 );
 
-// 2.4 Database SQLite table contents
+// 2.4 Database table contents
 $pdo = App\Core\Database::getConnection();
-$tables = $pdo->query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")->fetchAll(PDO::FETCH_COLUMN);
+$tables = $pdo->query("
+    SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+")->fetchAll(PDO::FETCH_COLUMN);
 $dbContentHits = [];
 foreach ($tables as $tbl) {
-    $rows = $pdo->query("SELECT * FROM {$tbl}")->fetchAll(PDO::FETCH_ASSOC);
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', (string)$tbl)) {
+        continue;
+    }
+    $rows = $pdo->query("SELECT * FROM `{$tbl}`")->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as $rIdx => $row) {
         foreach ($row as $col => $val) {
             if (is_string($val) && preg_match_all($standardEmojiRegex, $val, $m)) {
@@ -526,10 +532,10 @@ foreach ($tables as $tbl) {
     }
 }
 assertTest(
-    'R2-CH-EMOJI-SQLITE',
-    'Strict Zero-Emoji compliance across all SQLite tables and columns in database.sqlite',
+    'R2-CH-EMOJI-MYSQL',
+    'Strict Zero-Emoji compliance across all MySQL tables and columns',
     empty($dbContentHits),
-    empty($dbContentHits) ? 'database.sqlite contains exactly 0 emojis' : 'DEFECT: Found emojis in DB: ' . implode('; ', $dbContentHits)
+    empty($dbContentHits) ? 'MySQL database contains exactly 0 emojis' : 'DEFECT: Found emojis in DB: ' . implode('; ', $dbContentHits)
 );
 
 // 2.5 Tests suite (tests/)
@@ -577,34 +583,43 @@ assertTest(
 );
 
 // -----------------------------------------------------------------------------
-// PART 3: SQLite WAL Mode & Concurrency Verification
+// PART 3: MySQL Storage Engine, Charset & Foreign Keys Verification
 // -----------------------------------------------------------------------------
-echo PHP_EOL . "--- [PART 3] SQLite WAL Mode & Concurrency Verification ---" . PHP_EOL;
+echo PHP_EOL . "--- [PART 3] MySQL Storage Engine, Charset & Foreign Keys Verification ---" . PHP_EOL;
 
 $appDb = App\Core\Database::getConnection();
-$journalMode = (string)$appDb->query('PRAGMA journal_mode')->fetchColumn();
-$busyTimeout = (int)$appDb->query('PRAGMA busy_timeout')->fetchColumn();
-$synchronous = (int)$appDb->query('PRAGMA synchronous')->fetchColumn();
+$engine = (string)$appDb->query("
+    SELECT ENGINE FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn();
+$charset = (string)$appDb->query("
+    SELECT DEFAULT_CHARACTER_SET_NAME FROM INFORMATION_SCHEMA.SCHEMATA
+    WHERE SCHEMA_NAME = DATABASE()
+")->fetchColumn();
+$fkCount = (int)$appDb->query("
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn();
 
 assertTest(
-    'R2-CH-DB-WAL',
-    'SQLite journal_mode is configured to WAL (Write-Ahead Logging)',
-    strtolower($journalMode) === 'wal',
-    "journal_mode: {$journalMode}"
+    'R2-CH-DB-ENGINE',
+    'MySQL uses InnoDB for transactional help_requests',
+    strtolower($engine) === 'innodb',
+    "engine: {$engine}"
 );
 
 assertTest(
-    'R2-CH-DB-TIMEOUT',
-    'SQLite busy_timeout is configured to >= 5000ms',
-    $busyTimeout >= 5000,
-    "busy_timeout: {$busyTimeout}ms"
+    'R2-CH-DB-CHARSET',
+    'MySQL database uses utf8mb4 for Cyrillic and emoji-safe text',
+    strtolower($charset) === 'utf8mb4',
+    "charset: {$charset}"
 );
 
 assertTest(
-    'R2-CH-DB-SYNC',
-    'SQLite synchronous is configured to NORMAL (1)',
-    $synchronous === 1,
-    "synchronous: {$synchronous}"
+    'R2-CH-DB-FK',
+    'MySQL foreign keys are declared for help_requests',
+    $fkCount > 0,
+    "foreign keys: {$fkCount}"
 );
 
 // -----------------------------------------------------------------------------

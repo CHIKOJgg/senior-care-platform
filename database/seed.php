@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 require_once __DIR__ . '/../app/Core/Database.php';
 require_once __DIR__ . '/../app/Core/Model.php';
 require_once __DIR__ . '/../app/Models/Role.php';
@@ -60,6 +62,7 @@ foreach ($categories as $c) {
 $isProduction = (getenv('APP_ENV') ?: 'local') === 'production';
 $seedDemoUsers = !$isProduction || getenv('SEED_DEMO') === 'true';
 $password = password_hash('password123', PASSWORD_DEFAULT);
+$demoElderlyId = null;
 
 if ($seedDemoUsers && !User::findByPhone('+375291112233')) {
     $uid = User::create([
@@ -78,6 +81,10 @@ if ($seedDemoUsers && !User::findByPhone('+375291112233')) {
         'mobility_notes' => 'Трудно спускаться по лестнице, 4 этаж',
         'emergency_contact' => 'Дочь Ольга (+375293334455)'
     ]);
+    $demoElderlyId = (int)$uid;
+} else {
+    $existingDemoElderly = User::findByPhone('+375291112233');
+    $demoElderlyId = $existingDemoElderly ? (int)$existingDemoElderly['id'] : null;
 }
 
 if ($seedDemoUsers && !User::findByPhone('+375292223344')) {
@@ -144,9 +151,9 @@ if ($adminPhone !== '' && $adminPassword !== '') {
     }
 }
 
-if ($seedDemoUsers && empty(HelpRequest::all())) {
+if ($seedDemoUsers && empty(HelpRequest::all()) && $demoElderlyId !== null) {
     HelpRequest::create([
-        'elderly_id' => 1,
+        'elderly_id' => $demoElderlyId,
         'category_id' => 1,
         'title' => 'Доставка молока, хлеба и овсяных хлопьев',
         'description' => 'Пожалуйста, купите 1 л молока 2.5%, батон нарезной и овсяные хлопья. Деньги отдам наличными.',
@@ -249,7 +256,7 @@ foreach ($materials as $m) {
     }
 }
 
-if (empty(FraudAlert::all())) {
+if ($seedDemoUsers && empty(FraudAlert::all())) {
     FraudAlert::create([
         'title' => 'Внимание: активизировались лже-сантехники!',
         'description' => 'В регионах Беларуси неизвестные предлагают платную проверку вентиляции и фильтров по завышенным ценам.',

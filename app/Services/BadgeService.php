@@ -9,9 +9,11 @@ use InvalidArgumentException;
 use App\Models\User;
 use App\Models\VolunteerProfile;
 use App\Core\Logger;
+use App\Core\Url;
 use App\Services\RegionService;
 
 require_once __DIR__ . '/RegionService.php';
+require_once __DIR__ . '/../Core/Url.php';
 
 class BadgeService
 {
@@ -672,9 +674,7 @@ class BadgeService
      */
     public static function generateBadgeQrSvg(string $badgeToken, array $options = []): string
     {
-        $appUrl = getenv('APP_URL') ?: 'https://zabotaryadom.by';
-        $verificationUrl = rtrim($appUrl, '/') . '/api/volunteers/badge/' . $badgeToken;
-        return self::generateQrSvg($verificationUrl, $options);
+        return self::generateQrSvg(Url::verifyBadge($badgeToken), $options);
     }
 
     /**

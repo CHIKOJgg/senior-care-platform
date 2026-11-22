@@ -36,7 +36,16 @@ class HealthController
             Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
-        $storageWritable = is_writable(__DIR__ . '/../../database');
+        $storageChecks = [
+            'logs' => is_writable(__DIR__ . '/../../storage/logs'),
+            'cache' => is_writable(__DIR__ . '/../../storage/cache'),
+            'metrics' => is_writable(__DIR__ . '/../../storage/metrics'),
+        ];
+        $storageWritable = !in_array(false, $storageChecks, true);
+        if (!$storageWritable) {
+            $healthy = false;
+            Logger::error('Health check storage failure', ['writable' => $storageChecks]);
+        }
 
         $cryptoStatus = 'ok';
         try {
@@ -79,7 +88,9 @@ class HealthController
                     'latency_ms' => $dbLatency
                 ],
                 'storage' => [
-                    'database_writable' => $storageWritable
+                    'logs_writable' => $storageChecks['logs'],
+                    'cache_writable' => $storageChecks['cache'],
+                    'metrics_writable' => $storageChecks['metrics'],
                 ],
                 'crypto' => [
                     'status' => $cryptoStatus

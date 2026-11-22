@@ -113,6 +113,7 @@ $router->post('/api/elderly/{id}/anonymize', [PrivacyController::class, 'anonymi
 
 // Emergency SOS routes (Priority 0 & EMERCOM 112 Adapter - Milestone 3)
 $router->post('/api/sos', [SosController::class, 'trigger']);
+$router->get('/api/sos/my-active', [SosController::class, 'myActive']);
 $router->get('/api/sos/active', [SosController::class, 'activeAlerts']);
 $router->get('/api/sos/{id}', [SosController::class, 'show']);
 $router->post('/api/sos/{id}/resolve', [SosController::class, 'resolveAlert']);
@@ -125,7 +126,6 @@ $router->get('/api/coordinator/alerts', [CoordinatorController::class, 'alerts']
 // Task Watchdog & Stale Monitor routes (Milestone 3)
 $router->get('/api/coordinator/watchdog', [CoordinatorController::class, 'watchdog']);
 $router->get('/api/coordinator/tasks/overdue', [CoordinatorController::class, 'watchdog']);
-$router->get('/api/requests/overdue', [CoordinatorController::class, 'watchdog']);
 $router->post('/api/tasks/watchdog/run', [CoordinatorController::class, 'runWatchdog']);
 $router->post('/api/coordinator/requests/{id}/reassign', [CoordinatorController::class, 'reassignRequest']);
 
@@ -140,7 +140,7 @@ if ($method === 'OPTIONS') {
     }
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
-    if (getenv('APP_ENV') !== 'production') {
+    if (\App\Services\AuthService::isDevMode()) {
         $allowedHeaders .= ', X-Demo-User';
     }
     header('Access-Control-Allow-Headers: ' . $allowedHeaders);

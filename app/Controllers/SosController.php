@@ -10,7 +10,6 @@ use App\Core\RateLimiter;
 use App\Services\AuthService;
 use App\Services\Emergency\MchsEmergencyAdapter;
 use App\Models\SosAlert;
-use App\Models\ElderlyProfile;
 use App\Models\User;
 
 class SosController
@@ -21,11 +20,6 @@ class SosController
      */
     public function trigger(): void
     {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        if (!RateLimiter::check("sos_trigger:{$ip}", 30, 60)) {
-            Router::json(['error' => 'Слишком много экстренных запросов. Пожалуйста, подождите минуту.'], 429);
-        }
-
         // Require a real session (HttpOnly cookie from the web UI, or an explicit bearer token).
         // This still blocks the local demo fallback for truly anonymous requests.
         $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION'])
@@ -39,6 +33,16 @@ class SosController
         $currentUser = AuthService::getCurrentUser();
         if (!$currentUser) {
             Router::json(['error' => 'Недействительный токен авторизации'], 401);
+        }
+
+        // Emergency traffic must never be rejected because another household member
+        // (or another kiosk behind the same NAT address) used their share of an IP
+        // bucket. Limit the authenticated account instead, with enough headroom for
+        // repeated panic presses.
+        $sosRateKey = 'sos_trigger:user:' . (int)$currentUser['user_id'];
+        if (!RateLimiter::check($sosRateKey, 60, 60)) {
+            Logger::security('SOS rate limit hit', ['user_id' => (int)$currentUser['user_id']]);
+            Router::json(['error' => 'Слишком много экстренных запросов. Пожалуйста, подождите минуту.'], 429);
         }
 
         $input = Router::getJsonInput();
@@ -56,9 +60,12 @@ class SosController
             Router::json(['error' => 'Вызов SOS доступен только подопечным, администраторам и координаторам'], 403);
         }
 
-        // Fetch elderly profile defaults if coordinates or address omitted
-        $profile = ElderlyProfile::find($elderlyId);
-        $user = User::find($elderlyId);
+        // Resolve elderly citizen identity
+        $target = User::getWithProfile($elderlyId);
+        if (!$target || ($target['role_code'] ?? '') !== 'elderly') {
+            Router::json(['error' => 'Подопечный с указанным идентификатором не найден'], 404);
+        }
+        $profile = $target['profile'] ?? null;
 
         $lat = isset($input['latitude']) && is_numeric($input['latitude'])
             ? (float)$input['latitude']
@@ -81,6 +88,23 @@ class SosController
             ? (string)$input['reason']
             : 'Экстренная тревога подопечного: требуется срочная помощь';
 
+        $address = mb_substr(trim($address), 0, 500, 'UTF-8');
+        $reason = mb_substr(trim($reason), 0, 1000, 'UTF-8');
+
+        // Persist the Priority 0 alert first: a notification that cannot be
+        // stored must never leave an orphaned external dispatch.
+        $alertId = SosAlert::create([
+            'elderly_id' => $elderlyId,
+            'latitude' => $lat,
+            'longitude' => $lon,
+            'address' => $address,
+            'reason' => $reason,
+            'status' => 'ACTIVE',
+            'priority' => 0,
+            'emercom_ticket_id' => null,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+
         // Modular EMERCOM / 112 dispatch
         $emercomAdapter = new MchsEmergencyAdapter();
         $dispatchData = [
@@ -93,33 +117,51 @@ class SosController
         ];
         $dispatchResult = $emercomAdapter->dispatchEmergency($dispatchData);
         $ticketId = $dispatchResult['ticket_id'] ?? $dispatchResult['incident_code'] ?? null;
+        if ($ticketId !== null) {
+            SosAlert::update($alertId, ['emercom_ticket_id' => $ticketId]);
+        }
 
-        // Persist Priority 0 Alert to database
-        $alertId = SosAlert::create([
-            'elderly_id' => $elderlyId,
-            'latitude' => $lat,
-            'longitude' => $lon,
-            'address' => $address,
-            'reason' => $reason,
-            'status' => 'ACTIVE',
-            'priority' => 0,
-            'emercom_ticket_id' => $ticketId,
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
+        $dispatchMode = (string)($dispatchResult['mode'] ?? 'simulated');
+        $emercomNotified = $dispatchMode === 'live' && ($dispatchResult['success'] ?? false) === true;
+        $message = $emercomNotified
+            ? 'Сигнал SOS принят! Координаторы и экстренная служба МЧС (112) оповещены.'
+            : 'Сигнал SOS принят координатором ТЦСОН. Интеграция с МЧС (112) работает в тестовом режиме.';
 
-        Logger::security("Priority 0 SOS created #{$alertId} for Elderly #{$elderlyId}. EMERCOM ticket: {$ticketId}");
+        Logger::security("Priority 0 SOS created #{$alertId} for Elderly #{$elderlyId}. Dispatch mode: {$dispatchMode}, ticket: {$ticketId}");
 
         Router::json([
             'success' => true,
-            'message' => 'Сигнал SOS принят! Координаторы и экстренная служба МЧС (112) оповещены.',
+            'message' => $message,
             'sos_id' => (int)$alertId,
             'status' => 'ACTIVE',
             'priority' => 0,
             'emercom_ticket_id' => $ticketId,
-            'emercom_notified' => true,
+            'emercom_notified' => $emercomNotified,
+            'dispatch_mode' => $dispatchMode,
             'dispatch' => $dispatchResult,
             'created_at' => date('Y-m-d H:i:s')
         ], 201);
+    }
+
+    /**
+     * Return the authenticated elderly citizen's own active SOS alerts.
+     * Route: GET /api/sos/my-active
+     */
+    public function myActive(): void
+    {
+        $user = AuthService::requireAuth(['elderly']);
+        $alerts = SosAlert::where('elderly_id', (int)$user['user_id']);
+        $alerts = array_values(array_filter(
+            $alerts,
+            static fn(array $alert): bool => in_array($alert['status'] ?? '', ['ACTIVE', 'ACKNOWLEDGED'], true)
+        ));
+
+        Router::json([
+            'success' => true,
+            'count' => count($alerts),
+            'data' => $alerts,
+            'alerts' => $alerts
+        ]);
     }
 
     /**

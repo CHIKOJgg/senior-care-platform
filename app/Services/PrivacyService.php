@@ -56,6 +56,9 @@ class PrivacyService
 
         $ip = $ipAddress ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1');
         $ua = $userAgent ?? ($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown');
+        $ip = mb_substr((string)$ip, 0, 45, 'UTF-8');
+        $ua = mb_substr((string)$ua, 0, 1000, 'UTF-8');
+        $policyVersion = mb_substr($policyVersion, 0, 50, 'UTF-8');
 
         $pdo = Database::getConnection();
         $stmt = $pdo->prepare("
@@ -182,12 +185,12 @@ class PrivacyService
         }
 
         $stmtReq = $pdo->prepare("
-            SELECT COUNT(*) as cnt 
-            FROM help_requests 
-            WHERE (elderly_id = :user_id OR volunteer_id = :user_id) 
+            SELECT COUNT(*) as cnt
+            FROM help_requests
+            WHERE (elderly_id = :elderly_id OR volunteer_id = :volunteer_id)
               AND status IN ('open', 'in_progress')
         ");
-        $stmtReq->execute(['user_id' => $userId]);
+        $stmtReq->execute(['elderly_id' => $userId, 'volunteer_id' => $userId]);
         $cnt = (int)$stmtReq->fetchColumn();
 
         if ($cnt > 0) {
@@ -297,6 +300,7 @@ class PrivacyService
                     latitude = :lat,
                     longitude = :lon,
                     passport_masked = NULL,
+                    police_clearance_status = 'NOT_SUBMITTED',
                     id_provider = NULL,
                     id_provider_user_id = NULL
                 WHERE user_id = :id
@@ -307,17 +311,40 @@ class PrivacyService
                 'id' => $userId
             ]);
 
-            // 4. Sanitize history in help_requests (preserve record count and foreign keys, wipe address and secret_code)
+            // 4. Sanitize history in help_requests (preserve record count and foreign keys, wipe free text)
             $stmtReq = $pdo->prepare("
                 UPDATE help_requests 
                 SET address = :address,
+                    title = '[ОБЕЗЛИЧЕНО]',
+                    description = NULL,
+                    volunteer_feedback = NULL,
                     secret_code = '[REDACTED]'
-                WHERE elderly_id = :id
+                WHERE elderly_id = :elderly_id OR volunteer_id = :volunteer_id
             ");
             $stmtReq->execute([
                 'address' => self::ANONYMIZED_ADDRESS,
-                'id' => $userId
+                'elderly_id' => $userId,
+                'volunteer_id' => $userId
             ]);
+
+            // 4b. Remove conversation content tied to the user or their requests.
+            $stmtChat = $pdo->prepare("
+                DELETE FROM chat_messages
+                WHERE sender_id = :sender_id
+                   OR request_id IN (SELECT id FROM help_requests WHERE elderly_id = :elderly_id OR volunteer_id = :volunteer_id)
+            ");
+            $stmtChat->execute([
+                'sender_id' => $userId,
+                'elderly_id' => $userId,
+                'volunteer_id' => $userId
+            ]);
+
+            // 4c. Invalidate any outstanding recovery codes.
+            $stmtResets = $pdo->prepare("
+                UPDATE password_resets SET used_at = CURRENT_TIMESTAMP
+                WHERE user_id = :id AND used_at IS NULL
+            ");
+            $stmtResets->execute(['id' => $userId]);
 
             // 5. Sanitize sos_alerts history if any
             $stmtSos = $pdo->prepare("
@@ -357,7 +384,7 @@ class PrivacyService
             ]);
 
             $pdo->commit();
-            Logger::security("User #{$userId} personal data successfully anonymized per Law 99-Z. Reason: {$reason}");
+            Logger::security("User #{$userId} personal data successfully anonymized per Law 99-Z");
 
             return [
                 'success' => true,

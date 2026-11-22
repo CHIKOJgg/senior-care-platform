@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Controllers;
 
 use App\Core\Router;
@@ -51,13 +53,20 @@ class EducationController
         if (!in_array($type, ['memo', 'audio', 'video'], true)) {
             Router::json(['error' => 'Недопустимый type (memo/audio/video)'], 400);
         }
+        if (mb_strlen($title) > 255 || mb_strlen($category) > 100 || mb_strlen($content) > 20000) {
+            Router::json(['error' => 'Слишком длинный заголовок, категория или текст материала'], 400);
+        }
+        $audioUrl = isset($input['audio_url']) ? trim((string)$input['audio_url']) : null;
+        if ($audioUrl !== null && mb_strlen($audioUrl) > 255) {
+            Router::json(['error' => 'Ссылка на аудио слишком длинная'], 400);
+        }
 
         $id = EducationalMaterial::create([
             'title' => $title,
             'type' => $type,
             'category' => $category,
             'content' => $content,
-            'audio_url' => $input['audio_url'] ?? null
+            'audio_url' => $audioUrl
         ]);
         Logger::info("Educational material #{$id} created by Admin #{$admin['user_id']}");
         Router::json(['success' => true, 'material_id' => $id], 201);
@@ -84,11 +93,17 @@ class EducationController
         if (isset($data['type']) && !in_array($data['type'], ['memo', 'audio', 'video'], true)) {
             Router::json(['error' => 'Недопустимый type (memo/audio/video)'], 400);
         }
-        if (isset($data['title']) && $data['title'] === '') {
-            Router::json(['error' => 'Заголовок (title) не может быть пустым'], 400);
+        if (isset($data['title']) && ($data['title'] === '' || mb_strlen($data['title']) > 255)) {
+            Router::json(['error' => 'Заголовок (title) обязателен и не должен превышать 255 символов'], 400);
         }
-        if (isset($data['content']) && $data['content'] === '') {
-            Router::json(['error' => 'Текст (content) не может быть пустым'], 400);
+        if (isset($data['content']) && ($data['content'] === '' || mb_strlen($data['content']) > 20000)) {
+            Router::json(['error' => 'Текст (content) обязателен и не должен превышать 20000 символов'], 400);
+        }
+        if (isset($data['category']) && mb_strlen($data['category']) > 100) {
+            Router::json(['error' => 'Категория слишком длинная'], 400);
+        }
+        if (isset($data['audio_url']) && $data['audio_url'] !== null && mb_strlen((string)$data['audio_url']) > 255) {
+            Router::json(['error' => 'Ссылка на аудио слишком длинная'], 400);
         }
         EducationalMaterial::update($mid, $data);
         Router::json(['success' => true, 'message' => 'Материал обновлён']);

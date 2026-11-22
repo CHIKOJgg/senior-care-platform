@@ -285,7 +285,7 @@ assertAdversarial('BULK_ANON', "All {$totalBulk} users anonymized without throwi
 
 // Verify NO UNIQUE constraint collision in the generated phones
 $uniquePhoneCount = count(array_unique($anonymizedPhones));
-assertAdversarial('BULK_ANON', "All {$totalBulk} generated anonymized phones are 100% unique in SQLite",
+assertAdversarial('BULK_ANON', "All {$totalBulk} generated anonymized phones are 100% unique in MySQL",
     $uniquePhoneCount === $totalBulk,
     "Expected {$totalBulk} unique phones, got {$uniquePhoneCount}"
 );
@@ -579,12 +579,17 @@ $privacySanitized = (
 );
 assertAdversarial('AUDIT_PRESERVE', 'Historical requests sanitized (address coarsened, secret_code redacted)', $privacySanitized);
 
-// 5. Verify SQLite foreign key integrity check
-$fkCheckStmt = $pdo->query("PRAGMA foreign_key_check;");
-$fkErrors = $fkCheckStmt->fetchAll(PDO::FETCH_ASSOC);
-assertAdversarial('AUDIT_PRESERVE', 'SQLite PRAGMA foreign_key_check reports 0 violations across database',
-    count($fkErrors) === 0,
-    "Foreign key errors: " . json_encode($fkErrors, JSON_UNESCAPED_UNICODE)
+// 5. Verify MySQL referential integrity (no orphan request rows)
+$orphans = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM help_requests hr
+    LEFT JOIN users u ON u.id = hr.elderly_id
+    LEFT JOIN categories c ON c.id = hr.category_id
+    WHERE u.id IS NULL OR c.id IS NULL
+")->fetchColumn();
+assertAdversarial('AUDIT_PRESERVE', 'MySQL referential integrity check reports 0 orphan help_requests',
+    $orphans === 0,
+    "Orphan rows: {$orphans}"
 );
 
 // 6. Verify municipal reporting aggregate query remains consistent

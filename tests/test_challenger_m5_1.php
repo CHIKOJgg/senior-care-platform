@@ -433,7 +433,7 @@ assertChallenge(
 );
 
 // 4.3 Database DDL & Seed (database/)
-$dbFiles = ["{$baseDir}/database/schema.sql", "{$baseDir}/database/migrate.php", "{$baseDir}/database/seed.php"];
+$dbFiles = ["{$baseDir}/database/schema.mysql.sql", "{$baseDir}/database/migrate.php", "{$baseDir}/database/seed.php"];
 $dbEmojiHits = [];
 foreach ($dbFiles as $fp) {
     if (file_exists($fp)) {

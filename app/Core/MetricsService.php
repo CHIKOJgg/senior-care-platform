@@ -201,7 +201,20 @@ class MetricsService
         if (!is_file($file)) {
             return ['started_at' => time(), 'total' => 0, 'routes' => []];
         }
-        $data = json_decode((string)@file_get_contents($file), true);
+
+        $handle = @fopen($file, 'r');
+        if ($handle === false) {
+            return ['started_at' => time(), 'total' => 0, 'routes' => []];
+        }
+        try {
+            flock($handle, LOCK_SH);
+            $raw = stream_get_contents($handle);
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
+
+        $data = json_decode((string)$raw, true);
         return is_array($data) ? $data : ['started_at' => time(), 'total' => 0, 'routes' => []];
     }
 

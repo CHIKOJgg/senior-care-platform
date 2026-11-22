@@ -25,8 +25,8 @@ class AuthController
         }
 
         $input = Router::getJsonInput();
-        $phone = trim($input['phone'] ?? '');
-        $password = trim($input['password'] ?? '');
+        $phone = is_string($input['phone'] ?? null) ? trim($input['phone']) : '';
+        $password = is_string($input['password'] ?? null) ? (string)$input['password'] : '';
 
         if (!$phone || !$password) {
             Router::json(['error' => 'Укажите номер телефона и пароль'], 400);
@@ -34,7 +34,7 @@ class AuthController
 
         $user = User::findByPhone($phone);
         if (!$user || !password_verify($password, $user['password_hash'])) {
-            Logger::warning("Failed login attempt for phone {$phone} from IP {$ip}");
+            Logger::warning("Failed login attempt from IP {$ip}");
             Router::json(['error' => 'Неверный номер телефона или пароль'], 401);
         }
 
@@ -78,11 +78,14 @@ class AuthController
         }
 
         $input = Router::getJsonInput();
-        $currentPassword = (string)($input['current_password'] ?? '');
-        $newPassword = (string)($input['new_password'] ?? '');
+        $currentPassword = is_string($input['current_password'] ?? null) ? (string)$input['current_password'] : '';
+        $newPassword = is_string($input['new_password'] ?? null) ? (string)$input['new_password'] : '';
 
         if (mb_strlen($newPassword) < 8) {
             Router::json(['error' => 'Новый пароль должен содержать не менее 8 символов'], 400);
+        }
+        if (mb_strlen($newPassword) > 72) {
+            Router::json(['error' => 'Новый пароль не должен превышать 72 символа'], 400);
         }
 
         $user = User::find($userId);
@@ -165,7 +168,7 @@ class AuthController
         }
 
         $input = Router::getJsonInput();
-        $phone = trim((string)($input['phone'] ?? ''));
+        $phone = is_string($input['phone'] ?? null) ? trim($input['phone']) : '';
         if ($phone === '') {
             Router::json(['error' => 'Укажите номер телефона'], 400);
         }
@@ -204,15 +207,18 @@ class AuthController
         }
 
         $input = Router::getJsonInput();
-        $phone = trim((string)($input['phone'] ?? ''));
-        $code = trim((string)($input['code'] ?? ''));
-        $newPassword = (string)($input['new_password'] ?? '');
+        $phone = is_string($input['phone'] ?? null) ? trim($input['phone']) : '';
+        $code = is_string($input['code'] ?? null) ? trim($input['code']) : '';
+        $newPassword = is_string($input['new_password'] ?? null) ? (string)$input['new_password'] : '';
 
         if ($phone === '' || $code === '') {
             Router::json(['error' => 'Укажите телефон и код подтверждения'], 400);
         }
         if (mb_strlen($newPassword) < 8) {
             Router::json(['error' => 'Новый пароль должен содержать не менее 8 символов'], 400);
+        }
+        if (mb_strlen($newPassword) > 72) {
+            Router::json(['error' => 'Новый пароль не должен превышать 72 символа'], 400);
         }
 
         $result = PasswordResetService::resetPassword($phone, $code, $newPassword);
@@ -238,9 +244,9 @@ class AuthController
         }
 
         $input = Router::getJsonInput();
-        $phone = trim($input['phone'] ?? '');
-        $name = trim($input['name'] ?? '');
-        $password = trim($input['password'] ?? '');
+        $phone = is_string($input['phone'] ?? null) ? trim($input['phone']) : '';
+        $name = is_string($input['name'] ?? null) ? trim($input['name']) : '';
+        $password = is_string($input['password'] ?? null) ? (string)$input['password'] : '';
         $roleId = (int)($input['role_id'] ?? 1); // 1 = elderly, 2 = volunteer
         // Security: prevent self-registration as coordinator/admin
         if (!in_array($roleId, [1, 2], true)) {
@@ -251,57 +257,92 @@ class AuthController
             Router::json(['error' => 'Заполните все обязательные поля'], 400);
         }
 
-        if (mb_strlen($password) < 8) {
-            Router::json(['error' => 'Пароль должен содержать не менее 8 символов'], 400);
+        if (mb_strlen($phone) > 30 || !preg_match('/^\+?[0-9()\-\s]{7,30}$/', $phone)) {
+            Router::json(['error' => 'Некорректный формат номера телефона'], 400);
+        }
+        if (mb_strlen($name) > 150) {
+            Router::json(['error' => 'Имя не должно превышать 150 символов'], 400);
+        }
+        if (mb_strlen($password) < 8 || mb_strlen($password) > 72) {
+            Router::json(['error' => 'Пароль должен содержать от 8 до 72 символов'], 400);
         }
 
         if (User::findByPhone($phone)) {
             Router::json(['error' => 'Пользователь с таким номером уже зарегистрирован'], 400);
         }
 
-        $userId = User::create([
-            'role_id' => $roleId,
-            'phone' => $phone,
-            'name' => $name,
-            'password_hash' => password_hash($password, PASSWORD_DEFAULT)
-        ]);
+        $pdo = \App\Core\Database::getConnection();
+        try {
+            $pdo->beginTransaction();
 
-        // Country-wide: region is explicit or derived from coordinates (nearest regional centre).
-        $profileLat = isset($input['latitude']) ? (float)$input['latitude'] : null;
-        $profileLon = isset($input['longitude']) ? (float)$input['longitude'] : null;
-        $regionCode = RegionService::normalize(
-            isset($input['region_code']) ? (string)$input['region_code'] : null,
-            $profileLat,
-            $profileLon
-        );
-        $regionCenter = RegionService::center($regionCode);
-        $profileLat = $profileLat ?? $regionCenter['lat'];
-        $profileLon = $profileLon ?? $regionCenter['lon'];
+            $userId = User::create([
+                'role_id' => $roleId,
+                'phone' => $phone,
+                'name' => $name,
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT)
+            ]);
 
-        if ($roleId === 1) { // Elderly
-            ElderlyProfile::create([
-                'user_id' => (int)$userId,
-                'address' => $input['address'] ?? ('Республика Беларусь, ' . RegionService::name($regionCode)),
-                'latitude' => $profileLat,
-                'longitude' => $profileLon,
-                'region_code' => $regionCode,
-                'birth_year' => (int)($input['birth_year'] ?? 1950),
-                'mobility_notes' => $input['mobility_notes'] ?? '',
-                'emergency_contact' => $input['emergency_contact'] ?? ''
-            ]);
-        } elseif ($roleId === 2) { // Volunteer
-            VolunteerProfile::create([
-                'user_id' => (int)$userId,
-                'is_verified' => 0, // Pending verification
-                'rating' => 5.0,
-                'points' => 0,
-                'latitude' => $profileLat,
-                'longitude' => $profileLon,
-                'region_code' => $regionCode,
-                'radius_km' => (float)($input['radius_km'] ?? 5.0),
-                'skills' => $input['skills'] ?? 'помощь по дому, покупка продуктов',
-                'completed_tasks_count' => 0
-            ]);
+            // Country-wide: region is explicit or derived from coordinates (nearest regional centre).
+            $profileLat = isset($input['latitude']) && is_numeric($input['latitude']) ? (float)$input['latitude'] : null;
+            $profileLon = isset($input['longitude']) && is_numeric($input['longitude']) ? (float)$input['longitude'] : null;
+            $regionCode = RegionService::normalize(
+                isset($input['region_code']) ? (string)$input['region_code'] : null,
+                $profileLat,
+                $profileLon
+            );
+            $regionCenter = RegionService::center($regionCode);
+            $profileLat = $profileLat ?? $regionCenter['lat'];
+            $profileLon = $profileLon ?? $regionCenter['lon'];
+            $birthYear = (int)($input['birth_year'] ?? 1950);
+            if ($birthYear < 1900 || $birthYear > (int)date('Y')) {
+                $birthYear = 1950;
+            }
+
+            if ($roleId === 1) { // Elderly
+                ElderlyProfile::create([
+                    'user_id' => (int)$userId,
+                    'address' => mb_substr(trim((string)($input['address'] ?? ('Республика Беларусь, ' . RegionService::name($regionCode)))), 0, 500, 'UTF-8'),
+                    'latitude' => $profileLat,
+                    'longitude' => $profileLon,
+                    'region_code' => $regionCode,
+                    'birth_year' => $birthYear,
+                    'mobility_notes' => mb_substr(trim((string)($input['mobility_notes'] ?? '')), 0, 2000, 'UTF-8'),
+                    'emergency_contact' => mb_substr(trim((string)($input['emergency_contact'] ?? '')), 0, 100, 'UTF-8')
+                ]);
+            } elseif ($roleId === 2) { // Volunteer
+                $radius = (float)($input['radius_km'] ?? 5.0);
+                if ($radius <= 0 || $radius > 100) {
+                    $radius = 5.0;
+                }
+                VolunteerProfile::create([
+                    'user_id' => (int)$userId,
+                    'is_verified' => 0, // Pending verification
+                    'rating' => 5.0,
+                    'points' => 0,
+                    'latitude' => $profileLat,
+                    'longitude' => $profileLon,
+                    'region_code' => $regionCode,
+                    'radius_km' => $radius,
+                    'skills' => mb_substr(trim((string)($input['skills'] ?? 'помощь по дому, покупка продуктов')), 0, 1000, 'UTF-8'),
+                    'completed_tasks_count' => 0
+                ]);
+            }
+
+            $pdo->commit();
+        } catch (\PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Logger::warning('Registration failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+            Router::json(['error' => $e->getCode() === '23000'
+                ? 'Пользователь с таким номером уже зарегистрирован'
+                : 'Не удалось завершить регистрацию'], $e->getCode() === '23000' ? 400 : 500);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Logger::error('Registration failed', ['phone' => $phone, 'error' => $e->getMessage()]);
+            Router::json(['error' => 'Не удалось завершить регистрацию'], 500);
         }
 
         $user = User::getWithProfile((int)$userId);
@@ -318,7 +359,7 @@ class AuthController
             'samesite' => 'Lax'
         ]);
 
-        Logger::info("New user registered: #{$userId} ({$name}, role {$roleId})");
+        Logger::info("New user registered: #{$userId}, role {$roleId}");
 
         Router::json([
             'success' => true,
@@ -348,6 +389,22 @@ class AuthController
 
     public function logout(): void
     {
+        // Stateless tokens cannot be individually invalidated; bumping
+        // token_version revokes every token issued for this account.
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])
+            || !empty($_SERVER['HTTP_X_AUTH_TOKEN'])
+            || !empty($_COOKIE['auth_token']);
+        $current = $hasExplicitAuth ? AuthService::getCurrentUser() : null;
+        if ($current) {
+            $user = User::find((int)$current['user_id']);
+            if ($user) {
+                User::update((int)$user['id'], [
+                    'token_version' => (int)($user['token_version'] ?? 1) + 1
+                ]);
+            }
+        }
+
         @setcookie('auth_token', '', [
             'expires' => time() - 3600,
             'path' => '/',

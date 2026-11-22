@@ -43,32 +43,58 @@ class PrivacyController
         }
 
         $records = [];
-        $policyVersion = $input['policy_version'] ?? PrivacyService::CURRENT_POLICY_VERSION;
+        $policyVersion = trim((string)($input['policy_version'] ?? PrivacyService::CURRENT_POLICY_VERSION));
+        if ($policyVersion === '' || mb_strlen($policyVersion) > 50) {
+            Router::json(['error' => 'Некорректная версия политики обработки данных'], 400);
+        }
 
         // Поддержка пакетной и единичной фиксации
         $consentList = isset($input['consents']) && is_array($input['consents'])
             ? $input['consents']
             : [['consent_type' => $input['consent_type'] ?? '']];
 
-        try {
-            foreach ($consentList as $item) {
-                $type = trim($item['consent_type'] ?? '');
-                $version = $item['policy_version'] ?? $policyVersion;
-                if (!$type) {
-                    Router::json(['error' => 'Укажите обязательный тип согласия (consent_type)'], 400);
-                }
-
-                $record = $this->privacyService->recordConsent(
-                    $userId,
-                    $type,
-                    $version,
-                    $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
-                    $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'
-                );
-                $records[] = $record;
+        // Validate the whole batch before writing anything: a rejected item must
+        // not leave a partially recorded consent set behind.
+        $normalized = [];
+        foreach ($consentList as $item) {
+            $type = trim((string)($item['consent_type'] ?? ''));
+            $version = trim((string)($item['policy_version'] ?? $policyVersion));
+            if ($type === '') {
+                Router::json(['error' => 'Укажите обязательный тип согласия (consent_type)'], 400);
             }
+            if (!in_array($type, PrivacyService::getSupportedConsentTypes(), true)) {
+                Router::json(['error' => "Недопустимый тип согласия: {$type}"], 400);
+            }
+            if ($version === '' || mb_strlen($version) > 50) {
+                Router::json(['error' => 'Некорректная версия политики обработки данных'], 400);
+            }
+            $normalized[] = ['type' => $type, 'version' => $version];
+        }
+
+        $pdo = \App\Core\Database::getConnection();
+        try {
+            $pdo->beginTransaction();
+            foreach ($normalized as $item) {
+                $records[] = $this->privacyService->recordConsent(
+                    $userId,
+                    $item['type'],
+                    $item['version'],
+                    $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'), 0, 1000, 'UTF-8')
+                );
+            }
+            $pdo->commit();
         } catch (InvalidArgumentException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             Router::json(['error' => $e->getMessage()], 400);
+        } catch (\Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            Logger::error('Consent batch failed', ['user_id' => $userId, 'error' => $e->getMessage()]);
+            Router::json(['error' => 'Не удалось зафиксировать согласие'], 500);
         }
 
         Router::json([
@@ -135,6 +161,19 @@ class PrivacyController
             $userId = (int)$input['user_id'];
         }
 
+        $target = User::getWithProfile($userId);
+        if (!$target) {
+            Router::json(['error' => 'Пользователь не найден'], 404);
+        }
+        $targetRole = (string)($target['role_code'] ?? '');
+        if (!in_array($targetRole, ['elderly', 'volunteer', 'admin', 'coordinator'], true)) {
+            Router::json(['error' => 'Недопустимая роль пользователя для обезличивания'], 400);
+        }
+        $isSelf = $userId === (int)($user['user_id'] ?? $user['id'] ?? 0);
+        if (!$isSelf && !in_array($targetRole, ['elderly', 'volunteer'], true)) {
+            Router::json(['error' => 'Нельзя обезличить учётную запись сотрудника через этот endpoint'], 403);
+        }
+
         try {
             $result = $this->privacyService->anonymizeUser($userId);
 
@@ -171,6 +210,10 @@ class PrivacyController
         $targetUser = User::find($targetId);
         if (!$targetUser) {
             Router::json(['error' => 'Подопечный с указанным ID не найден'], 404);
+        }
+        $targetProfile = User::getWithProfile($targetId);
+        if (($targetProfile['role_code'] ?? '') !== 'elderly') {
+            Router::json(['error' => 'Обезличить через этот endpoint можно только подопечного'], 403);
         }
 
         try {

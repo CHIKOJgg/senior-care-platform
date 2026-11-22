@@ -1,11 +1,19 @@
 <?php
+declare(strict_types=1);
+
 // Router for PHP built-in web server
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$publicRoot = realpath(__DIR__ . '/public');
 $file = __DIR__ . '/public' . $uri;
+$realFile = realpath($file);
+$isInsidePublic = $publicRoot !== false && $realFile !== false
+    && str_starts_with(str_replace('\\', '/', $realFile), str_replace('\\', '/', $publicRoot) . '/')
+    && !is_dir($realFile);
 
 // 1. Static files from /public (excluding PHP scripts from raw readfile)
-if ($uri !== '/' && file_exists($file) && !is_dir($file)) {
+if ($uri !== '/' && $isInsidePublic) {
+    $file = $realFile;
     $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
     if ($ext === 'php') {
         require $file;

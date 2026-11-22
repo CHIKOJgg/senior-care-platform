@@ -52,8 +52,7 @@ class Tier1_FeatureCoverageTest
     private function testFeature01_DatabaseMigrations(): void
     {
         echo "[Feature 1/24] Database Migrations (M1):\n";
-        $dbPath = __DIR__ . '/../../database/database.sqlite';
-        $schemaPath = __DIR__ . '/../../database/schema.sql';
+        $schemaPath = __DIR__ . '/../../database/schema.mysql.sql';
         
         $dbReady = false;
         $dbDriver = 'unknown';
@@ -64,8 +63,8 @@ class Tier1_FeatureCoverageTest
         } catch (\Throwable $e) {
             $dbReady = false;
         }
-        $this->harness->assert('F01-01: Database is reachable and readable (driver: ' . $dbDriver . ')', $dbReady, "driver={$dbDriver}", 'Tier 1');
-        $this->harness->assert('F01-02: Base schema.sql exists and contains valid DDL definitions', file_exists($schemaPath) && strpos((string)file_get_contents($schemaPath), 'CREATE TABLE') !== false, '', 'Tier 1');
+        $this->harness->assert('F01-01: Database is reachable and readable (driver: ' . $dbDriver . ')', $dbReady && $dbDriver === 'mysql', "driver={$dbDriver}", 'Tier 1');
+        $this->harness->assert('F01-02: MySQL schema.mysql.sql exists and contains valid DDL definitions', file_exists($schemaPath) && strpos((string)file_get_contents($schemaPath), 'CREATE TABLE') !== false, '', 'Tier 1');
         
         // Check healthcheck database status
         $res = $this->harness->apiCall('GET', '/api/health');
@@ -735,12 +734,12 @@ class Tier1_FeatureCoverageTest
         $res = $this->harness->apiCall('GET', '/api/coordinator/alerts', null, ["Authorization: Bearer {$token}"]);
         $this->harness->assert('F16-01: GET /api/coordinator/alerts returns active alerts list', in_array($res['code'], [200, 404]), "Code: {$res['code']}", 'Tier 1');
 
-        $this->harness->assertMilestone('M4', 'F16-02: Coordinator UI includes audio siren playback via Web Audio API', function() {
+        $this->harness->assertMilestone('M4', 'F16-02: Audio siren is fully removed; SOS console is visual-only', function() {
             $appJs = (string)@file_get_contents(__DIR__ . '/../../public/js/app.js');
-            if (strpos($appJs, 'AudioContext') === false && strpos($appJs, 'playSiren') === false) {
-                return ['skipped' => true, 'reason' => 'Audio siren pending M4'];
+            if (strpos($appJs, 'AudioContext') !== false || strpos($appJs, 'playSiren') !== false || strpos($appJs, 'stopSiren') !== false) {
+                return ['pass' => false, 'details' => 'Leftover siren code found'];
             }
-            return ['pass' => true, 'details' => 'Audio siren configured'];
+            return ['pass' => true, 'details' => 'No Web Audio siren code'];
         }, 'Tier 1');
 
         $this->harness->assertMilestone('M4', 'F16-03: Visual pulsing banner configured for Priority 0 incidents', function() {

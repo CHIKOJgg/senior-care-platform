@@ -50,7 +50,7 @@ Every feature in `PROJECT.md § Feature Inventory` is mapped to specific automat
 
 | Feature ID | Feature Name | Target Milestone | Test Class | Primary Test IDs | Requirements & Verification Contract |
 |:---|:---|:---:|:---|:---|:---|
-| **F01** | Database Migrations | M1 | `Tier1_FeatureCoverageTest` | `F01-01` .. `F01-05` | SQLite schema integrity, idempotent execution of `migrate.php`, migration table audit. |
+| **F01** | Database Migrations | M1 | `Tier1_FeatureCoverageTest` | `F01-01` .. `F01-05` | MySQL schema integrity, idempotent execution of `migrate.php`, migration table audit. |
 | **F02** | Sensitive Data Encryption | M1 | `Tier1_FeatureCoverageTest` | `F02-01` .. `F02-05` | AES-256-GCM cipher with `enc:v1:` prefix, unique IV per encryption, AEAD authentication tag validation. |
 | **F03** | PII Data Masking | M1 | `Tier1_FeatureCoverageTest` | `F03-01` .. `F03-05` | Law 99-Z compliance: phone formatted to `+375 (XX) ***-**-YY`, apartment masked to `кв. ***`, coordinator unmasked access. |
 | **F04** | Electronic Consent Ledger | M1 | `Tier1_FeatureCoverageTest` | `F04-01` .. `F04-05` | `POST /api/consent` recording consent type, user ID, IP address, and timestamp per Law 99-Z. |
@@ -109,12 +109,16 @@ docker exec senior_care_platform php tests/test_api_requests.php
 
 ### 4.2 Running Natively on Host
 
-If PHP 8.1+ with `curl`, `pdo_sqlite`, and `mbstring` is installed on the host machine:
+If PHP 8.2+ with `curl`, `pdo_mysql`, and `mbstring` is installed on the host machine, start MySQL first:
 
 ```bash
-php tests/e2e_suite/run_e2e.php [options]
-php tests/test_e2e_comprehensive.php
+docker compose up -d mysql
+export DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3307 \
+       DB_DATABASE=senior_care DB_USERNAME=senior DB_PASSWORD=seniorpass
+php tests/run_all.php
 ```
+
+`tests/run_all.php` starts a PHP server, resets the MySQL database, runs migrations/seeds and executes all 21 suites.
 
 ### 4.3 CLI Options Reference
 

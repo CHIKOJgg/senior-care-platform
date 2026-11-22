@@ -71,6 +71,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
                 'ticket_id' => $ticketId,
                 'provider' => self::PROVIDER_NAME,
                 'status' => 'DISPATCHED', // Dispatched into local resilient queue
+                'mode' => 'simulated',
                 'queued_offline' => true,
                 'assigned_crew' => self::DEFAULT_CREW,
                 'eta_minutes' => 7,
@@ -79,7 +80,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
             ];
         }
 
-        Logger::security("EMERCOM 112 SOS dispatched. Ticket: {$ticketId}, Elderly #{$elderlyId}, Coords: [{$lat}, {$lon}], Address: '{$address}'");
+        Logger::security("EMERCOM 112 SOS dispatched. Ticket: {$ticketId}, Elderly #{$elderlyId}, payload accepted");
 
         return [
             'success' => true,
@@ -87,6 +88,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
             'ticket_id' => $ticketId,
             'provider' => self::PROVIDER_NAME,
             'status' => 'DISPATCHED',
+            'mode' => 'simulated',
             'assigned_crew' => self::DEFAULT_CREW,
             'eta_minutes' => 7,
             'timestamp' => date('Y-m-d H:i:s'),
@@ -118,6 +120,7 @@ class MchsEmergencyAdapter implements EmergencyAlertAdapterInterface
             'incident_code' => $ticketId,
             'ticket_id' => $ticketId,
             'status' => 'DISPATCHED',
+            'mode' => 'simulated',
             'assigned_crew' => self::DEFAULT_CREW,
             'eta_minutes' => 5,
             'updated_at' => date('Y-m-d H:i:s')

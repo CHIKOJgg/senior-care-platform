@@ -57,7 +57,7 @@
 
 Сервер определяет роль по HttpOnly-сессии до отдачи HTML и **не включает в страницу разметку чужих ролей**. Попытка открыть чужой адрес (`/admin` из-под волонтёра) перенаправляет в собственный раздел; неавторизованный сотрудник всегда попадает на `/login`.
 
-Автовход подопечного включён по умолчанию (в том числе в Docker) и управляется переменными `ELDERLY_AUTO_LOGIN=true|false` и `ELDERLY_DEMO_PHONE`. Для реального многопользовательского развёртывания, где за одним адресом работают несколько подопечных, автовход следует выключить (`ELDERLY_AUTO_LOGIN=false`) и выдавать устройству сессию после первого входа родственника.
+Автовход подопечного включён по умолчанию только для локальной разработки и демонстрационных стендов. В production-стеке он выключен (`ELDERLY_AUTO_LOGIN=false`); для киоска его можно включить явно и указать телефон устройства через `ELDERLY_DEMO_PHONE`. Для реального многопользовательского развёртывания выдавайте сессию каждому устройству после первого входа родственника.
 
 Кнопки «Сменить пароль» и «Выйти» доступны сотрудникам в верхней панели. Смена пароля и выход на всех устройствах отзывают все ранее выданные токены.
 
@@ -87,7 +87,7 @@
 ## Стек технологий и архитектура
 
 * **Backend:** PHP 8.2+ (`declare(strict_types=1);`, кастомный MVC-роутер, сервис-ориентированная архитектура).
-* **СУБД:** SQLite 3 (из коробки) / MySQL 8.0+ / PostgreSQL (через абстракцию `app/Core/Database.php`).
+* **СУБД:** MySQL 8.0+ (единственная поддерживаемая БД; dev, test и production) через PDO.
 * **Безопасность & Защита:**
   * Stateless HMAC-SHA256 токены с валидацией сигнатуры и времени жизни (`app/Services/AuthService.php`).
   * Rate Limiter для защиты от брутфорса и спам-атак (`app/Core/RateLimiter.php`).
@@ -95,34 +95,37 @@
   * Экранирование XSS и параметризованные PDO-запросы.
 * **Мониторинг:** эндпоинт проверки жизнеспособности `/api/health` (Healthcheck) с замером задержки СУБД.
 * **Frontend:** Семантический HTML5, CSS3 переменные (High Contrast), JavaScript ES6+, Web Speech API.
-* **Контейнеризация:** Docker (Dev & Multi-stage Production Nginx + PHP-FPM).
+* **Контейнеризация:** Docker (dev-образ и production-образ Nginx + PHP-FPM).
 * **Архитектурные решения (ADR):** обоснование выбора БД, фреймворков, библиотек и интеграций — в [`docs/adr/README.md`](docs/adr/README.md).
 
 ---
 
 ## Быстрый запуск
 
-### Вариант 1. Локально через встроенный веб-сервер
-```bash
-# 1. Применение миграций схемы
-php database/migrate.php
-
-# 2. Наполнение базы начальными данными
-php database/seed.php
-
-# 3. Запуск веб-сервера
-php -S localhost:8000 router.php
-```
-*На Windows можно дважды кликнуть по файлу `start.bat`.*  
-Откройте в браузере: **`http://localhost:8000`**
-
----
-
-### Вариант 2. Development Docker
+### Вариант 1. Development Docker (рекомендуется)
 ```bash
 docker compose up --build
 ```
-Доступно на **`http://localhost:8000`**.
+Поднимаются MySQL 8 и PHP-приложение. Доступно на **`http://localhost:8000`**.
+На Windows можно дважды кликнуть `start.bat`.
+
+---
+
+### Вариант 2. Локальный PHP + внешний MySQL
+Нужен запущенный MySQL 8 и база `senior_care` (или используйте `docker compose up -d mysql` — порт `3307`).
+```powershell
+$env:DB_CONNECTION="mysql"
+$env:DB_HOST="127.0.0.1"
+$env:DB_PORT="3307"
+$env:DB_DATABASE="senior_care"
+$env:DB_USERNAME="senior"
+$env:DB_PASSWORD="seniorpass"
+
+php database/migrate.php
+php database/seed.php
+php -S localhost:8000 router.php
+```
+Откройте **`http://localhost:8000`**.
 
 ---
 
@@ -139,12 +142,12 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 | Сервис | Адрес | Назначение |
 |---|---|---|
 | Caddy (edge) | `http://localhost` / `https://ваш-домен` | Единая точка входа, HTTP/HTTPS |
-| Приложение | внутри Docker `app:80` | Пенсионеры: `/`, родственники: `/family` |
+| Приложение | внутри Docker `app:80` | Подопечные: `/`, сотрудники и волонтёры: `/login` |
 | Grafana | `http://localhost:3000` | Дашборды и логи (логин из `GRAFANA_ADMIN_*`) |
 | Prometheus | `http://localhost:9090` | Метрики и алерты (доступ только с localhost) |
 | Loki | `http://localhost:3100` | Хранилище логов (доступ только с localhost) |
 
-- **Секреты:** `APP_SECRET` (`openssl rand -hex 32`) и `APP_ENCRYPTION_KEY` (`echo "base64:$(openssl rand -base64 32)"`). Ключ шифрования нельзя менять после начала работы: старые медицинские заметки станут нечитаемыми. Healthcheck проверяет оба секрета.
+- **Секреты:** `APP_SECRET` (`openssl rand -hex 32`, не короче 32 символов) и `APP_ENCRYPTION_KEY` (`echo "base64:$(openssl rand -base64 32)"`). Приложение проверяет формат ключа в production и возвращает 503 при неверном значении. Ключ шифрования нельзя менять после начала работы: старые медицинские заметки станут нечитаемыми. Healthcheck проверяет оба секрета.
 - **Edge-прокси:** Caddy — единственный контейнер, опубликованный наружу. Для локального HTTP оставьте `CADDY_DOMAIN=:80`; для домена укажите `CADDY_DOMAIN=care.example.org` — Caddy сам получит сертификат Let's Encrypt. Nginx доверяет `X-Forwarded-For` и `X-Forwarded-Proto` от Caddy.
 - **База:** MySQL 8, данные в томе `senior_care_mysql`. Миграции и создание администратора выполняются при старте.
 - **Бэкапы:** контейнер `backup` делает `mysqldump` при старте и каждые 24 часа в том `senior_care_backups`, хранит 7 дней (настраивается `BACKUP_RETENTION_DAYS`).
@@ -152,6 +155,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 - **Логи:** файлы приложения и Nginx + stdout контейнеров собираются Promtail в Loki. Docker-логи ограничены 10 МБ × 3 файла на контейнер.
 - **Дашборд:** «ЗаботаРядом — Production» появляется в Grafana автоматически: доступность, HTTP-ошибки, задержки, заявки, SOS, волонтёры, MySQL и логи.
 - **Алерты:** Prometheus-правила `monitoring/prometheus/alerts.yml` (приложение недоступно, БД недоступна, много 5xx, активный SOS, MySQL недоступен).
+- **Production-чек-лист:** [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
 Демо-пользователи (`password123`) в продакшене **не создаются**. Если они нужны для стенда, запустите с `SEED_DEMO=true`.
 Grafana, Prometheus и Loki намеренно опубликованы только на `127.0.0.1`. Для удалённого доступа используйте SSH-туннель или Caddy с HTTPS и авторизацией.
@@ -167,20 +171,23 @@ docker exec -i senior_care_mysql mysql -uroot -p"$MYSQL_ROOT_PASSWORD" senior_ca
 
 ## Запуск автоматических тестов
 
-Тесты проверяют безопасность, верификацию, авторизацию и бизнес-логику:
+Тесты проверяют безопасность, верификацию, авторизацию и бизнес-логику. Полный детерминированный прогон сам поднимает тестовый сервер, сбрасывает тестовую MySQL-базу и запускает все 21 набор:
 ```bash
-# 1. Модульные, интеграционные тесты и тесты безопасности (32 теста)
-php tests/run_tests.php
-
-# 2. Доступность фронтенда и WCAG (55 тестов)
-php tests/test_frontend_wcag.php
-
-# 3. Сквозные E2E тесты: функции, границы, сценарии (257 тестов)
-php tests/test_e2e_comprehensive.php
+php tests/run_all.php
 ```
-*Или через Docker в 1 команду:*
+Если MySQL ещё не запущен, скрипт сам поднимет `docker compose` сервис `mysql` на порту `3307` (нужен Docker). Для внешней MySQL задайте `DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD`.
+
+Отдельные наборы:
 ```bash
-docker run --rm -v "${PWD}:/app" -w /app php:8.2-cli sh -c "php -S 0.0.0.0:8000 router.php > /dev/null 2>&1 & sleep 1 && php tests/run_tests.php && php tests/test_api_requests.php"
+php tests/run_tests.php                 # модульные и интеграционные (32)
+php tests/test_frontend_wcag.php         # доступность и WCAG (55)
+php tests/test_e2e_comprehensive.php     # сквозные E2E (257)
+php tests/test_race_conditions.php       # атомарные claim/complete (8)
+```
+
+*Через Docker в 1 команду:*
+```bash
+docker compose run --rm app php tests/run_all.php
 ```
 
 ---

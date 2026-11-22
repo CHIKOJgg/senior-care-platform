@@ -1,14 +1,11 @@
 FROM php:8.2-fpm-alpine
 
-# Install Nginx, SQLite, and system dependencies (prod)
-
+# Nginx + MySQL PDO.
 # hadolint ignore=DL3018
 RUN apk add --no-cache \
     nginx \
-    sqlite \
-    sqlite-dev \
     curl \
-    && docker-php-ext-install pdo pdo_mysql pdo_sqlite
+    && docker-php-ext-install pdo pdo_mysql
 
 WORKDIR /var/www/html
 
@@ -20,16 +17,15 @@ COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-production.ini
 
 # Setup permissions
-RUN mkdir -p /var/www/html/database \
-    /var/www/html/storage/data \
+RUN mkdir -p /var/www/html/storage/data \
     /var/www/html/storage/logs \
     /var/www/html/storage/cache \
+    /var/www/html/storage/metrics \
     /run/nginx \
-    && chown -R www-data:www-data /var/www/html \
+    && chown -R www-data:www-data /var/www/html/storage \
     && chmod +x /var/www/html/docker/entrypoint.sh
 
-# Run healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["curl", "-f", "http://localhost/api/health"]
 
 EXPOSE 80

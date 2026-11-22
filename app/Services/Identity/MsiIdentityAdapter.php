@@ -187,6 +187,16 @@ class MsiIdentityAdapter implements IdentityProviderInterface
 
     public function verifyIdentity(string $personalNumber, array $context = []): array
     {
+        if ((getenv('APP_ENV') ?: 'local') === 'production' && getenv('IDENTITY_PROVIDER_LIVE') !== 'true') {
+            return [
+                'success' => false,
+                'provider' => self::PROVIDER_CODE,
+                'verified' => false,
+                'error' => 'PROVIDER_NOT_CONFIGURED',
+                'message' => 'Реальная интеграция с МСИ не настроена. Обратитесь в ТЦСОН для проверки документов.',
+            ];
+        }
+
         $id = strtoupper(trim($personalNumber));
         $val = $this->validateFormat($id);
 

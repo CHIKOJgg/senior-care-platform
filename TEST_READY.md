@@ -1,5 +1,9 @@
 # TEST_READY: «ЗаботаРядом» Opaque-Box E2E Test Suite
 
+> **2026-11-20 update:** the authoritative full run is `php tests/run_all.php`
+> (21 deterministic suites, fresh MySQL per suite). See
+> [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
+
 **Status**: READY  
 **Date**: 2026-11-04  
 **Author**: Test Writer Agent (`specialist`, `qa`)  
@@ -18,7 +22,7 @@ The test suite covers all 24 platform features defined in `PROJECT.md § Feature
 
 ## 2. Test Execution Verification Summary
 
-Executed inside container `senior_care_platform` (PHP 8.2.35 Alpine Linux, SQLite 3):
+Executed inside a MySQL 8 container (PHP 8.2.35 Alpine Linux):
 
 ```text
 ========================================================
@@ -85,7 +89,7 @@ docker exec senior_care_platform php tests/test_api_requests.php
 The test suite incorporates progressive milestone gating (`assertMilestone`). As implementation milestones are delivered by worker agents, the corresponding tests will automatically transition from `[SKIP]` to `[PASS]` without requiring modifications to the test code:
 
 - **Baseline (Completed)**: Core auth, requests lifecycle, secret word verification, Anti-Fraud scanner, coordinator dashboard, rate limiter, task chat, healthcheck.
-- **Milestone 1 (In Progress / Completed)**: SQLite migrations, AES-256-GCM data encryption, Law 99-Z data masking, consent ledger (`/api/consent`), right-to-be-forgotten anonymization (`/api/privacy/anonymize`).
+- **Milestone 1 (In Progress / Completed)**: MySQL migrations, AES-256-GCM data encryption, Law 99-Z data masking, consent ledger (`/api/consent`), right-to-be-forgotten anonymization (`/api/privacy/anonymize`).
 - **Milestone 2 (Planned)**: Identity Provider adapters (MSI Belarus 14-char ID, Gosuslugi), dynamic HMAC-SHA256 QR badge generator, public badge verification scanner (`/api/volunteers/badge/{token}`).
 - **Milestone 3 (Planned)**: Server-side Haversine proof-of-presence enforcement ($\le 150$m), Cyrillic `ё`/`е` phonetics normalization, emergency SOS button (`/api/emergency/sos`), EMERCOM 112 dispatch adapter.
 - **Milestone 4 (Planned)**: WCAG 2.1 AAA accessibility engine (high contrast, zero emojis, SVG icons), coordinator task reassignment on stale requests, architecture documentation `/plan`.

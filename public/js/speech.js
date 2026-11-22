@@ -456,7 +456,7 @@ const SpeechHelper = {
     checkEmergencyVoiceCommand(transcript) {
         if (!transcript) return false;
         const clean = transcript.toLowerCase();
-        const emergencyRegex = /(?:^|[^\p{L}\p{N}])(помощь|помогите|тревога|сос|sos|спасите|срочно помощь|вызовите помощь)(?=$|[^\p{L}\p{N}])/ui;
+        const emergencyRegex = /(?:^|[^\p{L}\p{N}])(?:sos|сос|тревога|тревогу|спасите|вызовите помощь|вызов помощи|экстренная помощь|срочная помощь)(?=$|[^\p{L}\p{N}])/ui;
         if (emergencyRegex.test(clean)) {
             console.warn('Voice SOS command detected:', transcript);
             this.speak('Обнаружена голосовая команда тревоги. Передаю сигнал SOS координаторам и в службу 112!', { priority: 0 });

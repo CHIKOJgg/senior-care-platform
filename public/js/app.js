@@ -48,6 +48,18 @@ const Icons = {
             default:
                 return `<svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
         }
+    },
+    categoryByName: function(name) {
+        const value = String(name || '').toLowerCase();
+        const map = {
+            'shopping-bag': 1, 'groceries': 1, 'food': 1,
+            'pill': 2, 'pharmacy': 2, 'medical': 2,
+            'broom': 3, 'household': 3, 'home': 3,
+            'phone': 4, 'tech': 4,
+            'walking': 5, 'escort': 5,
+            'coffee': 6, 'chat': 6
+        };
+        return this.category(map[value] || 0);
     }
 };
 
@@ -103,6 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
     initPasswordRecovery();
     initResetCodeForm();
     initTopBarActions();
+    initModals();
+    checkSystemHealth();
     try { initUserFunctions(); } catch (e) { console.error(e); }
     try { initAccessibility(); } catch (e) { console.error(e); }
     try { initForms(); } catch (e) { console.error(e); }
@@ -137,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (currentRole === 'user') {
             loadAlerts();
             loadElderlyRequests();
+            loadElderlySosState();
         }
     }, 25000);
 });
@@ -261,6 +276,22 @@ function initSessionGate() {
 }
 
 // Top bar actions live outside the login gate and must work on every authenticated page.
+async function checkSystemHealth() {
+    const statusEl = document.getElementById('systemStatusText');
+    if (!statusEl) return;
+    try {
+        const res = await fetch('/api/health', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        const ok = res.ok && data.status === 'ok';
+        statusEl.textContent = ok ? 'СИСТЕМА ОНЛАЙН' : 'СИСТЕМА НЕДОСТУПНА';
+        statusEl.style.color = ok ? '' : 'var(--danger-color)';
+        statusEl.style.fontWeight = ok ? '' : '800';
+    } catch (e) {
+        statusEl.textContent = 'НЕТ СВЯЗИ';
+        statusEl.style.color = 'var(--danger-color)';
+    }
+}
+
 function initTopBarActions() {
     const logoutBtn = document.getElementById('btnLogout');
     if (!logoutBtn || logoutBtn.dataset.bound === '1') return;
@@ -512,6 +543,7 @@ function loadRoleData() {
     if (currentRole === 'user') {
         loadElderlyRequests();
         loadAlerts();
+        loadElderlySosState();
         loadEducation();
     } else if (currentRole === 'admin') {
         loadAdminAnalytics();
@@ -532,6 +564,25 @@ function loadRoleData() {
 // =========================================================================
 // 3. User View: Strictly 2 Functions
 // =========================================================================
+// Shared modal behaviour: Escape closes the topmost dialog and returns focus
+// to the element that opened it.
+function initModals() {
+    let lastFocused = null;
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const openModal = Array.from(document.querySelectorAll('.modal-backdrop'))
+            .find(m => m.style.display && m.style.display !== 'none');
+        if (!openModal) return;
+        openModal.style.display = 'none';
+        if (openModal.id === 'geo-complete-modal') currentCompletingRequestId = null;
+        if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+    });
+    document.addEventListener('focusin', (event) => {
+        const modal = event.target.closest ? event.target.closest('.modal-backdrop') : null;
+        if (modal) lastFocused = document.activeElement;
+    });
+}
+
 function initUserFunctions() {
     const btnRequest = document.getElementById('btnFuncRequest');
     const btnSafety = document.getElementById('btnFuncSafety');
@@ -539,9 +590,13 @@ function initUserFunctions() {
     const paneSafety = document.getElementById('func-safety');
 
     if (btnRequest && btnSafety && paneRequest && paneSafety) {
+        btnRequest.setAttribute('aria-pressed', 'true');
+        btnSafety.setAttribute('aria-pressed', 'false');
         btnRequest.addEventListener('click', () => {
             btnRequest.classList.add('active');
             btnSafety.classList.remove('active');
+            btnRequest.setAttribute('aria-pressed', 'true');
+            btnSafety.setAttribute('aria-pressed', 'false');
             paneRequest.style.display = 'block';
             paneSafety.style.display = 'none';
             SpeechHelper.speak('Открыт раздел: Заказ помощи');
@@ -550,6 +605,8 @@ function initUserFunctions() {
         btnSafety.addEventListener('click', () => {
             btnSafety.classList.add('active');
             btnRequest.classList.remove('active');
+            btnSafety.setAttribute('aria-pressed', 'true');
+            btnRequest.setAttribute('aria-pressed', 'false');
             paneSafety.style.display = 'block';
             paneRequest.style.display = 'none';
             SpeechHelper.speak('Открыт раздел: Школа безопасности и проверка на мошенничество');
@@ -570,11 +627,13 @@ function initUserFunctions() {
     const catGrid = document.getElementById('categoryGrid');
     if (catGrid && catGrid.dataset.bound !== '1') {
         catGrid.dataset.bound = '1';
-        catGrid.addEventListener('click', (ev) => {
-            const card = ev.target.closest('.category-card');
-            if (!card) return;
-            catGrid.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
+        const selectCard = (card) => {
+            catGrid.querySelectorAll('.category-card').forEach(c => {
+                c.classList.remove('selected');
+                c.setAttribute('aria-checked', 'false');
+            });
             card.classList.add('selected');
+            card.setAttribute('aria-checked', 'true');
             const catId = card.getAttribute('data-id');
             const selInput = document.getElementById('selectedCategory');
             if (selInput) selInput.value = catId;
@@ -584,8 +643,22 @@ function initUserFunctions() {
             }
             const title = card.querySelector('.category-title')?.innerText || '';
             SpeechHelper.speak('Выбрана категория: ' + title);
+        };
+        catGrid.addEventListener('click', (ev) => {
+            const card = ev.target.closest('.category-card');
+            if (card) selectCard(card);
+        });
+        catGrid.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter' && ev.key !== ' ') return;
+            const card = ev.target.closest('.category-card');
+            if (card) {
+                ev.preventDefault();
+                selectCard(card);
+            }
         });
     }
+
+    enhanceCategoryCards();
 
     // Voice dictation for request
     const micBtn = document.getElementById('micBtn');
@@ -612,6 +685,38 @@ function initUserFunctions() {
     }
 }
 
+function enhanceCategoryCards() {
+    const grid = document.getElementById('categoryGrid');
+    if (!grid) return;
+    grid.setAttribute('role', 'radiogroup');
+    grid.setAttribute('aria-label', 'Категория помощи');
+    grid.querySelectorAll('.category-card').forEach(card => {
+        card.setAttribute('role', 'radio');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-checked', card.classList.contains('selected') ? 'true' : 'false');
+    });
+}
+
+// Reset the category picker after a form reset so the visible selection and
+// the hidden category_id always agree.
+function resetCategorySelection() {
+    const grid = document.getElementById('categoryGrid');
+    const selected = document.getElementById('selectedCategory');
+    const desc = document.getElementById('requestDescription');
+    if (!grid) return;
+    const cards = grid.querySelectorAll('.category-card');
+    cards.forEach(c => c.classList.remove('selected'));
+    const first = cards[0];
+    if (first) {
+        first.classList.add('selected');
+        cards.forEach(c => c.setAttribute('aria-checked', c === first ? 'true' : 'false'));
+        if (selected) selected.value = first.getAttribute('data-id') || '1';
+        if (desc) desc.placeholder = 'Например: купите, пожалуйста, молоко и хлеб...';
+    }
+    enhanceCategoryCards();
+}
+window.resetCategorySelection = resetCategorySelection;
+
 // Load request types from the API so admin-added categories appear for seniors
 async function loadCategoryCards() {
     const grid = document.getElementById('categoryGrid');
@@ -624,12 +729,13 @@ async function loadCategoryCards() {
         if (list.length === 0) return;
         grid.innerHTML = list.map((c, index) => `
             <div class="category-card${index === 0 ? ' selected' : ''}" data-id="${Number(c.id)}">
-                <span class="category-icon">${Icons.category(c.id)}</span>
+                <span class="category-icon">${Icons.categoryByName(c.icon)}</span>
                 <div class="category-title">${escapeHtml(c.title)}</div>
             </div>
         `).join('');
         const selected = document.getElementById('selectedCategory');
         if (selected && list[0]) selected.value = String(list[0].id);
+        enhanceCategoryCards();
     } catch (e) {
         console.error('Failed to load request categories', e);
     }
@@ -728,11 +834,16 @@ async function loadElderlyRequests() {
 function initAdminSubnav() {
     const adminBtns = document.querySelectorAll('.admin-subnav-btn');
     adminBtns.forEach(btn => {
+        btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
         btn.addEventListener('click', () => {
-            adminBtns.forEach(b => b.classList.remove('active'));
+            adminBtns.forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
             document.querySelectorAll('.admin-tab-pane').forEach(p => p.style.display = 'none');
 
             btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
             const targetId = btn.getAttribute('data-admin-tab');
             const targetPane = document.getElementById(targetId);
             if (targetPane) targetPane.style.display = 'block';
@@ -770,16 +881,16 @@ async function loadAdminAnalytics() {
             // Render category progress bars
             const barsContainer = document.getElementById('categoryAnalyticsBars');
             if (barsContainer && s.category_distribution) {
-                const maxCount = Math.max(...s.category_distribution.map(c => c.count), 1);
                 barsContainer.innerHTML = s.category_distribution.map(c => {
-                    const percent = Math.round((c.count / maxCount) * 100);
+                    const maxCount = Math.max(...s.category_distribution.map(x => Number(x.count) || 0), 1);
+                    const percent = Math.round(((Number(c.count) || 0) / maxCount) * 100);
                     return `
                         <div class="category-progress-item">
                             <div class="category-progress-label">
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">${Icons.category(c.id)} ${escapeHtml(c.title)}</span>
-                                <strong>${c.count} заявок</strong>
+                                <strong>${(Number(c.count) || 0)} заявок • ${percent}%</strong>
                             </div>
-                            <div class="progress-track">
+                            <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="${escapeHtml(c.title)}: ${percent}%">
                                 <div class="progress-bar-fill" style="width: ${percent}%;"></div>
                             </div>
                         </div>
@@ -793,7 +904,7 @@ async function loadAdminAnalytics() {
         if (adminLb) {
             const lbRes = await authFetch('/api/volunteers/leaderboard');
             const lbJson = await lbRes.json();
-            if (lbJson.data) {
+            if (lbJson.data && lbJson.data.length > 0) {
                 adminLb.innerHTML = lbJson.data.map((v, i) => `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
                         <div>
@@ -805,10 +916,18 @@ async function loadAdminAnalytics() {
                         </div>
                     </div>
                 `).join('');
+            } else if (adminLb) {
+                adminLb.innerHTML = '<p class="text-muted">Пока нет верифицированных волонтёров с баллами.</p>';
             }
         }
     } catch (e) {
         console.error('Error loading admin analytics', e);
+        ['statTotalRequests', 'statActiveRequests', 'statCompletedRequests', 'statVerifiedVolunteers'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = '—';
+        });
+        const bars = document.getElementById('categoryAnalyticsBars');
+        if (bars) bars.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить аналитику. Обновите страницу.</p>';
     }
 }
 
@@ -894,7 +1013,11 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                     `;
                 }
 
-                const docStatus = v.masked_passport ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>` : '<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>';
+                const docStatus = v.masked_passport
+                    ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>`
+                    : (v.id_provider
+                        ? `<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>`
+                        : `<span class="badge badge-pending" style="font-size: 0.8em;">Документы не загружены</span>`);
                 const policeStatus = (v.police_clearance_status === 'CLEAN')
                     ? `<span class="badge badge-success" style="font-size: 0.8em;">МВД: Проверено</span>`
                     : `<span class="badge badge-warning" style="font-size: 0.8em;">МВД: Ожидает справку</span>`;
@@ -1136,7 +1259,8 @@ async function submitEducationForm(event) {
         title: document.getElementById('eduTitle').value.trim(),
         type: document.getElementById('eduType').value,
         category: document.getElementById('eduCategory').value.trim() || 'Общее',
-        content: document.getElementById('eduContent').value.trim()
+        content: document.getElementById('eduContent').value.trim(),
+        audio_url: document.getElementById('eduAudioUrl')?.value.trim() || null
     };
     if (!payload.title || !payload.content) {
         showFormMessage('educationFormMessage', 'Укажите заголовок и текст материала', false);
@@ -1239,11 +1363,14 @@ async function loadAdminRequests(status = 'all', region = null) {
 }
 
 async function adminChangeRequestStatus(id, newStatus) {
+    if (newStatus === 'completed' && !confirm(`Завершить заявку #${id} вручную? Это обходит проверку секретного слова и GPS; действие будет записано в журнал.`)) {
+        return;
+    }
     try {
         const res = await authFetch(`/api/coordinator/requests/${id}/status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
+            body: JSON.stringify({ status: newStatus, force: newStatus === 'completed' })
         });
         const data = await res.json();
         if (data.success) {
@@ -1282,6 +1409,7 @@ async function loadAdminAlerts() {
         }
     } catch (e) {
         console.error(e);
+        list.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить оповещения. Обновите страницу.</p>';
     }
 }
 
@@ -1314,6 +1442,11 @@ async function checkVolunteerStatus() {
         if (json.success && json.user) {
             const user = json.user;
             const isVerified = user.profile ? parseInt(user.profile.is_verified) : 0;
+            const badgeBtn = document.getElementById('btnOpenVolunteerBadge');
+            const feed = document.getElementById('volunteerRequestList');
+            const feedCard = feed ? feed.closest('.card') : null;
+            if (badgeBtn) badgeBtn.disabled = isVerified !== 1;
+            if (feedCard) feedCard.style.display = isVerified === 1 ? '' : 'none';
             if (isVerified === 1) {
                 notice.style.borderLeftColor = 'var(--accent-color)';
                 notice.style.background = '#f0fdf4';
@@ -1336,6 +1469,9 @@ async function checkVolunteerStatus() {
         }
     } catch (e) {
         console.error(e);
+        title.innerHTML = `${Icons.alert} <span>Статус волонтёра недоступен</span>`;
+        title.style.color = 'var(--danger-color)';
+        desc.innerText = 'Не удалось проверить статус. Обновите страницу или обратитесь к координатору.';
     }
 }
 
@@ -1388,6 +1524,10 @@ async function loadVolunteerRequests() {
         if (region) params.set('region', region);
         const res = await authFetch('/api/requests?' + params.toString());
         const json = await res.json();
+        if (!res.ok) {
+            list.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить ленту заявок. Повторите попытку.</p>';
+            return;
+        }
         if (json.data) {
             if (json.data.length === 0) {
                 list.innerHTML = '<p class="text-muted">Сейчас нет открытых заявок в вашем районе.</p>';
@@ -1408,7 +1548,7 @@ async function loadVolunteerRequests() {
                                 <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
                                 <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (расстояние: ~${req.distance_meters || 350} м)</span>
+                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''}${req.distance_meters != null ? ' (расстояние: ~' + escapeHtml(String(req.distance_meters)) + ' м)' : ' (расстояние неизвестно)'}</span>
                                 </p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
                                     ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
@@ -1424,6 +1564,7 @@ async function loadVolunteerRequests() {
         }
     } catch (e) {
         console.error(e);
+        list.innerHTML = '<p style="color: var(--danger-color);">Ошибка сети при загрузке заявок.</p>';
     }
 }
 
@@ -1479,6 +1620,8 @@ function openCompleteModal(id, addressHint = '') {
 
     if (coordsDisplay) {
         coordsDisplay.innerText = 'Определение GPS-координат...';
+        coordsDisplay.removeAttribute('data-lat');
+        coordsDisplay.removeAttribute('data-lon');
     }
 
     if (navigator.geolocation) {
@@ -1493,7 +1636,7 @@ function openCompleteModal(id, addressHint = '') {
             (err) => {
                 console.warn('Geolocation query warning:', err);
                 if (coordsDisplay) {
-                    coordsDisplay.innerText = 'GPS недоступен (будет использован адрес заявки)';
+                    coordsDisplay.innerText = 'GPS недоступен. Разрешите геолокацию в браузере — без координат подтвердить визит нельзя.';
                     coordsDisplay.removeAttribute('data-lat');
                     coordsDisplay.removeAttribute('data-lon');
                 }
@@ -1561,11 +1704,15 @@ async function submitGeoComplete() {
     }
 
     try {
-        const payload = { secret_code: secretCode };
-        if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon)) {
-            payload.latitude = lat;
-            payload.longitude = lon;
+        if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
+            if (errorBox) {
+                errorBox.style.display = 'block';
+                if (errorText) errorText.innerText = 'Не удалось определить GPS-координаты. Разрешите геолокацию и попробуйте снова — подтверждение визита без координат невозможно.';
+            }
+            return;
         }
+
+        const payload = { secret_code: secretCode, latitude: lat, longitude: lon };
 
         const res = await authFetch(`/api/requests/${id}/complete`, {
             method: 'POST',
@@ -1618,7 +1765,11 @@ async function loadLeaderboard() {
     try {
         const res = await authFetch('/api/volunteers/leaderboard');
         const json = await res.json();
-        if (json.data) {
+        if (!res.ok) {
+            box.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить таблицу лидеров.</p>';
+            return;
+        }
+        if (json.data && json.data.length > 0) {
             box.innerHTML = json.data.map((v, idx) => `
                 <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #e2e8f0;">
                     <div>
@@ -1630,15 +1781,41 @@ async function loadLeaderboard() {
                     </div>
                 </div>
             `).join('');
+        } else {
+            box.innerHTML = '<p class="text-muted">Пока нет выполненных заданий — таблица лидеров появится позже.</p>';
         }
     } catch (e) {
         console.error(e);
+        box.innerHTML = '<p style="color: var(--danger-color);">Ошибка загрузки таблицы лидеров.</p>';
     }
 }
 
 // =========================================================================
 // 6. Shared Forms (Create Request, Anti-Fraud, Alerts)
 // =========================================================================
+function beginFormSubmit(form) {
+    if (!form || form.dataset.busy === '1') return false;
+    form.dataset.busy = '1';
+    const button = form.querySelector('button[type="submit"]') || form.querySelector('button:not([type])');
+    if (button) {
+        button.dataset.previousHtml = button.innerHTML;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    }
+    return true;
+}
+
+function endFormSubmit(form) {
+    if (!form) return;
+    form.dataset.busy = '0';
+    const button = form.querySelector('button[type="submit"]') || form.querySelector('button:not([type])');
+    if (button) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (button.dataset.previousHtml) button.innerHTML = button.dataset.previousHtml;
+    }
+}
+
 function initForms() {
     // Submit Help Request
     const helpForm = document.getElementById('helpForm');
@@ -1648,9 +1825,13 @@ function initForms() {
     if (helpForm) {
         helpForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!beginFormSubmit(helpForm)) return;
+            try {
             const catId = selectedCatInput ? selectedCatInput.value : 1;
             const desc = requestDesc ? requestDesc.value.trim() : '';
-            const address = document.getElementById('requestAddress')?.value || 'Минск';
+            const address = document.getElementById('requestAddress')?.value
+                || document.getElementById('requestRegion')?.selectedOptions?.[0]?.textContent?.trim()
+                || 'Республика Беларусь';
 
             if (!desc) {
                 alert('Пожалуйста, укажите или надиктуйте, какая помощь вам нужна.');
@@ -1664,14 +1845,22 @@ function initForms() {
             }
 
             if (consentBox && consentBox.checked) {
-                authFetch('/api/consent', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        consent_type: 'DATA_PROCESSING_99Z',
-                        policy_version: '1.0'
-                    })
-                }).catch(() => {});
+                try {
+                    const consentRes = await authFetch('/api/consent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            consent_type: 'DATA_PROCESSING_99Z',
+                            policy_version: '1.0.0'
+                        })
+                    });
+                    if (!consentRes.ok) {
+                        throw new Error('consent rejected');
+                    }
+                } catch (consentErr) {
+                    alert('Не удалось зафиксировать согласие на обработку данных. Попробуйте ещё раз.');
+                    return;
+                }
             }
 
             const regionSelect = document.getElementById('requestRegion');
@@ -1714,6 +1903,7 @@ function initForms() {
                 if (data.success) {
                     showCreatedModal(data.secret_code);
                     helpForm.reset();
+                    resetCategorySelection();
                     loadElderlyRequests();
                     loadVolunteerRequests();
                 } else {
@@ -1722,6 +1912,9 @@ function initForms() {
             } catch (err) {
                 console.error(err);
                 alert('Ошибка сети при создании заявки');
+            }
+            } finally {
+                endFormSubmit(helpForm);
             }
         });
     }
@@ -1787,6 +1980,8 @@ function initForms() {
     if (alertForm) {
         alertForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!beginFormSubmit(alertForm)) return;
+            try {
             const title = document.getElementById('alertInputTitle')?.value;
             const desc = document.getElementById('alertInputDesc')?.value;
             const severity = document.getElementById('alertInputSeverity')?.value || 'warning';
@@ -1808,6 +2003,9 @@ function initForms() {
                 }
             } catch (err) {
                 alert('Ошибка при публикации');
+            }
+            } finally {
+                endFormSubmit(alertForm);
             }
         });
     }
@@ -1855,7 +2053,7 @@ function renderEducationCards(category = 'all') {
                 ? allEducationMaterialsCache.length
                 : allEducationMaterialsCache.filter(m => (m.category || 'Общее') === cat).length;
             const label = cat === 'all' ? `Все (${count})` : `${escapeHtml(cat)} (${count})`;
-            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 38px; padding: 6px 12px;" onclick="renderEducationCards('${escapeJs(cat)}')">${label}</button>`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 38px; padding: 6px 12px;" onclick="renderEducationCards(${jsString(cat)})">${label}</button>`;
         }).join('');
     }
 
@@ -1884,7 +2082,10 @@ function renderEducationCards(category = 'all') {
                 <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
             </div>
             <p style="margin: 8px 0 12px 0; line-height: 1.5;">${escapeHtml(item.content)}</p>
-            <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak('${escapeJs(item.title)}. ${escapeJs(item.content)}')">
+            ${item.audio_url ? (String(item.type).toLowerCase() === 'video'
+                ? `<video controls preload="none" src="${escapeHtml(item.audio_url)}" style="max-width: 100%; margin-bottom: 12px; border-radius: 8px;"></video>`
+                : `<audio controls preload="none" src="${escapeHtml(item.audio_url)}" style="width: 100%; margin-bottom: 12px;"></audio>`) : ''}
+            <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak(${jsString(item.title + '. ' + item.content)})">
                 ${Icons.volume} Прослушать памятку
             </button>
         </div>
@@ -1904,6 +2105,7 @@ async function loadEducation() {
         }
     } catch (e) {
         console.error('Error loading education materials', e);
+        container.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить памятки. Повторите попытку.</p>';
     }
 }
 
@@ -1927,7 +2129,7 @@ function renderVolunteerKnowledgeCards(category = 'all') {
                 ? relevantMaterials.length
                 : relevantMaterials.filter(m => (m.category || 'Общее') === cat).length;
             const label = cat === 'all' ? `Все стандарты (${count})` : `${escapeHtml(cat)} (${count})`;
-            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 36px; padding: 4px 10px;" onclick="renderVolunteerKnowledgeCards('${escapeJs(cat)}')">${label}</button>`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 36px; padding: 4px 10px;" onclick="renderVolunteerKnowledgeCards(${jsString(cat)})">${label}</button>`;
         }).join('');
     }
 
@@ -1981,13 +2183,38 @@ async function loadAlerts() {
         if (json.data && json.data.length > 0) {
             const first = json.data[0];
             titleEl.innerHTML = `${Icons.alert} <span>${escapeHtml(first.title)}</span>`;
-            descEl.innerText = first.description;
+            descEl.innerHTML = json.data.map(a => `<p style="margin: 4px 0;"><strong>${escapeHtml(a.title)}:</strong> ${escapeHtml(a.description || '')}</p>`).join('');
+            alertBox.classList.remove('alert-banner-danger', 'alert-banner-warning', 'alert-banner-info', 'alert-banner-success');
+            const severityClass = first.severity === 'danger' ? 'alert-banner-danger'
+                : first.severity === 'warning' ? 'alert-banner-warning'
+                : first.severity === 'info' ? 'alert-banner-info' : 'alert-banner-warning';
+            alertBox.classList.add(severityClass);
             alertBox.style.display = 'block';
         } else {
             alertBox.style.display = 'none';
         }
     } catch (e) {
         console.error(e);
+    }
+}
+
+async function loadElderlySosState() {
+    const banner = document.getElementById('activeSosBanner');
+    const ticketSpan = document.getElementById('sosTicketId');
+    if (!banner) return;
+    try {
+        const res = await authFetch('/api/sos/my-active');
+        if (!res.ok) return;
+        const data = await res.json();
+        const alerts = data.data || data.alerts || [];
+        if (alerts.length > 0) {
+            if (ticketSpan) ticketSpan.innerText = alerts[0].emercom_ticket_id || ('SOS-' + alerts[0].id);
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
+        }
+    } catch (e) {
+        // The banner is optional on the senior home screen; keep the page usable.
     }
 }
 
@@ -1998,6 +2225,7 @@ function initAccessibility() {
     const toggleSeniorBtn = document.getElementById('toggleSeniorMode');
     if (toggleSeniorBtn) {
         const isSenior = localStorage.getItem('seniorMode') === 'true';
+        toggleSeniorBtn.setAttribute('aria-pressed', isSenior ? 'true' : 'false');
         if (isSenior) {
             document.body.classList.add('senior-mode');
             toggleSeniorBtn.classList.add('btn-primary');
@@ -2010,6 +2238,7 @@ function initAccessibility() {
 
         toggleSeniorBtn.addEventListener('click', () => {
             const active = document.body.classList.toggle('senior-mode');
+            toggleSeniorBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
             localStorage.setItem('seniorMode', active ? 'true' : 'false');
             if (active) {
                 toggleSeniorBtn.classList.add('btn-primary');
@@ -2041,13 +2270,11 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-function escapeJs(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, ' ');
+// Safely embed a JavaScript string literal inside a double-quoted HTML
+// attribute. JSON.stringify handles quotes/newlines, escapeHtml protects the
+// attribute boundary, and the browser decodes entities before JS parses it.
+function jsString(value) {
+    return escapeHtml(JSON.stringify(String(value ?? '')));
 }
 
 // =========================================================================
@@ -2060,10 +2287,12 @@ async function triggerSos(customReason = 'Экстренная тревога п
         sosBtn.classList.add('sos-active');
     }
 
-    SpeechHelper.speak('Сигнал бедствия активирован. Передаём ваши координаты координатору ТЦСОН и в службу спасения 112.');
+    SpeechHelper.speak('Сигнал бедствия активирован. Передаём сигнал координатору ТЦСОН.', { priority: 0 });
 
-    let latitude = 53.9168; // Default Minsk Sovetsky district fallback
-    let longitude = 27.5862;
+    // Do not invent a location: if GPS is unavailable the server falls back to
+    // the elderly profile stored in the account (the actual home address).
+    let latitude = null;
+    let longitude = null;
 
     // Fast Geolocation attempt with 3.5s timeout
     if (navigator.geolocation) {
@@ -2078,19 +2307,20 @@ async function triggerSos(customReason = 'Экстренная тревога п
             latitude = pos.coords.latitude;
             longitude = pos.coords.longitude;
         } catch (geoErr) {
-            console.warn('Geolocation unavailable, using profile fallback coordinates:', geoErr);
+            console.warn('Geolocation unavailable, server will use the profile address:', geoErr);
         }
     }
 
     try {
+        const payload = { reason: customReason };
+        if (latitude !== null && longitude !== null) {
+            payload.latitude = latitude;
+            payload.longitude = longitude;
+        }
         const res = await authFetch('/api/sos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                latitude: latitude,
-                longitude: longitude,
-                reason: customReason
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await res.json();
@@ -2101,7 +2331,11 @@ async function triggerSos(customReason = 'Экстренная тревога п
             if (ticketSpan) ticketSpan.innerText = ticketId;
             if (banner) banner.style.display = 'block';
 
-            SpeechHelper.speak('Сигнал принят! Служба 112 и координатор района оповещены. Помощь направлена.');
+            if (data.emercom_notified === true) {
+                SpeechHelper.speak('Сигнал принят! Служба 112 и координатор района оповещены. Помощь направлена.', { priority: 0 });
+            } else {
+                SpeechHelper.speak('Сигнал принят координатором ТЦСОН. Если опасность непосредственная, срочно позвоните по номеру 112.', { priority: 0 });
+            }
             showSosConfirmationModal(data);
         } else {
             alert('Ошибка вызова экстренной помощи: ' + (data.error || 'Попробуйте позвонить 112 напрямую'));
@@ -2127,7 +2361,11 @@ function showSosConfirmationModal(data) {
         document.body.appendChild(modal);
     }
 
+    const notified = data.emercom_notified === true;
     const ticketId = data.emercom_ticket_id || ('SOS-' + (data.sos_id || '1'));
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'sosConfirmationTitle');
     modal.innerHTML = `
         <div class="modal-dialog card-accent-danger" style="border: 4px solid var(--danger-color); max-width: 500px;">
             <div style="text-align: center; margin-bottom: 20px;">
@@ -2138,8 +2376,8 @@ function showSosConfirmationModal(data) {
                         <line x1="12" y1="16" x2="12.01" y2="16"/>
                     </svg>
                 </div>
-                <h2 style="color: var(--danger-color); font-size: 1.5em; margin-bottom: 8px;">СИГНАЛ SOS ПРИНЯТ!</h2>
-                <p style="font-weight: bold; font-size: 1.05em;">Координатор ТЦСОН и служба МЧС (112) оповещены.</p>
+                <h2 id="sosConfirmationTitle" style="color: var(--danger-color); font-size: 1.5em; margin-bottom: 8px;">СИГНАЛ SOS ПРИНЯТ!</h2>
+                <p style="font-weight: bold; font-size: 1.05em;">${notified ? 'Координатор ТЦСОН и служба МЧС (112) оповещены.' : 'Координатор ТЦСОН оповещён. Интеграция с МЧС работает в тестовом режиме.'}</p>
             </div>
             <div style="background: var(--card-subtle); padding: 16px; border-radius: 12px; margin-bottom: 20px; font-size: 0.95em;">
                 <p style="margin-bottom: 8px;"><strong>Номер экстренного талона:</strong> <code style="font-size: 1.05em; font-weight: bold;">${escapeHtml(ticketId)}</code></p>
@@ -2155,104 +2393,20 @@ function showSosConfirmationModal(data) {
 }
 
 // =========================================================================
-// M4: Coordinator Web Audio API Siren & Incident Console
+// M4: Coordinator SOS Incident Console
 // =========================================================================
-let sirenAudioCtx = null;
-let sirenOscillator = null;
-let sirenGainNode = null;
-let sirenInterval = null;
-let isSirenMuted = false;
-
-function initAudioContext() {
-    if (!sirenAudioCtx) {
-        const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtxClass) {
-            sirenAudioCtx = new AudioCtxClass();
-        }
-    }
-    if (sirenAudioCtx && sirenAudioCtx.state === 'suspended') {
-        sirenAudioCtx.resume();
-    }
-}
-
-function playSiren() {
-    if (isSirenMuted) return;
-    initAudioContext();
-    if (!sirenAudioCtx) return;
-
-    if (sirenOscillator) {
-        return; // Already active
-    }
-
-    try {
-        sirenOscillator = sirenAudioCtx.createOscillator();
-        sirenGainNode = sirenAudioCtx.createGain();
-
-        sirenOscillator.type = 'sawtooth';
-        sirenGainNode.gain.setValueAtTime(0.12, sirenAudioCtx.currentTime);
-
-        sirenOscillator.connect(sirenGainNode);
-        sirenGainNode.connect(sirenAudioCtx.destination);
-
-        let highFreq = false;
-        sirenOscillator.frequency.setValueAtTime(600, sirenAudioCtx.currentTime);
-
-        sirenInterval = setInterval(() => {
-            if (!sirenOscillator || !sirenAudioCtx) return;
-            const targetFreq = highFreq ? 600 : 900;
-            sirenOscillator.frequency.cancelScheduledValues(sirenAudioCtx.currentTime);
-            sirenOscillator.frequency.linearRampToValueAtTime(targetFreq, sirenAudioCtx.currentTime + 0.15);
-            highFreq = !highFreq;
-        }, 450);
-
-        sirenOscillator.start();
-    } catch (e) {
-        console.error('Audio siren playback failed', e);
-    }
-}
-window.playSiren = playSiren;
-
-function stopSiren() {
-    if (sirenInterval) {
-        clearInterval(sirenInterval);
-        sirenInterval = null;
-    }
-    if (sirenGainNode && sirenAudioCtx) {
-        try {
-            sirenGainNode.gain.linearRampToValueAtTime(0.001, sirenAudioCtx.currentTime + 0.1);
-        } catch (e) {}
-    }
-    if (sirenOscillator) {
-        try {
-            sirenOscillator.stop(sirenAudioCtx ? sirenAudioCtx.currentTime + 0.15 : 0);
-            sirenOscillator.disconnect();
-        } catch (e) {}
-        sirenOscillator = null;
-    }
-    sirenGainNode = null;
-}
-window.stopSiren = stopSiren;
-
-function toggleSirenMute() {
-    isSirenMuted = !isSirenMuted;
-    const btn = document.getElementById('btnToggleSirenSound') || document.getElementById('btnToggleSiren');
-    if (btn) {
-        btn.innerHTML = isSirenMuted
-            ? `${Icons.cross} Звук сирены выключен`
-            : `${Icons.volume} Звук сирены включен`;
-    }
-    if (isSirenMuted) {
-        stopSiren();
-    }
-}
-window.toggleSirenMute = toggleSirenMute;
 
 async function loadCoordinatorSosAlerts() {
+    const bannerContainer = document.getElementById('coordinatorSosBannerContainer');
+    if (!bannerContainer) return;
     try {
         const res = await authFetch('/api/sos/active');
         const data = await res.json();
-        const bannerContainer = document.getElementById('coordinatorSosBannerContainer');
-        if (!bannerContainer) return;
+        if (!res.ok) {
+            bannerContainer.style.display = 'block';
+            bannerContainer.innerHTML = `<div class="alert-banner alert-banner-warning"><strong>${Icons.alert} Не удалось проверить активные SOS.</strong> Повторите попытку или обновите страницу.</div>`;
+            return;
+        }
 
         const alerts = data.alerts || data.data || [];
         if (alerts.length > 0) {
@@ -2280,23 +2434,22 @@ async function loadCoordinatorSosAlerts() {
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <button type="button" class="btn btn-outline btn-sm" id="btnToggleSirenSound" style="background: rgba(255,255,255,0.2); color: #fff; border-color: #fff;" onclick="toggleSirenMute()">
-                            ${Icons.volume} ${isSirenMuted ? 'Звук выключен' : 'Звук сирены'}
-                        </button>
                         <button type="button" class="btn btn-success btn-sm" style="background: #15803d; border-color: #15803d; font-weight: 700;" onclick="resolveSosAlert(${topAlert.id})">
                             ${Icons.check} Разрешить инцидент
                         </button>
                     </div>
                 </div>
             `;
-            playSiren();
         } else {
             bannerContainer.style.display = 'none';
             bannerContainer.innerHTML = '';
-            stopSiren();
         }
     } catch (e) {
         console.error('Error loading active SOS alerts', e);
+        if (bannerContainer) {
+            bannerContainer.style.display = 'block';
+            bannerContainer.innerHTML = `<div class="alert-banner alert-banner-warning"><strong>${Icons.alert} Ошибка связи при проверке SOS.</strong> Если вы видите этот экран, проверьте систему вручную.</div>`;
+        }
     }
 }
 window.loadCoordinatorSosAlerts = loadCoordinatorSosAlerts;
@@ -2307,7 +2460,6 @@ async function resolveSosAlert(id) {
         const res = await authFetch(`/api/sos/${id}/resolve`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            stopSiren();
             alert(`Экстренная тревога #${id} успешно разрешена.`);
             loadCoordinatorSosAlerts();
             loadAdminAnalytics();
@@ -2331,6 +2483,10 @@ async function loadWatchdogTasks() {
     try {
         const res = await authFetch('/api/coordinator/watchdog');
         const data = await res.json();
+        if (!res.ok) {
+            tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger-color);">Не удалось загрузить список просроченных задач. Повторите попытку.</td></tr>`;
+            return;
+        }
         const tasks = data.overdue_tasks || data.data || [];
 
         if (badge) {
@@ -2477,6 +2633,10 @@ function renderBadge(badgeData) {
 
     if (btnPublic && badgeData.badge_token) {
         btnPublic.href = `/verify.php?token=${encodeURIComponent(badgeData.badge_token)}`;
+        btnPublic.removeAttribute('aria-disabled');
+        btnPublic.removeAttribute('onclick');
+        btnPublic.style.opacity = '';
+        btnPublic.style.pointerEvents = '';
     }
 
     startBadgeCountdown(expiresAt);

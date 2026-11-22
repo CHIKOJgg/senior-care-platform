@@ -3,7 +3,7 @@
 - **Статус:** Принято
 - **Дата:** 2026-11-08
 - **Категория:** Интеграция / observability
-- **Связанные ADR:** [ADR-0003](0003-database-sqlite-mysql.md), [ADR-0006](0006-zero-composer-custom-libraries.md), [ADR-0011](0011-docker-caddy-nginx-phpfpm.md)
+- **Связанные ADR:** [ADR-0003](0003-database-mysql.md), [ADR-0006](0006-zero-composer-custom-libraries.md), [ADR-0011](0011-docker-caddy-nginx-phpfpm.md)
 
 ## Контекст
 

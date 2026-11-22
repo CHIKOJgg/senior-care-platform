@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * =============================================================================
  * ADVERSARIAL STRESS TEST SUITE: MILESTONE 4 (UI WORKFLOWS & PLAN SUITE)
- * Independent empirical verification of Web Audio API, Voice Interception,
+ * Independent empirical verification of Voice Interception,
  * Geofencing Telemetry, Dynamic QR Badge, and Architectural Plan Suite.
  * Platform: «ЗаботаРядом» (Советский район г. Минска)
  * Author: Challenger M4-2
@@ -46,77 +46,31 @@ $verifyHtml = file_exists($verifyPath) ? file_get_contents($verifyPath) : '';
 $cssContent = file_exists($cssPath) ? file_get_contents($cssPath) : '';
 
 // =============================================================================
-// PART 1: Web Audio API Siren & Voice Interception Logic
+// PART 1: Emergency UI Without Audio Siren
 // =============================================================================
-echo PHP_EOL . "--- [PART 1] Web Audio API Siren & Voice Interception Logic ---" . PHP_EOL;
+echo PHP_EOL . "--- [PART 1] Emergency UI Without Audio Siren ---" . PHP_EOL;
 
-// 1.1 AudioContext existence and oscillator type
-$hasAudioContext = strpos($appJs, 'AudioContext') !== false || strpos($appJs, 'webkitAudioContext') !== false;
+$hasSirenCode = strpos($appJs, 'AudioContext') !== false
+    || strpos($appJs, 'webkitAudioContext') !== false
+    || strpos($appJs, 'playSiren') !== false
+    || strpos($appJs, 'stopSiren') !== false
+    || strpos($appJs, 'isSirenMuted') !== false;
+
 recordResult(
-    'AUDIO-SIREN',
-    'AUD-01: AudioContext initialization present in app.js',
-    $hasAudioContext,
-    'AudioContext / webkitAudioContext fallback implemented'
+    'AUDIO-REMOVED',
+    'AUD-01: Web Audio siren code is fully removed from app.js',
+    !$hasSirenCode,
+    $hasSirenCode ? 'Found leftover AudioContext/playSiren/stopSiren code' : 'No siren code found'
 );
 
-// 1.2 Oscillator frequency configuration: strictly within [600, 900] Hz
-$initialFreqMatch = preg_match('/setValueAtTime\s*\(\s*(\d+)\s*,\s*sirenAudioCtx\.currentTime\s*\)/', $appJs, $freqM);
-$initialFreq = $initialFreqMatch ? (int)$freqM[1] : 0;
-$freqSweepMatch = preg_match('/targetFreq\s*=\s*highFreq\s*\?\s*(\d+)\s*:\s*(\d+)/', $appJs, $sweepM);
-$lowFreq = $freqSweepMatch ? (int)$sweepM[1] : 0;
-$highFreq = $freqSweepMatch ? (int)$sweepM[2] : 0;
-
-$frequenciesValid = ($initialFreq >= 600 && $initialFreq <= 900)
-    && ($lowFreq >= 600 && $lowFreq <= 900)
-    && ($highFreq >= 600 && $highFreq <= 900)
-    && ($lowFreq === 600 && $highFreq === 900);
-
+$hasVisualBanner = strpos($appJs, 'sos-pulse-banner') !== false
+    && strpos($appJs, 'ПРИОРИТЕТ 0') !== false
+    && strpos($indexHtml, 'aria-live="assertive"') !== false;
 recordResult(
-    'AUDIO-SIREN',
-    'AUD-02: Siren sweeps frequencies strictly within [600, 900] Hz',
-    $frequenciesValid,
-    sprintf("Base: %d Hz, Alternating: [%d, %d] Hz", $initialFreq, $lowFreq, $highFreq)
-);
-
-// 1.3 Volume envelope (GainNode) does not exceed 1.0 (no ear damage / clipping)
-$gainMatch = preg_match('/sirenGainNode\.gain\.setValueAtTime\s*\(\s*([0-9.]+)\s*,/', $appJs, $gainM);
-$initialGain = $gainMatch ? (float)$gainM[1] : 999.0;
-recordResult(
-    'AUDIO-SIREN',
-    'AUD-03: GainNode volume envelope <= 1.0 (clipping & hearing safety)',
-    $initialGain > 0.0 && $initialGain <= 1.0,
-    sprintf("Configured gain: %.3f (Safe threshold <= 1.0, recommended <= 0.3)", $initialGain)
-);
-
-// 1.4 Fade out ramp on stopSiren to avoid speaker pop
-$rampMatch = preg_match('/sirenGainNode\.gain\.linearRampToValueAtTime\s*\(\s*([0-9.]+)\s*,/', $appJs, $rampM);
-$fadeGain = $rampMatch ? (float)$rampM[1] : 1.0;
-recordResult(
-    'AUDIO-SIREN',
-    'AUD-04: Siren stop gracefully ramps down volume (anti-pop)',
-    $fadeGain <= 0.01,
-    sprintf("Fade-out target gain: %.4f", $fadeGain)
-);
-
-// 1.5 User-gesture unlocking: AudioContext resumed from suspended state
-$hasResumeCheck = strpos($appJs, "sirenAudioCtx.state === 'suspended'") !== false
-    && strpos($appJs, "sirenAudioCtx.resume()") !== false;
-recordResult(
-    'AUDIO-SIREN',
-    'AUD-05: User-gesture auto-unlocking implemented (state === suspended -> resume)',
-    $hasResumeCheck,
-    'AudioContext checks suspended state and triggers resume'
-);
-
-// 1.6 Mute toggle logic suppresses oscillator
-$hasMuteCheck = strpos($appJs, 'isSirenMuted') !== false
-    && strpos($appJs, 'toggleSirenMute') !== false
-    && strpos($appJs, 'if (isSirenMuted) return') !== false;
-recordResult(
-    'AUDIO-SIREN',
-    'AUD-06: Mute toggle suppresses audio oscillator playback',
-    $hasMuteCheck,
-    'isSirenMuted state guard active in playSiren and toggleSirenMute'
+    'AUDIO-REMOVED',
+    'AUD-02: Coordinator SOS console remains visual and announced via aria-live',
+    $hasVisualBanner,
+    'Pulsing banner + priority label + live region'
 );
 
 // 1.7 Speech recognition keyword triggers in public/js/speech.js
@@ -148,7 +102,7 @@ recordResult(
 
 // 1.8 Regex evaluation: PHP PCRE Unicode vs ECMA-262 JavaScript semantics
 // Test with PHP PCRE (Unicode flag /u)
-$testPhrases = ['Помощь', 'Тревога', 'SOS', 'Спасите', 'Мне нужна помощь срочно', 'Спасите помогите'];
+$testPhrases = ['SOS', 'Тревога', 'Спасите', 'Вызовите помощь', 'Экстренная помощь', 'Мне нужна срочная помощь'];
 $pcreMatchedAll = true;
 foreach ($testPhrases as $phrase) {
     if (!preg_match('/' . $voicePattern . '/u' . str_replace('u', '', $voiceFlags), mb_strtolower($phrase, 'UTF-8'))) {
@@ -252,7 +206,7 @@ recordResult(
     'Displays Russian error with distance and prompts volunteer to approach residence'
 );
 
-// 2.5 Live Backend Proof-of-Presence Verification via SQLite
+// 2.5 Live Backend Proof-of-Presence Verification via MySQL
 require_once $rootDir . '/app/Core/Database.php';
 $pdo = App\Core\Database::getConnection();
 
@@ -263,7 +217,7 @@ $pdo->exec("DELETE FROM help_requests WHERE title LIKE 'CHALLENGER_M4_TEST%'");
 // Home coordinates: Sovetsky district (53.9168, 27.5856)
 $stmt = $pdo->prepare("
     INSERT INTO help_requests (elderly_id, volunteer_id, category_id, title, description, address, latitude, longitude, secret_code, status, assigned_at)
-    VALUES (1, 2, 1, 'CHALLENGER_M4_TEST_GEOFENCE', 'Test request for geofence verification', 'Минск, ул. Якуба Коласа, 28', 53.9168, 27.5856, 'ромашка', 'in_progress', strftime('%s', 'now'))
+    VALUES (1, 2, 1, 'CHALLENGER_M4_TEST_GEOFENCE', 'Test request for geofence verification', 'Минск, ул. Якуба Коласа, 28', 53.9168, 27.5856, 'ромашка', 'in_progress', NOW())
 ");
 $stmt->execute();
 $testRequestId = (int)$pdo->lastInsertId();
@@ -492,7 +446,7 @@ $planFiles = [
     ],
     '06_DATABASE_MIGRATIONS.md' => [
         'min_size' => 5000,
-        'keywords' => ['PRAGMA', 'idx_', 'migrate.php']
+        'keywords' => ['MySQL', 'migrate.php', 'CREATE TABLE']
     ],
     '07_REST_API_SPECIFICATION.md' => [
         'min_size' => 5000,
@@ -538,7 +492,7 @@ foreach ($planFiles as $filename => $spec) {
 // =============================================================================
 // PART 5: Zero-Emoji Compliance & Database State Integrity
 // =============================================================================
-echo PHP_EOL . "--- [PART 5] Zero-Emoji Forensic Audit & SQLite Database State ---" . PHP_EOL;
+echo PHP_EOL . "--- [PART 5] Zero-Emoji Forensic Audit & MySQL Database State ---" . PHP_EOL;
 
 $targetFiles = array_merge(
     [$indexPath, $verifyPath, $cssPath, $appJsPath, $speechJsPath],
@@ -564,20 +518,26 @@ recordResult(
     sprintf("Found %d emoji characters across %d files", $totalEmojiCount, count($targetFiles))
 );
 
-// Database foreign keys check
-$fkCheck = $pdo->query("PRAGMA foreign_key_check")->fetchAll();
+// Database referential integrity check (MySQL, no orphan request rows)
+$orphans = (int)$pdo->query("
+    SELECT COUNT(*)
+    FROM help_requests hr
+    LEFT JOIN users u ON u.id = hr.elderly_id
+    LEFT JOIN categories c ON c.id = hr.category_id
+    WHERE u.id IS NULL OR c.id IS NULL
+")->fetchColumn();
 recordResult(
     'DB-INTEGRITY',
-    'DB-01: SQLite foreign key integrity verified (0 violations)',
-    count($fkCheck) === 0,
-    sprintf("%d foreign key violations found", count($fkCheck))
+    'DB-01: MySQL referential integrity verified (0 orphan rows)',
+    $orphans === 0,
+    sprintf("%d orphan rows found", $orphans)
 );
 
 // Ensure no test artifacts remain in DB
 $testRowsCount = (int)$pdo->query("SELECT COUNT(*) FROM help_requests WHERE title LIKE 'CHALLENGER_M4_TEST%'")->fetchColumn();
 recordResult(
     'DB-INTEGRITY',
-    'DB-02: Zero temporary test rows remaining in SQLite database',
+    'DB-02: Zero temporary test rows remaining in MySQL database',
     $testRowsCount === 0,
     sprintf("%d test artifacts remaining", $testRowsCount)
 );

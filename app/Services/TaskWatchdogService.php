@@ -178,11 +178,20 @@ class TaskWatchdogService
             ];
         }
 
+        if (!in_array($req['status'], ['open', 'in_progress'], true)) {
+            return [
+                'success' => false,
+                'error' => 'Переназначить можно только открытую или выполняющуюся заявку'
+            ];
+        }
+
         HelpRequest::update($requestId, [
             'volunteer_id' => null,
             'status' => 'open',
             'is_overdue' => 0,
-            'assigned_at' => null
+            'assigned_at' => null,
+            'failed_attempts' => 0,
+            'completed_at' => null
         ]);
 
         Logger::info("Coordinator " . ($coordinatorId ? "#{$coordinatorId}" : "") . " reassigned stalled request #{$requestId} back to neighborhood feed");

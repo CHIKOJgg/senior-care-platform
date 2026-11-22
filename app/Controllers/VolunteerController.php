@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Router;
 use App\Core\Logger;
 use App\Core\RateLimiter;
+use App\Core\Url;
 use App\Services\AuthService;
 use App\Services\BadgeService;
 use App\Services\Identity\IdentityProviderFactory;
@@ -65,8 +66,8 @@ class VolunteerController
         $payload = BadgeService::verifyBadgeToken($token);
         $qrSvg = BadgeService::generateBadgeQrSvg($token);
 
-        $appUrl = getenv('APP_URL') ?: 'http://127.0.0.1:8000';
-        $verificationUrl = rtrim($appUrl, '/') . '/api/volunteers/badge/' . $token;
+        $appUrl = Url::base();
+        $verificationUrl = $appUrl . '/verify/' . rawurlencode($token);
         $vp = \App\Models\VolunteerProfile::find($userId);
         $badgeNumber = $payload['bid'] ?? sprintf(
             'BY-%s-%s-%04d',
@@ -113,11 +114,12 @@ class VolunteerController
      */
     public function renderBadgeSvg(string $token): void
     {
-        $payload = BadgeService::verifyBadgeToken($token);
+        $result = BadgeService::verifyVolunteerBadge($token);
+        $payload = $result['valid'] ? BadgeService::verifyBadgeToken($token) : null;
         if (!$payload) {
             http_response_code(400);
             header('Content-Type: text/plain; charset=utf-8');
-            echo 'Срок действия динамического QR-кода истёк или подпись недействительна';
+            echo 'Срок действия динамического QR-кода истёк, подпись недействительна или волонтёр отозван';
             exit;
         }
 
@@ -172,7 +174,8 @@ class VolunteerController
             ], 422);
         }
 
-        // Update profile in database
+        // Update profile in database. A fresh identity check always returns the
+        // volunteer to moderation; previously granted access must not survive it.
         $vp = VolunteerProfile::find($userId);
         if ($vp) {
             VolunteerProfile::update($userId, [
@@ -180,6 +183,7 @@ class VolunteerController
                 'id_provider_user_id' => $res['personal_number_hash'] ?? null,
                 'passport_masked' => $res['personal_number_masked'] ?? null,
                 'verification_status' => 'PENDING',
+                'is_verified' => 0,
             ]);
         }
 

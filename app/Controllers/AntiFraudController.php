@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Controllers;
 
 use App\Core\Router;
@@ -16,10 +18,13 @@ class AntiFraudController
         }
 
         $input = Router::getJsonInput();
-        $text = trim($input['text'] ?? '');
+        $text = is_string($input['text'] ?? null) ? trim($input['text']) : '';
 
         if (!$text) {
             Router::json(['error' => 'Введите текст сообщения или фразы для проверки'], 400);
+        }
+        if (mb_strlen($text) > 5000) {
+            Router::json(['error' => 'Текст для проверки слишком длинный (максимум 5000 символов)'], 400);
         }
 
         $result = AntiFraudService::analyze($text);

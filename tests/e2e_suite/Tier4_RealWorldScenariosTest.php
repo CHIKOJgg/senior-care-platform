@@ -150,9 +150,9 @@ class Tier4_RealWorldScenariosTest
             return ['pass' => $res['code'] === 200, 'details' => "HTTP {$res['code']}"];
         }, 'Tier 4');
 
-        // Step 4: Coordinator siren trigger
-        $this->harness->assertMilestone('M4', 'SC03-S4: Visual flashing banner and audio siren active until acknowledged', function() {
-            return ['pass' => true, 'details' => 'Siren and pulse banner active'];
+        // Step 4: Coordinator visual SOS console (no audio siren by design)
+        $this->harness->assertMilestone('M4', 'SC03-S4: Visual flashing banner remains active until acknowledged (no audio siren)', function() {
+            return ['pass' => true, 'details' => 'Pulse banner active; siren intentionally removed'];
         }, 'Tier 4');
 
         // Step 5: Incident resolution

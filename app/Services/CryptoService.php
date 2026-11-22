@@ -57,6 +57,23 @@ class CryptoService
             $raw = 'senior_care_platform_dev_aes256_master_key_2026';
         }
 
+        // Production keys must be real 256-bit material, not a passphrase that
+        // silently gets hashed into a different key on every deployment.
+        if ((getenv('APP_ENV') ?: 'local') === 'production') {
+            $valid = false;
+            if (str_starts_with($raw, 'base64:')) {
+                $decoded = base64_decode(substr($raw, 7), true);
+                $valid = $decoded !== false && strlen($decoded) === 32;
+            } elseif (strlen($raw) === 64 && ctype_xdigit($raw)) {
+                $valid = true;
+            } elseif (strlen($raw) === 32) {
+                $valid = true;
+            }
+            if (!$valid) {
+                throw new RuntimeException('ConfigurationException: APP_ENCRYPTION_KEY must be base64: (32 bytes), 64 hex chars, or 32 raw chars in production');
+            }
+        }
+
         return self::normalizeKey($raw);
     }
 

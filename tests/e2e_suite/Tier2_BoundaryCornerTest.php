@@ -128,7 +128,7 @@ class Tier2_BoundaryCornerTest
 
         $adminToken = $this->harness->getAdminToken();
         $resMe = $this->harness->apiCall('GET', '/api/auth/me', null, ["Authorization: Bearer {$adminToken}"]);
-        $this->harness->assert('T2-AUTH-01: Valid token provides authenticated user context', $resMe['code'] === 200 && ($resMe['data']['user']['id'] ?? 0) === 4, '', 'Tier 2');
+        $this->harness->assert('T2-AUTH-01: Valid token provides authenticated user context', $resMe['code'] === 200 && ($resMe['data']['user']['role_code'] ?? '') === 'admin' && (int)($resMe['data']['user']['id'] ?? 0) > 0, '', 'Tier 2');
 
         $this->harness->assert('T2-AUTH-02: Missing token string returns null on verification', \App\Services\AuthService::verifyToken('') === null, '', 'Tier 2');
         $this->harness->assert('T2-AUTH-03: Non-stateless token without dot signature rejected', \App\Services\AuthService::verifyToken('BasicAuthStringWithoutDot') === null, '', 'Tier 2');

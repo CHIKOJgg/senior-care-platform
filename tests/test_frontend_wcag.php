@@ -106,7 +106,7 @@ assertTest(
 // -----------------------------------------------------------------------------
 // SUITE 3: Coordinator Screen & Watchdog (Features 16 & 17)
 // -----------------------------------------------------------------------------
-echo PHP_EOL . "[SUITE 3] Coordinator Console, Siren & Watchdog Panel:" . PHP_EOL;
+echo PHP_EOL . "[SUITE 3] Coordinator Console & Watchdog Panel:" . PHP_EOL;
 
 assertTest(
     'F16-DOM-01: Coordinator SOS emergency banner container exists',
@@ -191,7 +191,7 @@ assertTest(
 // -----------------------------------------------------------------------------
 // SUITE 6: Client JavaScript Implementations (public/js/speech.js & public/js/app.js)
 // -----------------------------------------------------------------------------
-echo PHP_EOL . "[SUITE 6] Client JavaScript APIs & Web Speech / Web Audio:" . PHP_EOL;
+echo PHP_EOL . "[SUITE 6] Client JavaScript APIs & Web Speech:" . PHP_EOL;
 
 assertTest(
     'JS-SOS-01: Voice command emergency keyword hook defined in speech.js',
@@ -204,8 +204,8 @@ assertTest(
 );
 
 assertTest(
-    'JS-AUDIO-01: Web Audio API AudioContext and playSiren implemented in app.js',
-    strpos($appJs, 'AudioContext') !== false && strpos($appJs, 'playSiren') !== false && strpos($appJs, 'stopSiren') !== false
+    'JS-AUDIO-01: No Web Audio siren remains in app.js',
+    strpos($appJs, 'AudioContext') === false && strpos($appJs, 'playSiren') === false && strpos($appJs, 'stopSiren') === false
 );
 
 assertTest(
@@ -268,8 +268,8 @@ assertTest(
 
 $p6 = (string)@file_get_contents($planDir . '/06_DATABASE_MIGRATIONS.md');
 assertTest(
-    'F22-PLN-07: 06_DATABASE_MIGRATIONS.md details SQLite schema and 11 indexes',
-    strpos($p6, 'индекс') !== false && strpos($p6, 'migrate.php') !== false
+    'F22-PLN-07: 06_DATABASE_MIGRATIONS.md details MySQL schema and indexes',
+    strpos($p6, 'MySQL') !== false && strpos($p6, 'индекс') !== false && strpos($p6, 'migrate.php') !== false
 );
 
 $p7 = (string)@file_get_contents($planDir . '/07_REST_API_SPECIFICATION.md');

@@ -315,7 +315,13 @@ assertAdversarial(
 // =============================================================================
 echo PHP_EOL . "--- [PART 4] DOM Security & Privacy Fuzzing in public/verify.php ---" . PHP_EOL;
 
+require_once $rootDir . '/app/Core/Database.php';
+require_once $rootDir . '/app/Core/Model.php';
+require_once $rootDir . '/app/Models/User.php';
+require_once $rootDir . '/app/Models/VolunteerProfile.php';
 require_once $rootDir . '/app/Services/BadgeService.php';
+use App\Models\User;
+use App\Models\VolunteerProfile;
 use App\Services\BadgeService;
 
 function simulateVerify(array $get, array $server = []): string {
@@ -395,7 +401,30 @@ assertAdversarial(
 );
 
 // 4.3 PII and Law 99-Z Privacy Leakage Verification
-$cleanToken = BadgeService::generateBadgeToken(101, 'Смирнов Алексей Сергеевич', 'ТЦСОН Советского района г. Минска', 3600);
+// The verification page performs a live DB revocation check, so the fixture
+// must be a real verified volunteer rather than a token-only synthetic id.
+$cleanPhone = '+37529' . random_int(1000000, 8999999);
+$cleanVolunteerId = (int)User::create([
+    'role_id' => 2,
+    'phone' => $cleanPhone,
+    'name' => 'Смирнов Алексей Сергеевич',
+    'password_hash' => password_hash('FixtureOnly1', PASSWORD_DEFAULT),
+]);
+VolunteerProfile::create([
+    'user_id' => $cleanVolunteerId,
+    'is_verified' => 1,
+    'verification_status' => 'VERIFIED',
+    'rating' => 5.0,
+    'points' => 0,
+    'latitude' => 53.9168,
+    'longitude' => 27.5862,
+    'region_code' => 'MINSK_CITY',
+    'radius_km' => 5.0,
+    'skills' => 'тест',
+    'completed_tasks_count' => 0,
+]);
+
+$cleanToken = BadgeService::generateBadgeToken($cleanVolunteerId, 'Смирнов Алексей Сергеевич', 'ТЦСОН Советского района г. Минска', 3600);
 $cleanHtml = simulateVerify(['token' => $cleanToken]);
 
 $leakedFullSurname = strpos($cleanHtml, 'Смирнов') !== false;
@@ -438,6 +467,13 @@ assertAdversarial(
     $hasOfficialHotline,
     $hasOfficialHotline ? 'Official hotline present in public footer' : 'DEFECT: Missing official hotline contact'
 );
+
+// Remove the temporary verification fixture.
+try {
+    User::delete($cleanVolunteerId);
+} catch (\Throwable $e) {
+    // Cleanup must not mask the test verdict.
+}
 
 // =============================================================================
 // SUMMARY & VERDICT

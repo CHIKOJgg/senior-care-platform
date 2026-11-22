@@ -9,68 +9,67 @@ require_once __DIR__ . '/../app/Services/RegionService.php';
 use App\Core\Database;
 use App\Services\CryptoService;
 
-echo "[MIGRATE] Running non-destructive schema migrations...\n";
+echo "[MIGRATE] Running MySQL schema migrations...\n";
 
 $pdo = Database::getConnection();
 $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-$schemaFile = __DIR__ . ($driver === 'mysql' ? '/schema.mysql.sql' : '/schema.sql');
+if ($driver !== 'mysql') {
+    fwrite(STDERR, "[MIGRATE] Error: only MySQL is supported (got {$driver}).\n");
+    exit(1);
+}
+
+$schemaFile = __DIR__ . '/schema.mysql.sql';
 if (!file_exists($schemaFile)) {
-    die("[MIGRATE] Error: schema file not found at {$schemaFile}\n");
+    fwrite(STDERR, "[MIGRATE] Error: schema file not found at {$schemaFile}\n");
+    exit(1);
+}
+
+// Serialize migrations across replicas. The advisory lock is released by
+// MySQL automatically if the process dies.
+$mysqlLock = (int)$pdo->query("SELECT GET_LOCK('senior_care_migrate', 30)")->fetchColumn() === 1;
+if (!$mysqlLock) {
+    fwrite(STDERR, "[MIGRATE] Could not acquire MySQL advisory lock; another migration is running.\n");
+    exit(1);
 }
 
 try {
-    // Хелпер проверки существования таблицы
     $tableExists = function (string $table) use ($pdo): bool {
-        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        if ($driver === 'sqlite') {
-            $stmt = $pdo->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = :table");
-        } else {
-            $stmt = $pdo->prepare("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table");
-        }
+        $stmt = $pdo->prepare(
+            'SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table'
+        );
         $stmt->execute(['table' => $table]);
         return (bool)$stmt->fetchColumn();
     };
 
-    // Хелпер для определения существующих колонок
     $getColumns = function (string $table) use ($pdo): array {
-        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        if ($driver === 'sqlite') {
-            $stmt = $pdo->query("PRAGMA table_info({$table})");
-            $cols = [];
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $cols[strtolower($row['name'])] = true;
-            }
-            return $cols;
-        } else {
-            $stmt = $pdo->prepare("
-                SELECT LOWER(COLUMN_NAME) as col 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table
-            ");
-            $stmt->execute(['table' => $table]);
-            $cols = [];
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $cols[$row['col']] = true;
-            }
-            return $cols;
+        $stmt = $pdo->prepare(
+            'SELECT LOWER(COLUMN_NAME) AS col, CHARACTER_MAXIMUM_LENGTH AS max_len
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table'
+        );
+        $stmt->execute(['table' => $table]);
+        $cols = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $cols[$row['col']] = $row;
         }
+        return $cols;
     };
 
-    // 1. Предварительное инкрементальное расширение существующих таблиц до применения индексов
+    // 1. Incrementally extend legacy tables before creating indexes.
     if ($tableExists('help_requests')) {
         $hrCols = $getColumns('help_requests');
         $hrAdditions = [
-            'completed_lat' => 'REAL NULL',
-            'completed_lon' => 'REAL NULL',
-            'distance_to_target' => 'REAL NULL',
-            'is_overdue' => 'INTEGER DEFAULT 0',
+            'completed_lat' => 'DOUBLE NULL',
+            'completed_lon' => 'DOUBLE NULL',
+            'distance_to_target' => 'DOUBLE NULL',
+            'is_overdue' => 'INT DEFAULT 0',
             'assigned_at' => 'DATETIME NULL',
-            'failed_attempts' => 'INTEGER DEFAULT 0',
+            'failed_attempts' => 'INT DEFAULT 0',
             'region_code' => "VARCHAR(32) DEFAULT 'MINSK_CITY'",
         ];
         foreach ($hrAdditions as $col => $typeDef) {
             if (!isset($hrCols[strtolower($col)])) {
-                $pdo->exec("ALTER TABLE help_requests ADD COLUMN {$col} {$typeDef};");
+                $pdo->exec("ALTER TABLE help_requests ADD COLUMN {$col} {$typeDef}");
                 echo "[MIGRATE] Added column: help_requests.{$col}\n";
             }
         }
@@ -79,7 +78,7 @@ try {
     if ($tableExists('users')) {
         $userCols = $getColumns('users');
         if (!isset($userCols['token_version'])) {
-            $pdo->exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 1;");
+            $pdo->exec('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 1');
             echo "[MIGRATE] Added column: users.token_version\n";
         }
     }
@@ -87,7 +86,7 @@ try {
     if ($tableExists('elderly_profiles')) {
         $epCols = $getColumns('elderly_profiles');
         if (!isset($epCols['region_code'])) {
-            $pdo->exec("ALTER TABLE elderly_profiles ADD COLUMN region_code VARCHAR(32) DEFAULT 'MINSK_CITY';");
+            $pdo->exec("ALTER TABLE elderly_profiles ADD COLUMN region_code VARCHAR(32) DEFAULT 'MINSK_CITY'");
             echo "[MIGRATE] Added column: elderly_profiles.region_code\n";
         }
     }
@@ -106,32 +105,30 @@ try {
         ];
         foreach ($vpAdditions as $col => $typeDef) {
             if (!isset($vpCols[strtolower($col)])) {
-                $pdo->exec("ALTER TABLE volunteer_profiles ADD COLUMN {$col} {$typeDef};");
+                $pdo->exec("ALTER TABLE volunteer_profiles ADD COLUMN {$col} {$typeDef}");
                 echo "[MIGRATE] Added column: volunteer_profiles.{$col}\n";
             }
         }
-        // Badge tokens are ~235 chars (base64url payload + HMAC signature): widen legacy columns.
-        if ($driver === 'mysql') {
-            $pdo->exec("ALTER TABLE volunteer_profiles MODIFY COLUMN badge_token VARCHAR(255) NULL;");
+
+        // Badge tokens are ~235 chars; widen legacy columns only when needed.
+        if (isset($vpCols['badge_token']) && (int)($vpCols['badge_token']['max_len'] ?? 0) < 255) {
+            $pdo->exec('ALTER TABLE volunteer_profiles MODIFY COLUMN badge_token VARCHAR(255) NULL');
+            echo "[MIGRATE] Widened volunteer_profiles.badge_token to VARCHAR(255)\n";
         }
     }
 
-    // 2. Применение базовой схемы таблиц (CREATE TABLE IF NOT EXISTS & CREATE INDEX IF NOT EXISTS)
-    $sql = file_get_contents($schemaFile);
-    if ($driver === 'mysql') {
-        // PDO MySQL needs statements executed one by one for predictable errors
-        $statements = array_filter(array_map('trim', explode(';', $sql)));
-        foreach ($statements as $statement) {
-            if ($statement !== '') {
-                $pdo->exec($statement);
-            }
+    // 2. Apply the base schema. PDO MySQL needs statements executed one by one.
+    $sql = (string)file_get_contents($schemaFile);
+    $sql = (string)preg_replace('/^\s*--.*$/m', '', $sql);
+    $statements = array_filter(array_map('trim', explode(';', $sql)));
+    foreach ($statements as $statement) {
+        if ($statement !== '') {
+            $pdo->exec($statement);
         }
-    } else {
-        $pdo->exec($sql);
     }
-    echo "[MIGRATE] Base schema, new tables & indexes verified successfully ({$driver}).\n";
+    echo "[MIGRATE] Base schema & indexes verified successfully (mysql).\n";
 
-    // 2b. Country-wide coverage: backfill region_code from coordinates where missing.
+    // 2b. Backfill region_code from coordinates where missing.
     $regionBackfills = [
         'help_requests' => ['id', 'latitude', 'longitude'],
         'elderly_profiles' => ['user_id', 'latitude', 'longitude'],
@@ -161,57 +158,36 @@ try {
         }
     }
 
-    // 3. Проверка колонки revoked_at в user_consents
+    // 3. Ensure user_consents.revoked_at exists on legacy databases.
     if ($tableExists('user_consents')) {
         $ucCols = $getColumns('user_consents');
         if (!isset($ucCols['revoked_at'])) {
-            $pdo->exec("ALTER TABLE user_consents ADD COLUMN revoked_at DATETIME NULL;");
+            $pdo->exec('ALTER TABLE user_consents ADD COLUMN revoked_at DATETIME NULL');
             echo "[MIGRATE] Added column: user_consents.revoked_at\n";
         }
     }
 
-    // 4. Гарантия создания индексов (идемпотентно, только SQLite: в MySQL-схеме индексы описаны в таблицах)
-    $indices = $driver === 'mysql' ? [] : [
-        "CREATE INDEX IF NOT EXISTS idx_password_resets_user_id ON password_resets(user_id);",
-        "CREATE INDEX IF NOT EXISTS idx_password_resets_expires_at ON password_resets(expires_at);",
-        "CREATE INDEX IF NOT EXISTS idx_user_consents_user_id ON user_consents(user_id);",
-        "CREATE INDEX IF NOT EXISTS idx_user_consents_type ON user_consents(consent_type);",
-        "CREATE INDEX IF NOT EXISTS idx_sos_alerts_elderly_id ON sos_alerts(elderly_id);",
-        "CREATE INDEX IF NOT EXISTS idx_sos_alerts_status ON sos_alerts(status);",
-        "CREATE INDEX IF NOT EXISTS idx_sos_alerts_priority ON sos_alerts(priority);",
-        "CREATE INDEX IF NOT EXISTS idx_sos_alerts_created_at ON sos_alerts(created_at);",
-        "CREATE INDEX IF NOT EXISTS idx_help_requests_status ON help_requests(status);",
-        "CREATE INDEX IF NOT EXISTS idx_help_requests_is_overdue ON help_requests(is_overdue);",
-        "CREATE INDEX IF NOT EXISTS idx_help_requests_assigned_at ON help_requests(assigned_at);",
-        "CREATE INDEX IF NOT EXISTS idx_volunteer_profiles_status ON volunteer_profiles(verification_status);",
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_volunteer_profiles_badge_token ON volunteer_profiles(badge_token);",
-    ];
-    foreach ($indices as $idxSql) {
-        $pdo->exec($idxSql);
-    }
-    echo "[MIGRATE] Indexes verified successfully.\n";
-
-    // 5. Синхронизация статусов существующих волонтёров
+    // 4. Synchronize legacy verification flags.
     $pdo->exec("
-        UPDATE volunteer_profiles 
-        SET verification_status = 'VERIFIED' 
-        WHERE is_verified = 1 AND (verification_status IS NULL OR verification_status = 'PENDING');
+        UPDATE volunteer_profiles
+        SET verification_status = 'VERIFIED'
+        WHERE is_verified = 1 AND (verification_status IS NULL OR verification_status = 'PENDING')
     ");
     $pdo->exec("
-        UPDATE volunteer_profiles 
-        SET verification_status = 'REJECTED' 
-        WHERE is_verified = -1 AND (verification_status IS NULL OR verification_status = 'PENDING');
+        UPDATE volunteer_profiles
+        SET verification_status = 'REJECTED'
+        WHERE is_verified = -1 AND (verification_status IS NULL OR verification_status = 'PENDING')
     ");
     echo "[MIGRATE] Existing volunteer verification statuses synchronized.\n";
 
-    // 6. Шифрование существующих незашифрованных медицинских заметок (mobility_notes)
+    // 5. Encrypt legacy plaintext medical notes.
     $stmt = $pdo->query("SELECT user_id, mobility_notes FROM elderly_profiles WHERE mobility_notes IS NOT NULL AND mobility_notes != ''");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $encryptedCount = 0;
     foreach ($rows as $r) {
         if (!CryptoService::isEncrypted($r['mobility_notes'])) {
             $enc = CryptoService::encrypt($r['mobility_notes']);
-            $upd = $pdo->prepare("UPDATE elderly_profiles SET mobility_notes = :enc WHERE user_id = :uid");
+            $upd = $pdo->prepare('UPDATE elderly_profiles SET mobility_notes = :enc WHERE user_id = :uid');
             $upd->execute(['enc' => $enc, 'uid' => $r['user_id']]);
             $encryptedCount++;
         }
@@ -222,6 +198,9 @@ try {
 
     echo "[MIGRATE] All migrations applied successfully! Database is up to date.\n";
 } catch (Throwable $e) {
-    echo "[MIGRATE] Failed: " . $e->getMessage() . "\n";
+    fwrite(STDERR, "[MIGRATE] Failed: " . $e->getMessage() . "\n");
+    $pdo->query("SELECT RELEASE_LOCK('senior_care_migrate')");
     exit(1);
 }
+
+$pdo->query("SELECT RELEASE_LOCK('senior_care_migrate')");

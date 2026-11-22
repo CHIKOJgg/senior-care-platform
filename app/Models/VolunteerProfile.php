@@ -40,4 +40,21 @@ class VolunteerProfile extends Model
     {
         return self::update($userId, ['is_verified' => $status]);
     }
+
+    /**
+     * Atomically award completion karma so parallel completions cannot overwrite
+     * each other's counters.
+     */
+    public static function addCompletion(int $userId, int $points = 50): bool
+    {
+        $db = \App\Core\Database::getConnection();
+        $stmt = $db->prepare("
+            UPDATE volunteer_profiles
+            SET points = COALESCE(points, 0) + :points,
+                completed_tasks_count = COALESCE(completed_tasks_count, 0) + 1
+            WHERE user_id = :user_id
+        ");
+        $stmt->execute(['points' => $points, 'user_id' => $userId]);
+        return $stmt->rowCount() === 1;
+    }
 }

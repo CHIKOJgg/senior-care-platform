@@ -3,7 +3,7 @@
 - **Статус:** Принято
 - **Дата:** 2026-11-08
 - **Категория:** Инфраструктура
-- **Связанные ADR:** [ADR-0003](0003-database-sqlite-mysql.md), [ADR-0010](0010-observability-stack.md), [ADR-0013](0013-backups-secrets-healthchecks.md)
+- **Связанные ADR:** [ADR-0003](0003-database-mysql.md), [ADR-0010](0010-observability-stack.md), [ADR-0013](0013-backups-secrets-healthchecks.md)
 
 ## Контекст
 
@@ -25,8 +25,8 @@
 `docker-compose.yml` + `Dockerfile`:
 
 - образ `php:8.2-cli-alpine`;
-- `pdo`, `pdo_sqlite`;
-- SQLite в `database/database.sqlite`;
+- `pdo`, `pdo_mysql`;
+- MySQL 8 в отдельном сервисе `mysql` (порт `3307` на хосте);
 - встроенный сервер `php -S 0.0.0.0:8000 router.php`;
 - порт `8000`, volume `.:/var/www/html`;
 - `APP_ENV=local`, `APP_DEBUG=true`.

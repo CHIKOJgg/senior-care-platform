@@ -31,7 +31,7 @@ declare(strict_types=1);
  *    - Coordinator reassigns: status -> open, volunteer_id -> NULL, is_overdue -> 0, assigned_at -> NULL.
  *    - Immediately appears in public feed GET /api/requests for other volunteers.
  *    - Volunteer accepts reassigned request successfully.
- * 6. SQLite Database Cleanup & Foreign Key Integrity:
+ * 6. MySQL Database Cleanup & Foreign Key Integrity:
  *    - Purge all test SOS alerts and test help requests.
  *    - Zero orphaned records.
  */
@@ -214,7 +214,7 @@ try {
         "Priority: " . ($resSos1['data']['priority'] ?? 'null') . ", Status: " . ($resSos1['data']['status'] ?? 'null')
     );
 
-    // 2.3: Verify SQLite database record directly
+    // 2.3: Verify MySQL database record directly
     $dbAlert1 = SosAlert::find($sosId1);
     assertAdv('ADV-SOS-DSP-03', 'Database record matches: priority = 0, status = ACTIVE, non-null created_at',
         $dbAlert1 !== null &&
@@ -597,9 +597,9 @@ try {
 
 } finally {
     // =========================================================================
-    // SUITE 6: SQLite Database Cleanup & Foreign Key Integrity
+    // SUITE 6: MySQL Database Cleanup & Foreign Key Integrity
     // =========================================================================
-    echo "\n[SUITE 6] SQLite Database Cleanup & State Integrity Verification:\n";
+    echo "\n[SUITE 6] MySQL Database Cleanup & State Integrity Verification:\n";
 
     // 6.1: Clean up temporary SOS alerts created during this run
     $deletedSosCount = 0;
@@ -610,7 +610,7 @@ try {
     // Also clean up any SOS alerts matching adversarial test reason prefix
     $deletedExtraSos = $pdo->exec("DELETE FROM sos_alerts WHERE reason LIKE '[ADV-TEST-M3%'");
 
-    assertAdv('ADV-CLN-01', 'Temporary SOS alerts purged from SQLite sos_alerts table',
+    assertAdv('ADV-CLN-01', 'Temporary SOS alerts purged from MySQL sos_alerts table',
         ($deletedSosCount + $deletedExtraSos) >= count($createdSosIds),
         "Deleted count: " . ($deletedSosCount + $deletedExtraSos)
     );
@@ -623,7 +623,7 @@ try {
     }
     $deletedExtraReq = $pdo->exec("DELETE FROM help_requests WHERE title LIKE '[ADV-TEST-M3%'");
 
-    assertAdv('ADV-CLN-02', 'Temporary help requests purged from SQLite help_requests table',
+    assertAdv('ADV-CLN-02', 'Temporary help requests purged from MySQL help_requests table',
         ($deletedReqCount + $deletedExtraReq) >= count($createdRequestIds),
         "Deleted count: " . ($deletedReqCount + $deletedExtraReq)
     );

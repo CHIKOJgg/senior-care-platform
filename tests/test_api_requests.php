@@ -67,6 +67,19 @@ assertApi('Response contains valid secret code', !empty($res1['data']['secret_co
 $reqId = $res1['data']['request_id'];
 $secretCode = $res1['data']['secret_code'];
 
+// Secret proof-of-presence must never leak through the public feed or detail endpoint.
+$resPublicFeed = apiCall('GET', '/api/requests');
+$resPublicDetail = apiCall('GET', "/api/requests/{$reqId}");
+$feedLeak = false;
+foreach (($resPublicFeed['data']['data'] ?? []) as $feedItem) {
+    if (isset($feedItem['secret_code'])) {
+        $feedLeak = true;
+        break;
+    }
+}
+assertApi('Public feed does not expose secret codes', !$feedLeak);
+assertApi('Public request detail does not expose secret code', !isset($resPublicDetail['data']['data']['secret_code']));
+
 // 2. Elderly My Requests Endpoint
 echo "\n2. Testing Elderly My Requests List:\n";
 $resMy = apiCall('GET', '/api/requests/my?elderly_id=1');

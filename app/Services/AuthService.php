@@ -17,6 +17,9 @@ class AuthService
     {
         $secret = getenv('APP_SECRET') ?: '';
         if ($secret !== '') {
+            if (self::isProduction() && strlen($secret) < 32) {
+                throw new \RuntimeException('ConfigurationException: APP_SECRET must be at least 32 characters in production');
+            }
             return $secret;
         }
         if (self::isProduction()) {
@@ -28,6 +31,15 @@ class AuthService
     public static function isProduction(): bool
     {
         return (getenv('APP_ENV') ?: 'local') === 'production';
+    }
+
+    /**
+     * Development-only shortcuts (demo header, anonymous admin fallback)
+     * are allowed exclusively in explicitly local/testing environments.
+     */
+    public static function isDevMode(): bool
+    {
+        return in_array(getenv('APP_ENV') ?: 'local', ['local', 'testing'], true);
     }
 
     /**
@@ -130,9 +142,9 @@ class AuthService
             ];
         }
 
-        // Explicit demo user header for testing
+        // Explicit demo user header for local/testing only
         $demoUserId = $_SERVER['HTTP_X_DEMO_USER'] ?? null;
-        if ($demoUserId && (getenv('APP_ENV') !== 'production')) {
+        if ($demoUserId && self::isDevMode()) {
             $user = User::getWithProfile((int)$demoUserId);
             if ($user) {
                 return [
