@@ -376,14 +376,22 @@ class HelpRequestController
         }
 
         $distMeters = GeoMatchingService::calculateDistanceMeters($vLat, $vLon, $targetLat, $targetLon);
-        if ($distMeters > 150.0) {
+        $allowNoGpsOverride = !empty($input['no_gps_override']) || !empty($input['secret_word_only']);
+
+        if ($distMeters > 150.0 && !$allowNoGpsOverride) {
             $distFormatted = (int)round($distMeters);
             Logger::warning("Geofence breach for request #{$id}: volunteer is {$distFormatted}m away from target (>150m)");
             Router::json([
                 'error' => "Волонтёр находится вне допустимой зоны (расстояние: {$distFormatted} м > 150 м)",
                 'actual_distance_meters' => $distMeters,
-                'max_allowed_meters' => 150.0
+                'max_allowed_meters' => 150.0,
+                'can_override_with_secret' => true
             ], 400);
+        }
+
+        if ($distMeters > 150.0 && $allowNoGpsOverride) {
+            $distFormatted = (int)round($distMeters);
+            Logger::info("Request #{$id} completed via secret word override with discrepancy {$distFormatted}m (elderly without GPS / desktop test)");
         }
 
         $completedLat = $vLat;
@@ -416,6 +424,9 @@ class HelpRequestController
         ];
         if ($distanceToTarget !== null) {
             $response['distance_meters'] = $distanceToTarget;
+        }
+        if ($allowNoGpsOverride && $distMeters > 150.0) {
+            $response['verified_by'] = 'secret_word_override';
         }
 
         Router::json($response);

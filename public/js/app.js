@@ -1659,7 +1659,7 @@ function closeCompleteModal() {
 }
 window.closeCompleteModal = closeCompleteModal;
 
-async function submitGeoComplete() {
+async function submitGeoComplete(overrideNoGps = false) {
     const reqIdInput = document.getElementById('geoCompleteRequestId');
     const id = reqIdInput ? reqIdInput.value : currentCompletingRequestId;
     const secretInput = document.getElementById('geoSecretWordInput');
@@ -1679,7 +1679,7 @@ async function submitGeoComplete() {
 
     if (confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerText = 'Проверка геолокации...';
+        confirmBtn.innerText = overrideNoGps ? 'Завершение по коду...' : 'Проверка геолокации...';
     }
 
     let lat = null;
@@ -1703,16 +1703,32 @@ async function submitGeoComplete() {
         }
     }
 
+    if ((lat === null || lon === null || isNaN(lat) || isNaN(lon)) && overrideNoGps) {
+        lat = 53.9168;
+        lon = 27.5862;
+    }
+
     try {
         if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
             if (errorBox) {
                 errorBox.style.display = 'block';
-                if (errorText) errorText.innerText = 'Не удалось определить GPS-координаты. Разрешите геолокацию и попробуйте снова — подтверждение визита без координат невозможно.';
+                if (errorText) {
+                    errorText.innerHTML = `
+                        <div style="margin-bottom: 8px;">Не удалось определить GPS-координаты волонтёра.</div>
+                        <div style="font-size: 0.9em; margin-bottom: 10px;">Разрешите геолокацию в браузере или подтвердите визит только по кодовому слову подопечного:</div>
+                        <button type="button" class="btn btn-warning btn-sm" onclick="submitGeoComplete(true)" style="width: 100%; min-height: 40px; font-weight: 600;">
+                            ${Icons.check} Завершить по проверочному слову подопечного
+                        </button>
+                    `;
+                }
             }
             return;
         }
 
         const payload = { secret_code: secretCode, latitude: lat, longitude: lon };
+        if (overrideNoGps) {
+            payload.no_gps_override = true;
+        }
 
         const res = await authFetch(`/api/requests/${id}/complete`, {
             method: 'POST',
@@ -1724,7 +1740,10 @@ async function submitGeoComplete() {
         if (res.ok && data.success) {
             closeCompleteModal();
             SpeechHelper.speak('Визит успешно подтверждён! Вам начислено 50 очков опыта.');
-            alert(`Заявка #${id} успешно выполнена и подтверждена!\n\nРасстояние: ${data.distance_meters || 0} м.\nНачислено: +50 очков кармы.`);
+            const extraNote = data.verified_by === 'secret_word_override'
+                ? '\n(Подтверждено проверочным кодом подопечного без привязки к GPS)'
+                : `\nРасстояние: ${data.distance_meters || 0} м.`;
+            alert(`Заявка #${id} успешно выполнена и подтверждена!${extraNote}\nНачислено: +50 очков кармы.`);
             loadVolunteerRequests();
             loadVolunteerActiveTasks();
             loadLeaderboard();
@@ -1732,9 +1751,20 @@ async function submitGeoComplete() {
             const errMsg = data.error || 'Ошибка при завершении заявки';
             if (errorBox) {
                 errorBox.style.display = 'block';
-                if (errMsg.includes('вне допустимой зоны') || errMsg.includes('расстояние')) {
+                if (errMsg.includes('вне допустимой зоны') || errMsg.includes('расстояние') || data.can_override_with_secret) {
                     if (errorText) {
-                        errorText.innerHTML = `<strong>${Icons.alert} Превышение радиуса геозоны (до 150 м):</strong> ${escapeHtml(errMsg)}. Пожалуйста, подойдите ближе к дому подопечного.`;
+                        errorText.innerHTML = `
+                            <div style="margin-bottom: 8px;">
+                                <strong>${Icons.alert} Превышение радиуса геозоны (до 150 м):</strong>
+                            </div>
+                            <div style="font-size: 0.9em; margin-bottom: 12px; line-height: 1.4;">
+                                ${escapeHtml(errMsg)}.<br>
+                                Если подопечный подавал заявку с ПК (без точного GPS) или на устройстве высокая погрешность — вы можете завершить визит по кодовому слову:
+                            </div>
+                            <button type="button" class="btn btn-warning btn-sm" id="btnOverrideGeofence" onclick="submitGeoComplete(true)" style="width: 100%; min-height: 40px; font-weight: 600;">
+                                ${Icons.check} Завершить по проверочному слову подопечного
+                            </button>
+                        `;
                     }
                 } else {
                     if (errorText) errorText.innerText = errMsg;
