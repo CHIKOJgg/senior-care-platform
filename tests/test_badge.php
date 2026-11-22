@@ -61,9 +61,9 @@ function assertBadge(string $name, bool $condition, string $details = ''): void 
 
 $harness = TestHarness::getInstance('http://127.0.0.1:8000');
 
-
-
-
+// =========================================================================
+// SUITE 1: BadgeService Token Cryptography & Lifecycle
+// =========================================================================
 echo "[SUITE 1] BadgeService Token Cryptography & Lifecycle:\n";
 
 $token = BadgeService::generateBadgeToken(2, 'Алексей Сергеевич Смирнов', 'ТЦСОН Советского района г. Минска');
@@ -81,7 +81,7 @@ assertBadge('T1-03: Token TTL is exactly 3600 seconds (1 hour)', $ttl === 3600, 
 $tampered = $token . 'tamper';
 assertBadge('T1-04: Tampered token signature fails verification (returns null)', BadgeService::verifyBadgeToken($tampered) === null);
 
-
+// Expired token test
 $now = time();
 $expiredPayload = [
     'vid' => 2,
@@ -105,9 +105,9 @@ assertBadge('T1-06: Malformed arbitrary string rejected without exceptions', Bad
 $token2 = BadgeService::generateBadgeToken(3, 'Дмитрий Новиков', 'ТЦСОН');
 assertBadge('T1-07: Different volunteers receive distinct cryptographic tokens', $token !== $token2);
 
-
-
-
+// =========================================================================
+// SUITE 2: Zero-Emoji Vector SVG QR Code & Card Generation
+// =========================================================================
 echo "\n[SUITE 2] Zero-Emoji Vector SVG QR Code & Visual Badge Card:\n";
 
 $qrSvg = BadgeService::generateBadgeQrSvg($token, ['size' => 240]);
@@ -131,9 +131,9 @@ assertBadge('T2-04: Visual badge card is 100% well-formed valid XML', $cardXml !
 $cardHasEmoji = (bool)preg_match('/[\x{1F300}-\x{1F64F}\x{1F680}-\x{1F6FF}\x{2600}-\x{26FF}\x{2700}-\x{27BF}]/u', $cardSvg);
 assertBadge('T2-05: Visual badge card contains zero emojis (100% inline SVG icons)', !$cardHasEmoji, 'Emoji in card SVG');
 
-
-
-
+// =========================================================================
+// SUITE 3: Public Badge Verification API (GET /api/volunteers/badge/{token})
+// =========================================================================
 echo "\n[SUITE 3] Public Badge Verification API & Privacy Protection (Law 99-Z):\n";
 
 $publicRes = $harness->apiCall('GET', "/api/volunteers/badge/{$token}");
@@ -168,13 +168,13 @@ assertBadge('T3-05: Expired token returns HTTP 400 with expiration error',
     "HTTP {$expiredRes['code']}"
 );
 
-
+// Real-time revocation check
 $coordToken = $harness->getCoordinatorToken();
 $regRevoked = $harness->registerUser(2, 'Василий На Отзыв');
 $revokedId = (int)$regRevoked['user']['id'];
 $revokedToken = BadgeService::generateBadgeToken($revokedId, 'Василий О.', 'ТЦСОН');
 
-
+// Coordinator rejects volunteer
 $harness->apiCall('POST', "/api/coordinator/volunteers/{$revokedId}/reject", ['reason' => 'Тестовый отзыв'], ["Authorization: Bearer {$coordToken}"]);
 $checkRevoked = $harness->apiCall('GET', "/api/volunteers/badge/{$revokedToken}");
 assertBadge('T3-06: Instant revocation check: suspended volunteer badge rejected even with valid HMAC',
@@ -182,7 +182,7 @@ assertBadge('T3-06: Instant revocation check: suspended volunteer badge rejected
     "HTTP {$checkRevoked['code']}"
 );
 
-
+// Non-existent volunteer token check
 $fakeToken = BadgeService::generateBadgeToken(99999, 'Несуществующий В.', 'ТЦСОН');
 $fakeRes = $harness->apiCall('GET', "/api/volunteers/badge/{$fakeToken}");
 assertBadge('T3-07: Non-existent volunteer profile rejected with 400/404',
@@ -190,16 +190,16 @@ assertBadge('T3-07: Non-existent volunteer profile rejected with 400/404',
     "HTTP {$fakeRes['code']}"
 );
 
-
+// Direct SVG badge rendering check
 $svgRes = $harness->apiCall('GET', "/api/volunteers/badge/{$token}/svg");
 assertBadge('T3-08: Direct badge SVG route GET /api/volunteers/badge/{token}/svg returns valid SVG',
     $svgRes['code'] === 200 && str_contains($svgRes['raw'] ?? '', '<svg'),
     "HTTP {$svgRes['code']}"
 );
 
-
-
-
+// =========================================================================
+// SUITE 4: Volunteer Self-Service API (GET /api/volunteers/my-badge)
+// =========================================================================
 echo "\n[SUITE 4] Volunteer Self-Service Dynamic Badge API (RBAC Guard):\n";
 
 $guestRes = $harness->apiCall('GET', '/api/volunteers/my-badge');
@@ -224,9 +224,9 @@ assertBadge('T4-05: Verified volunteer successfully retrieves dynamic badge and 
     "HTTP {$myBadgeRes['code']}"
 );
 
-
-
-
+// =========================================================================
+// SUITE 5: Coordinator Volunteer Moderation & Dual-Route Compatibility
+// =========================================================================
 echo "\n[SUITE 5] Coordinator Volunteer Moderation & Dual-Route Backward Compatibility:\n";
 
 $forbiddenQueue = $harness->apiCall('GET', '/api/coordinator/volunteers/pending', null, ["Authorization: Bearer {$volToken}"]);
@@ -247,7 +247,7 @@ assertBadge('T5-03: Backward compatibility alias /api/coordinator/pending-volunt
     "HTTP {$pendingLegacy['code']}"
 );
 
-
+// Register fresh volunteer for verification test
 $cand = $harness->registerUser(2, 'Кандидат На Одобрение');
 $candId = (int)$cand['user']['id'];
 
@@ -257,7 +257,7 @@ assertBadge('T5-04: Coordinator verifies candidate via canonical RESTful route',
     "HTTP {$verifyRes['code']}"
 );
 
-
+// Reject with custom reason
 $cand2 = $harness->registerUser(2, 'Кандидат На Отклонение');
 $cand2Id = (int)$cand2['user']['id'];
 $rejectRes = $harness->apiCall('POST', "/api/coordinator/volunteers/{$cand2Id}/reject", [
@@ -282,9 +282,9 @@ assertBadge('T5-07: Backward compatibility alias /api/coordinator/verify-volunte
     "HTTP {$aliasVerifyRes['code']}"
 );
 
-
-
-
+// =========================================================================
+// SUITE 6: Modular Identity Adapters (MSI Belarus & Gosuslugi Mock)
+// =========================================================================
 echo "\n[SUITE 6] Modular Identity Adapters (MSI Belarus & Gosuslugi ESIA Mock Drivers):\n";
 
 $msi = IdentityProviderFactory::get('msi');
@@ -319,7 +319,7 @@ assertBadge('T6-06: Gosuslugi adapter validates 11-digit SNILS checksum and mask
     'Gosuslugi verification failed'
 );
 
-
+// Endpoints for volunteer self-verification via external provider
 $selfVerifyRes = $harness->apiCall('POST', '/api/volunteers/verify-identity', [
     'provider' => 'msi',
     'personal_number' => '3010190A001PB5'
@@ -329,7 +329,7 @@ assertBadge('T6-07: Volunteer self-verification endpoint POST /api/volunteers/ve
     "HTTP {$selfVerifyRes['code']}"
 );
 
-
+// Summary
 echo "\n--------------------------------------------------------\n";
 echo "TEST RESULTS: Total: " . ($passed + $failed) . " | Passed: {$passed} | Failed: {$failed}\n";
 echo "========================================================\n";

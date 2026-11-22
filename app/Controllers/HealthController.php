@@ -36,22 +36,15 @@ class HealthController
             Logger::error('Health check DB failure', ['error' => $e->getMessage()]);
         }
 
-        $storagePaths = [
-            'database' => __DIR__ . '/../../database',
-            'logs' => __DIR__ . '/../../storage/logs',
-            'cache' => __DIR__ . '/../../storage/cache',
-            'metrics' => __DIR__ . '/../../storage/metrics',
+        $storageChecks = [
+            'logs' => is_writable(__DIR__ . '/../../storage/logs'),
+            'cache' => is_writable(__DIR__ . '/../../storage/cache'),
+            'metrics' => is_writable(__DIR__ . '/../../storage/metrics'),
         ];
-        $storageChecks = [];
-        foreach ($storagePaths as $name => $path) {
-            if (!is_dir($path)) {
-                @mkdir($path, 0775, true);
-            }
-            $writable = is_dir($path) && is_writable($path);
-            $storageChecks[$name . '_writable'] = $writable;
-            if (!$writable) {
-                $healthy = false;
-            }
+        $storageWritable = !in_array(false, $storageChecks, true);
+        if (!$storageWritable) {
+            $healthy = false;
+            Logger::error('Health check storage failure', ['writable' => $storageChecks]);
         }
 
         $cryptoStatus = 'ok';
@@ -94,7 +87,11 @@ class HealthController
                     'status' => $dbStatus,
                     'latency_ms' => $dbLatency
                 ],
-                'storage' => $storageChecks,
+                'storage' => [
+                    'logs_writable' => $storageChecks['logs'],
+                    'cache_writable' => $storageChecks['cache'],
+                    'metrics_writable' => $storageChecks['metrics'],
+                ],
                 'crypto' => [
                     'status' => $cryptoStatus
                 ],

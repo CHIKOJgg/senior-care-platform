@@ -60,12 +60,12 @@ echo "\n========================================================\n";
 echo "   MILESTONE 5: TIER 5 ADVERSARIAL STRESS SUITE\n";
 echo "========================================================\n\n";
 
-
-
-
+// =========================================================================
+// Category 1: Crypto & Privacy Adversarial Tests (ADV5-CP-01 .. ADV5-CP-07)
+// =========================================================================
 echo "[Category 1] Cryptography & Privacy Edge Cases (7 tests):\n";
 
-
+// ADV5-CP-01: Read profile with tampered mobility_notes ciphertext
 $pdo = Database::getConnection();
 $resUserCP1 = $harness->registerUser(1, 'Тест Шифрования Пожилой');
 $uidCP1 = (int)$resUserCP1['user']['id'];
@@ -80,7 +80,7 @@ assertAdv(
     'Returned: ' . var_export($profileCP1['mobility_notes'] ?? 'not_null', true)
 );
 
-
+// ADV5-CP-02: Double encryption protection: re-encrypting enc:v1:... string
 $originalText = 'Инсулин 2 раза в день перед едой';
 $enc1 = CryptoService::encrypt($originalText);
 $enc2 = CryptoService::encrypt($enc1);
@@ -91,7 +91,7 @@ assertAdv(
     "Mismatch: enc1={$enc1}, enc2={$enc2}"
 );
 
-
+// ADV5-CP-03: Concurrent request creation and anonymizeUser() execution
 $userCP3 = $harness->registerUser(1, 'Пожилой Активная Заявка');
 $uidCP3 = (int)$userCP3['user']['id'];
 $reqCP3 = $harness->createHelpRequest($uidCP3, 1, 'ADV5-CP-03 Активная заявка');
@@ -106,7 +106,7 @@ try {
 } catch (\Throwable $e) {
     $blocked = false;
 }
-
+// Clean up request
 $pdo->exec("DELETE FROM help_requests WHERE id = {$reqCP3Id}");
 $pdo->exec("DELETE FROM users WHERE id = {$uidCP3}");
 assertAdv(
@@ -116,7 +116,7 @@ assertAdv(
     'Anonymization was not blocked for user with active task'
 );
 
-
+// ADV5-CP-04: Stateless JWT verification / user access after right-to-be-forgotten erasure
 $uCP4 = $harness->registerUser(1, 'Пожилой Забвение');
 $uidCP4 = (int)$uCP4['user']['id'];
 $privacy->anonymizeUser($uidCP4);
@@ -131,7 +131,7 @@ assertAdv(
     "Name: {$userInDb['name']}, Hash: {$userInDb['password_hash']}"
 );
 
-
+// ADV5-CP-05: Anonymized volunteer accreditation revocation check
 $volCP5 = $harness->registerUser(2, 'Волонтёр Для Забвения');
 $vuidCP5 = (int)$volCP5['user']['id'];
 $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$vuidCP5}");
@@ -153,7 +153,7 @@ assertAdv(
     "Pre: " . var_export($preValid, true) . ", Post: " . var_export($postValid, true) . ", Status: " . ($vProf['verification_status'] ?? '')
 );
 
-
+// ADV5-CP-06: Phone generator collision test for user IDs 1..500 and 10001..10500
 $phones = [];
 $hasCollision = false;
 for ($i = 1; $i <= 500; $i++) {
@@ -179,7 +179,7 @@ assertAdv(
     "Collision={$hasCollision}, Count=" . count($phones)
 );
 
-
+// ADV5-CP-07: Data minimization: verify volunteer cannot see full phone once task is completed
 $uSenior = $harness->registerUser(1, 'Бабушка Анна');
 $seniorId = (int)$uSenior['user']['id'];
 $reqCP7 = $harness->createHelpRequest($seniorId, 1, 'ADV5-CP-07 Минимизация ПД');
@@ -211,12 +211,12 @@ assertAdv(
     "Active: " . var_export($canViewWhileActive, true) . ", Completed: " . var_export($canViewAfterComplete, true) . ", Masked: " . ($maskedReq['elderly_phone'] ?? '')
 );
 
-
-
-
+// =========================================================================
+// Category 2: Geofence & Requests Adversarial Tests (ADV5-GR-01 .. ADV5-GR-07)
+// =========================================================================
 echo "\n[Category 2] Geofence & Request Completion Boundaries (7 tests):\n";
 
-
+// ADV5-GR-01: Request completion without latitude/longitude payload
 $rGR1 = $harness->createHelpRequest(1, 1, 'ADV5-GR-01 Omitted Coords Test');
 $idGR1 = (int)$rGR1['data']['request_id'];
 $secGR1 = $rGR1['data']['secret_code'];
@@ -229,7 +229,7 @@ assertAdv(
     "HTTP {$resGR1['code']}, Error: " . ($resGR1['data']['error'] ?? '')
 );
 
-
+// ADV5-GR-02: Request completion with latitude: null, longitude: null
 $resGR2 = $harness->apiCall('POST', "/api/requests/{$idGR1}/complete", [
     'secret_code' => $secGR1,
     'latitude' => null,
@@ -242,7 +242,7 @@ assertAdv(
     "HTTP {$resGR2['code']}"
 );
 
-
+// ADV5-GR-03: Coordinate validation: latitude: 95.0, longitude: -200.0
 $resGR3 = $harness->apiCall('POST', "/api/requests/{$idGR1}/complete", [
     'secret_code' => $secGR1,
     'latitude' => 95.0,
@@ -255,7 +255,7 @@ assertAdv(
     "HTTP {$resGR3['code']}, Error: " . ($resGR3['data']['error'] ?? '')
 );
 
-
+// ADV5-GR-04: Exact geofence boundary step: 149.95m distance
 $resGR4 = $harness->apiCall('POST', "/api/requests/{$idGR1}/complete", [
     'secret_code' => $secGR1,
     'latitude' => 53.9168 + 0.00134853,
@@ -268,7 +268,7 @@ assertAdv(
     "HTTP {$resGR4['code']}"
 );
 
-
+// ADV5-GR-05: Exact geofence boundary step: 150.00m distance
 $rGR5 = $harness->createHelpRequest(1, 1, 'ADV5-GR-05 Exact 150m Test');
 $idGR5 = (int)$rGR5['data']['request_id'];
 $secGR5 = $rGR5['data']['secret_code'];
@@ -285,7 +285,7 @@ assertAdv(
     "HTTP {$resGR5['code']}"
 );
 
-
+// ADV5-GR-06: Exact geofence boundary step: 150.05m / 150.10m distance
 $rGR6 = $harness->createHelpRequest(1, 1, 'ADV5-GR-06 Out of Zone 150.05m Test');
 $idGR6 = (int)$rGR6['data']['request_id'];
 $secGR6 = $rGR6['data']['secret_code'];
@@ -302,7 +302,7 @@ assertAdv(
     "HTTP {$resGR6['code']}, Error: " . ($resGR6['data']['error'] ?? '')
 );
 
-
+// ADV5-GR-07: Brute-force lockout: 5 wrong attempts lock task; 6th attempt with valid code
 $rGR7 = $harness->createHelpRequest(1, 1, 'ADV5-GR-07 Lockout Defense Test');
 $idGR7 = (int)$rGR7['data']['request_id'];
 $secGR7 = $rGR7['data']['secret_code'];
@@ -330,12 +330,12 @@ assertAdv(
     "HTTP {$resGR7['code']}, Status: " . ($reqGR7InDb['status'] ?? '')
 );
 
-
-
-
+// =========================================================================
+// Category 3: Badge & Volunteers Adversarial Tests (ADV5-BV-01 .. ADV5-BV-05)
+// =========================================================================
 echo "\n[Category 3] Dynamic Badge & Identity Security (5 tests):\n";
 
-
+// ADV5-BV-01: Single bit-flip tamper in dynamic badge HMAC-SHA256 signature
 $tokBV1 = BadgeService::generateBadgeToken(2, 'Иван Волонтёр');
 $partsBV1 = explode('.', $tokBV1);
 $tamperedSig = $partsBV1[1];
@@ -352,7 +352,7 @@ assertAdv(
     "HTTP {$resBV1['code']}, Valid: " . var_export($resBV1['data']['valid'] ?? null, true)
 );
 
-
+// ADV5-BV-02: Dynamic badge expiration: token evaluated at exp + 1 second
 $expiredPayload = [
     'vid' => 2,
     'user_id' => 2,
@@ -375,7 +375,7 @@ assertAdv(
     "HTTP {$resBV2['code']}"
 );
 
-
+// ADV5-BV-03: Dynamic badge clock skew: token with iat > now + 65 seconds
 $skewedPayload = [
     'vid' => 2,
     'user_id' => 2,
@@ -398,7 +398,7 @@ assertAdv(
     "HTTP {$resBV3['code']}"
 );
 
-
+// ADV5-BV-04: Instant revocation: coordinator rejects volunteer while active badge is unexpired
 $volBV4 = $harness->registerUser(2, 'Волонтёр Для Отзыва');
 $uidBV4 = (int)$volBV4['user']['id'];
 $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$uidBV4}");
@@ -419,7 +419,7 @@ assertAdv(
     "Pre: " . var_export($validBefore, true) . ", Post: " . var_export($validAfter, true)
 );
 
-
+// ADV5-BV-05: SVG Badge XSS Injection: volunteer name <script>alert(1)</script><svg>
 $xssName = '<script>alert(1)</script><svg ontoggle=alert(1)>';
 $tokXss = BadgeService::generateBadgeToken(2, $xssName);
 $svg = BadgeService::generateBadgeSvg(2, $tokXss);
@@ -435,12 +435,12 @@ assertAdv(
     "noRawScript: " . var_export($noRawScript, true) . ", escaped: " . var_export($escapedScript, true) . ", xmlValid: " . var_export($xmlValid, true)
 );
 
-
-
-
+// =========================================================================
+// Category 4: Watchdog & SOS Adversarial Tests (ADV5-WS-01 .. ADV5-WS-03)
+// =========================================================================
 echo "\n[Category 4] Watchdog & Emergency SOS Resilience (3 tests):\n";
 
-
+// ADV5-WS-01: EMERCOM 112 ticket generation entropy (1,000 tickets burst)
 $tickets = [];
 $allMatch = true;
 for ($i = 0; $i < 1000; $i++) {
@@ -457,7 +457,7 @@ assertAdv(
     'Count: ' . count($tickets) . ', allMatch: ' . var_export($allMatch, true)
 );
 
-
+// ADV5-WS-02: Rapid SOS trigger burst (10 rapid requests from same senior)
 $seniorToken = $harness->getElderlyToken();
 $sosSuccessCount = 0;
 for ($i = 0; $i < 10; $i++) {
@@ -477,7 +477,7 @@ assertAdv(
     "Success count: {$sosSuccessCount} / 10"
 );
 
-
+// ADV5-WS-03: Regression verification of T2-SOS-07 non-existent SOS resolution
 $coordToken = $harness->getCoordinatorToken();
 $resWS3 = $harness->apiCall('POST', '/api/coordinator/sos-alerts/999999/resolve', null, ["Authorization: Bearer {$coordToken}"]);
 assertAdv(

@@ -1,14 +1,14 @@
 <?php
 declare(strict_types=1);
 
-
+// If request is targeting API, delegate to API router
 $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '/';
 $requestUri = rtrim($requestUri, '/');
 if ($requestUri === '') {
     $requestUri = '/';
 }
 
-
+// Never serve a stale authenticated/staff page from cache or bfcache.
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Vary: Cookie');
@@ -17,8 +17,8 @@ if (str_starts_with($requestUri, '/api/')) {
     exit;
 }
 
-
-
+// Autoload application classes so the server can resolve the authenticated role
+// from the HttpOnly session cookie before rendering any markup.
 spl_autoload_register(function (string $class): void {
     $prefix = 'App\\';
     if (!str_starts_with($class, $prefix)) {
@@ -35,15 +35,15 @@ $authToken = $_COOKIE['auth_token'] ?? '';
 $hasAuthCookie = is_string($authToken) && $authToken !== '';
 if ($hasAuthCookie) {
     try {
-
+        // Cookie-based resolution validates token_version (revocation) as well as signature.
         $sessionUser = \App\Services\AuthService::getCurrentUser();
     } catch (\Throwable $e) {
         $sessionUser = null;
     }
 }
 
-
-
+// Expired/revoked cookie must not block the senior entrance: clear it and
+// let the device re-provision itself on "/".
 if ($hasAuthCookie && $sessionUser === null) {
     setcookie('auth_token', '', [
         'expires' => time() - 3600,
@@ -56,18 +56,48 @@ if ($hasAuthCookie && $sessionUser === null) {
     $hasAuthCookie = false;
 }
 
+// Senior entrance: a fresh device opening "/" goes straight to the elderly workspace,
+// no password. Enabled outside production by default; in production opt in with
+// ELDERLY_AUTO_LOGIN=true (kiosk / demo stands). Staff areas still require /login.
+if ($sessionUser === null && !$hasAuthCookie && $requestUri === '/') {
+    $autoFlag = getenv('ELDERLY_AUTO_LOGIN');
+    $autoEnabled = ($autoFlag !== false)
+        ? ($autoFlag === 'true')
+        : ((getenv('APP_ENV') ?: 'local') !== 'production');
 
+    if ($autoEnabled) {
+        $elderlyPhone = getenv('ELDERLY_DEMO_PHONE') ?: '+375291112233';
+        try {
+            $elderly = \App\Models\User::findByPhone($elderlyPhone);
+            if ($elderly) {
+                $profile = \App\Models\User::getWithProfile((int)$elderly['id']);
+                if (($profile['role_code'] ?? '') === 'elderly') {
+                    $deviceToken = \App\Services\AuthService::createToken($profile, \App\Services\AuthService::TTL_DEVICE);
+                    setcookie('auth_token', $deviceToken, [
+                        'expires' => time() + \App\Services\AuthService::TTL_DEVICE,
+                        'path' => '/',
+                        'httponly' => true,
+                        'secure' => !empty($_SERVER['HTTPS']),
+                        'samesite' => 'Lax',
+                    ]);
+                    $sessionUser = $profile;
+                }
+            }
+        } catch (\Throwable $e) {
+            $sessionUser = null;
+        }
+    }
+}
 
-$isGuestElderly = ($sessionUser === null && $requestUri === '/');
 $roleCode = (string)($sessionUser['role_code'] ?? '');
 $viewRole = match ($roleCode) {
     'elderly' => 'user',
     'volunteer' => 'volunteer',
     'admin', 'coordinator' => 'admin',
-    default => $isGuestElderly ? 'user' : null,
+    default => null,
 };
-$isAuthed = $viewRole !== null && !$isGuestElderly;
-$isGuest = $isGuestElderly;
+$isAuthed = $viewRole !== null;
+
 $homeByRole = [
     'elderly' => '/',
     'volunteer' => '/volunteer',
@@ -81,8 +111,8 @@ if (!\App\Services\RegionService::exists($profileRegion)) {
     $profileRegion = 'MINSK_CITY';
 }
 
-
-
+// One URL per role: staff cannot open another role's workspace. "/login" is always
+// available (so staff can sign in from a device that is already senior-signed-in).
 if ($isAuthed) {
     $guardedPaths = ['/', '/admin', '/volunteer'];
     if (in_array($requestUri, $guardedPaths, true) && $requestUri !== $homeUrl) {
@@ -94,10 +124,10 @@ if ($isAuthed) {
     exit;
 }
 
-
-
-
-if ($requestUri === '/login' || (!$isAuthed && !$isGuest)) {
+// -------------------------------------------------------------------------
+// Dedicated staff/volunteer login page (seniors never see it: "/" auto-opens)
+// -------------------------------------------------------------------------
+if (!$isAuthed || $requestUri === '/login') {
     $loginNotice = isset($_GET['expired'])
         ? 'Сессия истекла. Войдите снова.'
         : 'Вход для сотрудников ТЦСОН и волонтёров.';
@@ -109,8 +139,7 @@ if ($requestUri === '/login' || (!$isAuthed && !$isGuest)) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex">
     <title>Вход — ЗаботаРядом</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
+    <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
 </head>
 <body data-initial-role="guest" data-mode="app" class="login-body">
 <div class="login-shell">
@@ -220,42 +249,37 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <title>Платформа взаимной помощи «ЗаботаРядом»</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
+    <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
 </head>
-<body data-initial-role="<?php echo htmlspecialchars($viewRole ?? 'guest'); ?>" data-mode="<?php echo $mode; ?>" data-is-guest="<?php echo !empty($isGuest) ? '1' : '0'; ?>">
+<body data-initial-role="<?php echo htmlspecialchars($viewRole ?? 'guest'); ?>" data-mode="<?php echo $mode; ?>">
 
+<a class="skip-link" href="#mainContent">Перейти к содержимому</a>
 
+<!-- Top Status Bar -->
 <div class="quick-auth-bar">
     <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
         <span id="currentUserDisplay" style="font-weight: 700; color: var(--primary-color); display: inline-flex; align-items: center; gap: 6px;">
             <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span><?php
-                if ($isAuthed) {
-                    echo htmlspecialchars($sessionName) . ' (' . htmlspecialchars($sessionRoleName) . ')';
-                } elseif (!empty($isGuest)) {
-                    echo 'Гость';
-                } else {
-                    echo 'Вход в систему';
-                }
-            ?></span>
+            <span><?php echo $isAuthed
+                ? htmlspecialchars($sessionName) . ' (' . htmlspecialchars($sessionRoleName) . ')'
+                : 'Вход в систему'; ?></span>
         </span>
-        <?php if ($isAuthed): ?>
-        <button type="button" id="btnChangePassword" class="btn btn-outline btn-xs" style="height: 30px;">Изменить пароль</button>
+        <?php if ($isAuthed && $roleCode !== 'elderly'): ?>
+        <button type="button" id="btnChangePassword" class="btn btn-outline btn-xs" style="height: 30px;">Сменить пароль</button>
         <button type="button" id="btnLogout" class="btn btn-outline btn-xs" style="height: 30px;">Выйти</button>
-        <?php elseif (!empty($isGuest)): ?>
-        <a href="/login" class="btn btn-primary btn-xs" style="height: 30px; display:inline-flex; align-items:center;">Войти</a>
         <?php endif; ?>
         <div class="live-indicator">
             <span class="pulse-dot"></span>
-            <span>Система онлайн</span>
+            <span id="systemStatusText">СИСТЕМА ОНЛАЙН</span>
         </div>
     </div>
 </div>
+
 <header>
     <div class="container header-inner">
-        <a href="<?php echo $isAuthed ? htmlspecialchars($homeUrl) : '/'; ?>" class="brand">
+        <a href="<?php echo $isAuthed ? htmlspecialchars($homeUrl) : '/login'; ?>" class="brand">
             <svg class="ui-icon ui-icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
             </svg>
@@ -280,9 +304,10 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     </div>
 </header>
 
-<main class="container">
-
-    <div id="urgentAlertBox" class="alert-banner alert-banner-danger" style="display: none;">
+<main class="container" id="mainContent">
+    <h1 class="sr-only">ЗаботаРядом — платформа взаимной помощи пожилым людям</h1>
+    <!-- Active Danger Alert Banner for Citizens -->
+    <div id="urgentAlertBox" class="alert-banner alert-banner-danger" role="alert" aria-live="assertive" style="display: none;">
         <div>
             <h3 id="alertTitle" style="display: flex; align-items: center; gap: 8px;">
                 <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -296,13 +321,13 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         </button>
     </div>
 
-
-
-
+    <!-- ========================================================================= -->
+    <!-- 1. USER SECTION: STRICTLY 2 FUNCTIONS ONLY                               -->
+    <!-- ========================================================================= -->
     <?php if ($viewRole === 'user'): ?>
     <div id="view-user" class="role-view" style="display: block;">
-
-        <div id="activeSosBanner" class="alert-banner alert-banner-danger sos-pulse-banner" style="display: none; margin-bottom: 20px;">
+        <!-- Active Emergency SOS Banner (Displays EMERCOM-112-BY ticket) -->
+        <div id="activeSosBanner" class="alert-banner alert-banner-danger sos-pulse-banner" role="alert" aria-live="assertive" style="display: none; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; flex-wrap: wrap; gap: 12px;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                     <div style="width: 44px; height: 44px; border-radius: 50%; background: #ffffff; color: var(--danger-color); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
@@ -316,7 +341,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         <div style="font-weight: 800; font-size: 1.15em; color: #ffffff;">СИГНАЛ SOS В ОБРАБОТКЕ (ПРИОРИТЕТ 0)</div>
                         <div style="font-size: 0.95em; color: #ffffff; opacity: 0.95; margin-top: 2px;">
                             Талон МЧС: <span id="sosTicketId" class="badge" style="background: #ffffff; color: #991b1b; font-weight: 800;">EMERCOM-112-BY-2026-XXXX</span>
-                            | Дежурная служба 112 и координатор ТЦСОН оповещены
+                            | Координатор ТЦСОН оповещён
                         </div>
                     </div>
                 </div>
@@ -326,8 +351,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </div>
 
-        <?php if (empty($isGuest)): ?>
-
+        <!-- Dedicated High-Contrast Emergency SOS Button (WCAG 2.1 AAA Compliant) -->
         <div class="card card-accent-danger" style="background: #fef2f2; border: 3px solid var(--danger-color); padding: 16px 20px; margin-bottom: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                 <div style="display: flex; align-items: center; gap: 14px;">
@@ -339,11 +363,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </svg>
                     </div>
                     <div>
-                        <h2 style="font-size: 1.35em; color: var(--danger-color); margin-bottom: 4px;">Экстренная помощь подопечному?</h2>
-                        <p style="font-size: 0.95em; color: #7f1d1d; margin: 0;">Если вам стало плохо или угрожает опасность — нажмите тревожную кнопку. Вызов отправит координаты и данные в службу 112.</p>
+                        <h2 style="font-size: 1.35em; color: var(--danger-color); margin-bottom: 4px;">Экстренная помощь подопечному</h2>
+                        <p style="font-size: 0.95em; color: #7f1d1d; margin: 0;">Если вам стало плохо или угрожает опасность — нажмите тревожную кнопку. Вызов поступит координатору ТЦСОН; передача в службу 112 выполняется в зависимости от настройки интеграции.</p>
                     </div>
                 </div>
-                <button type="button" id="sosBtn" class="btn btn-danger btn-sos sos-btn" aria-label="Экстренная помощь SOS — вызов координат в МЧС 112" style="min-height: 60px; min-width: 200px; font-size: 1.3em; font-weight: 900; letter-spacing: 1px; box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);" onclick="triggerSos()">
+                <button type="button" id="sosBtn" class="btn btn-danger btn-sos sos-btn" aria-label="Экстренная помощь SOS — вызов координатора ТЦСОН" style="min-height: 60px; min-width: 200px; font-size: 1.3em; font-weight: 900; letter-spacing: 1px; box-shadow: 0 4px 14px rgba(220, 38, 38, 0.4);" onclick="triggerSos()">
                     <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
@@ -351,8 +375,8 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </button>
             </div>
         </div>
-        <?php endif; ?>
 
+        <!-- 2 Function Selector Navigation -->
         <div class="user-functions-nav">
             <button class="function-card-btn active" data-user-func="func-request" id="btnFuncRequest">
                 <span class="function-icon">
@@ -369,34 +393,16 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </span>
                 <div>
                     <div class="function-title">2. Проверка на мошенничество</div>
-                    <div class="function-sub">Проверить подозрительный звонок, СМС или сообщение</div>
-                </div>
-            </button>
-            <button class="function-card-btn" data-user-func="func-education" id="btnFuncEducation">
-                <span class="function-icon">
-                    <svg class="ui-icon ui-icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
-                </span>
-                <div>
-                    <div class="function-title">3. Уроки безопасности</div>
-                    <div class="function-sub">Видео, памятки и простые правила безопасности</div>
+                    <div class="function-sub">Проверить подозрительный звонок, СМС и правила безопасности</div>
                 </div>
             </button>
         </div>
 
+        <!-- User Function 1: Help Request -->
         <section id="func-request" class="user-func-pane">
-            <?php if (!empty($isGuest)): ?>
-            <div class="card" style="border-left: 4px solid var(--primary-color);">
-                <h2 style="margin-bottom: 12px;">Войдите, чтобы создать заявку на помощь</h2>
-                <p style="color: var(--text-muted); margin-bottom: 16px;">Как гость вы можете пользоваться проверкой на мошенничество и смотреть уроки безопасности. Чтобы создать заявку на помощь, войдите в систему или зарегистрируйтесь.</p>
-                <div style="display:flex; gap:12px; flex-wrap:wrap;">
-                    <a href="/login" class="btn btn-primary">Войти</a>
-                    <a href="/login#register" class="btn btn-outline">Регистрация</a>
-                </div>
-            </div>
-            <?php else: ?>
             <div class="card">
                 <h2 style="margin-bottom: 16px;">Какая помощь вам требуется?</h2>
-
+                
                 <input type="hidden" id="selectedCategory" value="1">
                 <div class="category-grid" id="categoryGrid">
                     <div class="category-card selected" data-id="1">
@@ -437,10 +443,10 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
 
-
+                <!-- Voice Dictation Feature -->
                 <div class="card card-accent-primary" style="background: #eff6ff;">
                     <div class="voice-bar">
-                        <button type="button" id="micBtn" class="mic-btn" title="Нажмите и говорите">
+                        <button type="button" id="micBtn" class="mic-btn" title="Нажмите и говорите" aria-label="Голосовой ввод заявки">
                             <svg class="ui-icon ui-icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                         </button>
                         <div>
@@ -481,7 +487,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </button>
                 </form>
 
-
+                <!-- Modal / Banner for Secret Code -->
                 <div id="secretCodeBanner" class="secret-code-banner" style="display: none;">
                     <h3 style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -496,7 +502,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- My Active Requests (for Elderly) -->
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <h3 style="display: flex; align-items: center; gap: 8px;">
@@ -513,11 +519,9 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <p>Загрузка ваших заявок...</p>
                 </div>
             </div>
-
-            <?php endif; ?>
         </section>
 
-
+        <!-- User Function 2: Safety & Anti-Fraud Scanner -->
         <section id="func-safety" class="user-func-pane" style="display: none;">
             <div class="card card-accent-danger">
                 <h2 style="display: flex; align-items: center; gap: 8px;">
@@ -525,9 +529,9 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <span>Проверка подозрительного звонка или СМС</span>
                 </h2>
                 <p style="margin: 8px 0 16px 0;">Вам позвонили из банка, милиции или водоканала? Вставьте текст или перескажите фразу сюда для мгновенной проверки:</p>
-
+                
                 <div class="voice-bar">
-                    <button type="button" id="micFraudBtn" class="mic-btn" style="width: 50px; height: 50px;" title="Надиктовать голосом">
+                    <button type="button" id="micFraudBtn" class="mic-btn" style="width: 50px; height: 50px;" title="Надиктовать голосом" aria-label="Надиктовать текст для проверки">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
                     </button>
                     <span style="font-size: 0.9em; color: var(--text-muted);">Нажмите микрофон, чтобы надиктовать фразу</span>
@@ -551,36 +555,18 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                     Проверить на мошенничество
                 </button>
-
+                
                 <div id="fraudResultBox" style="display: none; margin-top: 16px; padding: 16px; border-radius: 12px; border: 2px solid;"></div>
             </div>
 
-                    </section>
-
-
-        <section id="func-education" class="user-func-pane" style="display: none;">
             <div class="card">
                 <h2 style="display: flex; align-items: center; gap: 8px;">
                     <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
-                    <span>Уроки безопасности</span>
+                    <span>Памятки и уроки безопасности</span>
                 </h2>
-                <p style="margin-bottom: 16px;">Смотрите короткие видео и читайте простые памятки, чтобы защищать себя от мошенников и опасных ситуаций.</p>
-
-                <div id="educationVideoBlock" style="margin-bottom: 20px;">
-                    <h3 style="margin-bottom: 12px; display:flex; align-items:center; gap:8px;">
-                        <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                        <span>Видео-уроки</span>
-                    </h3>
-                    <div id="educationVideoList" class="education-video-list">
-                        <p class="text-muted">Видео пока не добавлены.</p>
-                    </div>
-                </div>
-
-                <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border-color);">
-
-                <h3 style="margin-bottom: 12px;">Памятки и уроки безопасности</h3>
+                <p style="margin-bottom: 16px;">Простые правила, которые защитят вас от телефонных и бытовых мошенников, подскажут как пользоваться телефоном и оказывать первую помощь:</p>
                 <div style="margin-bottom: 14px; display: flex; gap: 8px;">
-                    <input type="text" id="educationSearchInput" class="form-control" placeholder="Поиск по памяткам (например: мошенники, аптека, банк, доставка, лекарства)..." oninput="handleEducationSearch(this.value)">
+                    <input type="text" id="educationSearchInput" class="form-control" aria-label="Поиск по памяткам" placeholder="Поиск по памяткам (например: мошенники, давление, ЕРИП, перелом, лекарства)..." oninput="handleEducationSearch(this.value)">
                     <button type="button" class="btn btn-outline btn-sm" onclick="clearEducationSearch()" title="Сбросить поиск">
                         Сброс
                     </button>
@@ -590,6 +576,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </section>
 
+        <!-- Privacy & Right to be Forgotten Card (Law 99-Z) -->
         <div class="card" style="margin-top: 20px; border-top: 2px solid var(--border-color);">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <div>
@@ -616,12 +603,12 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 
     <?php if ($viewRole === 'admin'): ?>
-
-
-
+    <!-- ========================================================================= -->
+    <!-- 2. ADMIN SECTION: MANAGEMENT & ANALYTICS                                  -->
+    <!-- ========================================================================= -->
     <div id="view-admin" class="role-view" style="display: block;">
-
-        <div id="coordinatorSosBannerContainer" style="display: none;"></div>
+        <!-- Coordinator Priority 0 SOS Incident Console Banner -->
+        <div id="coordinatorSosBannerContainer" role="alert" aria-live="assertive" style="display: none;"></div>
 
         <div class="card" style="border-top: 6px solid var(--text-color);">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
@@ -635,8 +622,8 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 <span class="admin-badge">РЕСПУБЛИКА БЕЛАРУСЬ</span>
             </div>
 
-
-            <div class="admin-subnav" role="tablist">
+            <!-- Admin Sub-Navigation -->
+            <div class="admin-subnav" role="group" aria-label="Разделы панели администратора">
                 <button class="admin-subnav-btn active" data-admin-tab="admin-analytics" id="btnAdminAnalytics">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                     Аналитика и отчёты
@@ -667,7 +654,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </button>
             </div>
 
-
+            <!-- Tab 1: Analytics & Reports -->
             <div id="admin-analytics" class="admin-tab-pane">
                 <div class="stat-grid" id="analyticsKpiGrid">
                     <div class="stat-card">
@@ -689,7 +676,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
 
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 20px;">
-
+                    <!-- Categories Breakdown -->
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Распределение потребностей по категориям</h3>
                         <div id="categoryAnalyticsBars" style="margin-top: 16px;">
@@ -697,7 +684,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </div>
                     </div>
 
-
+                    <!-- Top Volunteers Leaderboard in Admin -->
                     <div class="card" style="margin-bottom: 0;">
                         <h3 style="display: flex; align-items: center; gap: 8px;">
                             <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
@@ -709,7 +696,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- Tab 2: Volunteer Verification Queue -->
             <div id="admin-volunteers" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -723,7 +710,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
 
-
+                <!-- Rating filter: only show volunteers at or above the chosen rating -->
                 <div class="card" style="margin-bottom: 16px; padding: 14px 18px;">
                     <div style="display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;">
                         <div class="form-group" style="margin-bottom: 0; min-width: 220px;">
@@ -756,7 +743,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- Tab 3: Help Requests Management -->
             <div id="admin-requests" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -768,7 +755,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('open')">Открытые</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('in_progress')">В работе</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('completed')">Выполненные</button>
-                        <select id="adminRegionFilter" class="form-control" style="max-width: 240px; min-height: 38px;" onchange="loadAdminRequests('all', this.value)">
+                        <select id="adminRegionFilter" class="form-control" aria-label="Фильтр заявок по региону" style="max-width: 240px; min-height: 38px;" onchange="loadAdminRequests('all', this.value)">
                             <option value="">Вся Беларусь</option>
                             <?php foreach ($regionsList as $rg): ?>
                                 <option value="<?php echo htmlspecialchars($rg['code']); ?>"><?php echo htmlspecialchars($rg['name']); ?></option>
@@ -798,7 +785,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- Tab 4: Safety Alerts -->
             <div id="admin-alerts" class="admin-tab-pane" style="display: none;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
                     <div>
@@ -807,7 +794,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                             <span>Опубликовать экстренное оповещение</span>
                         </h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 16px;">Предупреждение мгновенно появится на главной странице подопечных.</p>
-
+                        
                         <form id="alertForm">
                             <div class="form-group">
                                 <label class="form-label" for="alertInputTitle">Заголовок предупреждения:</label>
@@ -818,7 +805,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                                 <textarea id="alertInputDesc" class="form-control" placeholder="Не пускайте посторонних без предъявления служебного удостоверения..." required></textarea>
                             </div>
                             <div class="form-group">
-                                <label class="form-label">Уровень угрозы:</label>
+                                <label class="form-label" for="alertInputSeverity">Уровень угрозы:</label>
                                 <select id="alertInputSeverity" class="form-control">
                                     <option value="danger">Высокая опасность (Красный)</option>
                                     <option value="warning" selected>Предупреждение (Жёлтый)</option>
@@ -842,7 +829,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- Tab 5: Coordinator Watchdog View -->
             <div id="admin-watchdog" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -886,83 +873,37 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
-
+            <!-- Tab 6: Access Recovery (coordinator-issued one-time codes) -->
             <div id="admin-access" class="admin-tab-pane" style="display: none;">
-                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
-                    <div class="card" style="margin-bottom:0;">
-                        <h3 style="display: flex; align-items: center; gap: 8px;">
-                            <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                            <span>Восстановление доступа подопечного</span>
-                        </h3>
-                        <p style="color: var(--text-muted); font-size: 0.95em; margin-bottom: 16px;">
-                            Введите телефон подопечного или волонтёра. Код действует 30 минут, использовать можно один раз на окне смены пароля.
-                        </p>
-                        <form id="resetCodeForm">
-                            <div class="form-group">
-                                <label class="form-label" for="resetCodePhone">Телефон пользователя:</label>
-                                <input type="tel" id="resetCodePhone" class="form-control" placeholder="+375291112233" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 52px;">Сгенерировать одноразовый код</button>
-                        </form>
-                        <div id="resetCodeError" class="alert-banner alert-banner-danger" style="display: none; margin-top: 16px;"></div>
-                        <div id="resetCodeResult" class="card card-accent-success" style="display: none; margin-top: 16px;">
-                            <p style="font-size: 0.95em;">Передайте код сотруднику/пользователю. Не отправляйте его в открытых каналах.</p>
-                            <div id="resetCodeValue" style="font-size: 2em; font-weight: 900; letter-spacing: 6px; text-align: center; margin: 12px 0; color: var(--accent-color);"></div>
-                            <p id="resetCodeUser" style="text-align: center; color: var(--text-muted);"></p>
-                            <p id="resetCodeTtl" style="text-align: center; color: var(--text-muted); font-size: 0.9em;"></p>
+                <div style="max-width: 620px;">
+                    <h3 style="display: flex; align-items: center; gap: 8px;">
+                        <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <span>Восстановление доступа подопечного</span>
+                    </h3>
+                    <p style="color: var(--text-muted); font-size: 0.95em; margin-bottom: 16px;">
+                        Введите телефон подопечного или волонтёра. Код действует 30 минут, используется один раз и после смены пароля завершает все прежние сеансы.
+                    </p>
+                    <form id="resetCodeForm">
+                        <div class="form-group">
+                            <label class="form-label" for="resetCodePhone">Телефон пользователя:</label>
+                            <input type="tel" id="resetCodePhone" class="form-control" placeholder="+375291112233" required>
                         </div>
-                    </div>
-
-                    <div class="card" style="margin-bottom:0;">
-                        <h3 style="display: flex; align-items: center; gap: 8px;">
-                            <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                            <span>Добавить пользователя</span>
-                        </h3>
-                        <p style="color: var(--text-muted); font-size: 0.95em; margin-bottom: 16px;">
-                            Администратор может зарегистрировать нового подопечного или волонтёра.
-                        </p>
-                        <form id="adminCreateUserForm">
-                            <div class="form-group">
-                                <label class="form-label" for="newUserRole">Роль</label>
-                                <select id="newUserRole" class="form-control">
-                                    <option value="1">Подопечный</option>
-                                    <option value="2">Волонтёр</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="newUserName">Имя</label>
-                                <input type="text" id="newUserName" class="form-control" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="newUserPhone">Телефон</label>
-                                <input type="tel" id="newUserPhone" class="form-control" placeholder="+375..." required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="newUserPassword">Пароль (мин. 8 символов)</label>
-                                <input type="password" id="newUserPassword" class="form-control" minlength="8" required>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="newUserRegion">Регион</label>
-                                <select id="newUserRegion" class="form-control">
-                                    <?php foreach ($regionsList as $rg): ?>
-                                        <option value="<?php echo htmlspecialchars($rg['code']); ?>" <?php echo $rg['code'] === 'MINSK_CITY' ? 'selected' : ''; ?>><?php echo htmlspecialchars($rg['name']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" for="newUserAddress">Адрес (необязательно)</label>
-                                <input type="text" id="newUserAddress" class="form-control" placeholder="Адрес">
-                            </div>
-                            <button type="submit" class="btn btn-primary" style="width:100%; min-height:52px;">Создать пользователя</button>
-                        </form>
-                        <div id="adminCreateUserMessage" class="alert-banner" style="display:none; margin-top:16px;"></div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 52px;">Создать одноразовый код</button>
+                    </form>
+                    <div id="resetCodeError" class="alert-banner alert-banner-danger" role="alert" style="display: none; margin-top: 16px;"></div>
+                    <div id="resetCodeResult" class="card card-accent-success" style="display: none; margin-top: 16px;">
+                        <p style="font-size: 0.95em;">Передайте код родственнику по телефону. Не отправляйте его в мессенджеры.</p>
+                        <div id="resetCodeValue" style="font-size: 2em; font-weight: 900; letter-spacing: 6px; text-align: center; margin: 12px 0; color: var(--accent-color);"></div>
+                        <p id="resetCodeUser" style="text-align: center; color: var(--text-muted);"></p>
+                        <p id="resetCodeTtl" style="text-align: center; color: var(--text-muted); font-size: 0.9em;"></p>
                     </div>
                 </div>
             </div>
 
+            <!-- Tab 7: Request types (categories) + educational materials -->
             <div id="admin-content" class="admin-tab-pane" style="display: none;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px;">
-
+                    <!-- Request types -->
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Виды заявок (категории помощи)</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
@@ -991,7 +932,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                                 <button type="button" class="btn btn-outline" onclick="resetCategoryForm()">Очистить</button>
                             </div>
                         </form>
-                        <div id="categoryFormMessage" class="alert-banner" style="display: none; margin-top: 14px;"></div>
+                        <div id="categoryFormMessage" class="alert-banner" role="status" aria-live="polite" style="display: none; margin-top: 14px;"></div>
 
                         <div class="data-table-container" style="margin-top: 18px;">
                             <table class="data-table">
@@ -1011,40 +952,40 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </div>
                     </div>
 
-
+                    <!-- Educational materials -->
                     <div class="card" style="margin-bottom: 0;">
                         <h3>Набор обучающих материалов</h3>
                         <p style="color: var(--text-muted); font-size: 0.9em; margin-bottom: 14px;">
                             Памятки по безопасности, здоровью и волонтёрству. Материалы также используются при реабилитации волонтёров с низким рейтингом.
                         </p>
-                                                <form id="educationForm" onsubmit="return submitEducationForm(event)">
+                        <form id="educationForm" onsubmit="return submitEducationForm(event)">
                             <div class="form-group">
                                 <label class="form-label" for="eduTitle">Заголовок:</label>
-                                <input type="text" id="eduTitle" class="form-control" placeholder="Например: Как распознать телефонных мошенников" required>
+                                <input type="text" id="eduTitle" class="form-control" placeholder="Как распознать телефонных мошенников" required>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="eduType">Тип материала:</label>
-                                <select id="eduType" class="form-control" onchange="toggleEducationMediaField()">
+                                <select id="eduType" class="form-control">
                                     <option value="memo">Памятка (текст)</option>
-                                    <option value="video">Видео (YouTube ссылка)</option>
-                                    <option value="audio">Аудио (ссылка)</option>
+                                    <option value="audio">Аудио</option>
+                                    <option value="video">Видео</option>
                                 </select>
                             </div>
                             <div class="form-group">
                                 <label class="form-label" for="eduCategory">Категория:</label>
                                 <input type="text" id="eduCategory" class="form-control" placeholder="Безопасность" value="Безопасность">
                             </div>
-                            <div class="form-group" id="eduMediaUrlGroup" style="display:none;">
-                                <label class="form-label" for="eduMediaUrl">Ссылка на видео/аудио:</label>
-                                <input type="url" id="eduMediaUrl" class="form-control" placeholder="https://www.youtube.com/watch?v=...">
-                                <p style="font-size: 0.85em; color: var(--text-muted); margin-top: 6px;">Для YouTube вставьте обычную ссылку на видео. Видео будет показано в разделе «Уроки безопасности» над текстовыми памятками.</p>
+                            <div class="form-group">
+                                <label class="form-label" for="eduAudioUrl">Ссылка на аудио/видео (необязательно):</label>
+                                <input type="url" id="eduAudioUrl" class="form-control" placeholder="https://.../memo.mp3" maxlength="255">
                             </div>
                             <div class="form-group">
-                                <label class="form-label" for="eduContent">Текст памятки / описание видео:</label>
-                                <textarea id="eduContent" class="form-control" rows="3" placeholder="Короткий текст памятки или описание видео" required></textarea>
+                                <label class="form-label" for="eduContent">Текст материала:</label>
+                                <textarea id="eduContent" class="form-control" rows="3" placeholder="Короткий и понятный текст памятки" required></textarea>
                             </div>
                             <button type="submit" class="btn btn-primary">Добавить материал</button>
-                        </form><div id="educationFormMessage" class="alert-banner" style="display: none; margin-top: 14px;"></div>
+                        </form>
+                        <div id="educationFormMessage" class="alert-banner" role="status" aria-live="polite" style="display: none; margin-top: 14px;"></div>
 
                         <div class="data-table-container" style="margin-top: 18px;">
                             <table class="data-table">
@@ -1070,25 +1011,25 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 
     <?php if ($viewRole === 'volunteer'): ?>
-
-
-
+    <!-- ========================================================================= -->
+    <!-- 3. VOLUNTEER SECTION: TASKS, VERIFICATION, BADGE & EDUCATION             -->
+    <!-- ========================================================================= -->
     <div id="view-volunteer" class="role-view" style="display: block;">
-
-        <div id="volunteerVerificationNotice" class="card card-accent-success">
+        <!-- Volunteer Verification Status Banner -->
+        <div id="volunteerVerificationNotice" class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                 <div>
                     <h3 id="volVerifyTitle" style="display: flex; align-items: center; gap: 8px;">
-                        <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-                        <span>Статус волонтёра: Верифицирован</span>
+                        <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        <span>Проверка статуса волонтёра…</span>
                     </h3>
-                    <p id="volVerifyDesc" style="color: var(--accent-color); margin-top: 4px;">Ваша личность проверена ТЦСОН. Вы имеете полный доступ к помощи пожилым гражданам.</p>
+                    <p id="volVerifyDesc" style="color: var(--text-muted); margin-top: 4px;">Загружаем данные вашего профиля.</p>
                 </div>
                 <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
                     <div style="font-size: 0.9em; color: var(--text-muted);">
-                        Волонтёр: <strong id="volNameDisplay">Алексей Смирнов</strong>
+                        Волонтёр: <strong id="volNameDisplay">—</strong>
                     </div>
-                    <button type="button" id="btnOpenVolunteerBadge" class="btn btn-primary btn-sm" style="min-height: 44px; display: inline-flex; align-items: center; gap: 6px;" onclick="showVolunteerBadge()">
+                    <button type="button" id="btnOpenVolunteerBadge" class="btn btn-primary btn-sm" style="min-height: 44px; display: inline-flex; align-items: center; gap: 6px;" onclick="showVolunteerBadge()" disabled>
                         <svg class="ui-icon ui-icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01"/><path d="M17 7h.01"/><path d="M7 17h.01"/><path d="M17 17h.01"/>
                         </svg>
@@ -1098,7 +1039,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </div>
 
-
+        <!-- Volunteer Active Tasks in Progress -->
         <div class="card card-accent-warning" id="volunteerActiveTasksCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                 <div>
@@ -1128,7 +1069,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <p style="color: var(--text-muted);">ИИ автоматически рассчитал расстояние от вашей текущей геоточки:</p>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <select id="volunteerRegionFilter" class="form-control" style="max-width: 230px; min-height: 38px;" onchange="loadVolunteerRequests()">
+                    <select id="volunteerRegionFilter" class="form-control" aria-label="Фильтр заявок по региону" style="max-width: 230px; min-height: 38px;" onchange="loadVolunteerRequests()">
                         <option value="">Все регионы</option>
                         <?php foreach ($regionsList as $rg): ?>
                             <option value="<?php echo htmlspecialchars($rg['code']); ?>"><?php echo htmlspecialchars($rg['name']); ?></option>
@@ -1154,7 +1095,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             <div id="leaderboardList"></div>
         </div>
 
-
+        <!-- Volunteer Knowledge Base & Standards Card -->
         <div class="card" id="volunteerKnowledgeCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                 <div>
@@ -1178,7 +1119,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     <?php endif; ?>
 </main>
 
-
+<!-- Volunteer Geolocation Completion Modal (Proof-of-Presence) -->
 <div id="geo-complete-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="geoModalTitle">
     <div class="modal-dialog" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1196,24 +1137,24 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         </p>
         <form id="geoCompleteForm" onsubmit="event.preventDefault(); submitGeoComplete();">
             <input type="hidden" id="geoCompleteRequestId" value="">
-
+            
             <div class="form-group">
                 <label class="form-label" for="geoSecretWordInput">Секретное проверочное слово подопечного:</label>
                 <input type="text" id="geoSecretWordInput" class="form-control" placeholder="Например: Василёк" required autocomplete="off" autofocus>
             </div>
-
+            
             <div class="form-group">
                 <label class="form-label">Текущие GPS-координаты волонтёра:</label>
                 <div id="geoCoordinatesDisplay" style="padding: 10px 14px; background: var(--card-subtle); border: 1px solid var(--border-color); border-radius: 8px; font-family: monospace; font-size: 0.95em;">
                     Определение геолокации...
                 </div>
             </div>
-
-
+            
+            <!-- Дружелюбный блок оповещения о превышении расстояния -->
             <div id="geoDistanceErrorBox" class="alert-banner alert-banner-danger" style="display: none; margin-bottom: 16px;">
                 <div id="geoDistanceErrorText"></div>
             </div>
-
+            
             <div style="display: flex; gap: 10px; margin-top: 16px;">
                 <button type="submit" class="btn btn-success" id="confirmGeoCompleteBtn" style="flex: 1; min-height: 48px;">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1229,7 +1170,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
     </div>
 </div>
 
-
+<!-- Volunteer Digital Badge Modal -->
 <div id="volunteer-badge-modal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="badgeModalTitle">
     <div class="modal-dialog" style="max-width: 460px; text-align: center;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1242,17 +1183,17 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </h3>
             <button type="button" class="btn btn-outline btn-xs" id="closeBadgeModalBtn" onclick="closeVolunteerBadgeModal()" aria-label="Закрыть">&times;</button>
         </div>
-
+        
         <div id="badgeUnverifiedNotice" class="alert-banner alert-banner-warning" style="display: none; text-align: left; margin-bottom: 16px;">
             <p>Ваш профиль ещё не верифицирован координатором ТЦСОН. Цифровой бейдж активируется после проверки документов.</p>
         </div>
-
+        
         <div id="badgeActiveContent">
             <div id="badgeQrCardContainer" style="text-align: center; margin-bottom: 16px;">
                 <div style="padding: 20px; color: var(--text-muted);">Загрузка цифрового бейджа...</div>
             </div>
-
-
+            
+            <!-- Dynamic 1h TTL countdown timer -->
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--card-subtle); border-radius: 8px; margin-bottom: 14px; border: 1px solid var(--border-color);">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1271,7 +1212,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 Покажите этот QR-код подопечному или его родственникам для мгновенной проверки официальной аккредитации ТЦСОН.
             </p>
             <div style="display: flex; gap: 8px;">
-                <a id="btnBadgePublicUrl" href="#" target="_blank" class="btn btn-primary btn-sm" style="flex: 1; text-decoration: none;">
+                <a id="btnBadgePublicUrl" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" aria-disabled="true" onclick="return false;" style="flex: 1; text-decoration: none; opacity: 0.6; pointer-events: none;">
                     Открыть статус
                 </a>
                 <button type="button" class="btn btn-outline btn-sm" style="flex: 1;" onclick="closeVolunteerBadgeModal()">
@@ -1283,7 +1224,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 </div>
 
 <?php if ($isAuthed): ?>
-
+<!-- Account security: password change & remote logout -->
 <div id="passwordModal" class="modal-backdrop" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
     <div class="modal-dialog" style="max-width: 480px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -1303,7 +1244,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 <label class="form-label" for="newPasswordRepeat">Повторите новый пароль:</label>
                 <input type="password" id="newPasswordRepeat" class="form-control" minlength="8" required autocomplete="new-password">
             </div>
-            <div id="passwordMessage" class="alert-banner" style="display: none; margin-bottom: 14px;"></div>
+            <div id="passwordMessage" class="alert-banner" role="alert" style="display: none; margin-bottom: 14px;"></div>
             <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 52px;">Сохранить новый пароль</button>
         </form>
         <p style="color: var(--text-muted); font-size: 0.9em; margin: 16px 0 8px;">После смены пароля все остальные устройства выйдут из системы.</p>
@@ -1315,7 +1256,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 <?php endif; ?>
 
 <div id="a11yLiveRegion" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => $viewRole ?? 'guest', 'isGuest' => !empty($isGuest), 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
+<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => $viewRole ?? 'guest', 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
 <script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
 <script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
 </body>

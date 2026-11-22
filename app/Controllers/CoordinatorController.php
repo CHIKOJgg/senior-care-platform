@@ -54,7 +54,7 @@ class CoordinatorController
             }
         }
 
-
+        // Category breakdown: single query to prevent N+1 overhead
         $categoryStats = Category::query(
             "SELECT c.id, c.code, c.title, c.icon, COUNT(r.id) AS count
              FROM categories c
@@ -90,9 +90,9 @@ class CoordinatorController
     public function pendingVolunteers(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
-        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at
-                FROM volunteer_profiles vp
-                JOIN users u ON u.id = vp.user_id
+        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at 
+                FROM volunteer_profiles vp 
+                JOIN users u ON u.id = vp.user_id 
                 WHERE vp.is_verified = 0 OR vp.verification_status = 'PENDING'
                 ORDER BY u.created_at DESC";
         $list = VolunteerProfile::query($sql);
@@ -128,10 +128,10 @@ class CoordinatorController
         ]);
     }
 
-
-
-
-
+    // --- Category management (admin adds types of help requests) ---
+    /**
+     * Public catalogue of help-request types, used by the request form and admin UI.
+     */
     public function categories(): void
     {
         $list = Category::query(
@@ -157,6 +157,12 @@ class CoordinatorController
 
         if ($code === '' || $title === '') {
             Router::json(['error' => 'Укажите code и title категории'], 400);
+        }
+        if (!preg_match('/^[a-z0-9_-]{1,50}$/i', $code)) {
+            Router::json(['error' => 'Код категории: только латиница, цифры, _ и - (до 50 символов)'], 400);
+        }
+        if (mb_strlen($title) > 150 || mb_strlen($icon) > 50 || mb_strlen($description) > 2000) {
+            Router::json(['error' => 'Слишком длинное название, иконка или описание категории'], 400);
         }
         if (Category::where('code', $code)) {
             Router::json(['error' => 'Категория с таким кодом уже существует'], 409);
@@ -190,6 +196,24 @@ class CoordinatorController
         if (empty($data)) {
             Router::json(['error' => 'Нет данных для обновления'], 400);
         }
+        if (isset($data['code']) && !preg_match('/^[a-z0-9_-]{1,50}$/i', $data['code'])) {
+            Router::json(['error' => 'Код категории: только латиница, цифры, _ и - (до 50 символов)'], 400);
+        }
+        if (isset($data['code'])) {
+            $duplicate = Category::where('code', $data['code']);
+            if ($duplicate && (int)$duplicate[0]['id'] !== $catId) {
+                Router::json(['error' => 'Категория с таким кодом уже существует'], 409);
+            }
+        }
+        if (isset($data['title']) && ($data['title'] === '' || mb_strlen($data['title']) > 150)) {
+            Router::json(['error' => 'Название категории обязательно и не должно превышать 150 символов'], 400);
+        }
+        if (isset($data['icon']) && mb_strlen($data['icon']) > 50) {
+            Router::json(['error' => 'Иконка категории слишком длинная'], 400);
+        }
+        if (isset($data['description']) && mb_strlen($data['description']) > 2000) {
+            Router::json(['error' => 'Описание категории слишком длинное'], 400);
+        }
         Category::update($catId, $data);
         Router::json(['success' => true, 'message' => 'Категория обновлена']);
     }
@@ -202,7 +226,7 @@ class CoordinatorController
         if (!$cat) {
             Router::json(['error' => 'Категория не найдена'], 404);
         }
-
+        // Prevent deleting categories in use (efficient single-row check)
         $inUse = HelpRequest::query("SELECT 1 FROM help_requests WHERE category_id = :cat_id LIMIT 1", ['cat_id' => $catId]);
         if (!empty($inUse)) {
             Router::json(['error' => 'Нельзя удалить категорию, используемую в заявках'], 409);
@@ -211,7 +235,7 @@ class CoordinatorController
         Router::json(['success' => true, 'message' => 'Категория удалена']);
     }
 
-
+    // --- Rehabilitation for low-rated volunteers ---
     public function rehabilitateVolunteer(string $id): void
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
@@ -224,11 +248,11 @@ class CoordinatorController
         $currentRating = (float)($vp['rating'] ?? 5.0);
         $needsRehab = $currentRating < $threshold;
 
-
+        // Assign educational materials set for retraining
         $materials = EducationalMaterial::all();
         $rehabMaterials = array_slice($materials, 0, 5);
 
-
+        // Reset rating to baseline and mark as pending re-verification if low
         if ($needsRehab) {
             VolunteerProfile::update($uid, [
                 'rating' => 4.0,
@@ -296,7 +320,7 @@ class CoordinatorController
             'badge_token' => null,
             'badge_expires_at' => null
         ]);
-        Logger::info("Volunteer #{$uid} rejected/revoked by Admin #{$admin['user_id']}. Reason: {$reason}");
+        Logger::info("Volunteer #{$uid} rejected/revoked by Admin #{$admin['user_id']}");
 
         Router::json([
             'success' => true,
@@ -304,36 +328,6 @@ class CoordinatorController
             'volunteer_id' => $uid,
             'verification_status' => 'REJECTED',
             'reason' => $reason
-        ]);
-    }
-
-    public function restoreVolunteer(string $id): void
-    {
-        $admin = AuthService::requireAuth(['admin']);
-        $uid = (int)$id;
-        $vp = VolunteerProfile::find($uid);
-        if (!$vp) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
-
-        $update = [
-            'is_verified' => 1,
-            'verification_status' => 'VERIFIED',
-            'badge_token' => null,
-            'badge_expires_at' => null,
-        ];
-        if ((float)($vp['rating'] ?? 0) < 3.0) {
-            $update['rating'] = 3.0;
-        }
-
-        VolunteerProfile::update($uid, $update);
-        Logger::info("Volunteer #{$uid} restored by Admin #{$admin['user_id']}");
-
-        Router::json([
-            'success' => true,
-            'message' => 'Права волонтёра восстановлены администратором.',
-            'volunteer_id' => $uid,
-            'verification_status' => 'VERIFIED'
         ]);
     }
 
@@ -378,8 +372,18 @@ class CoordinatorController
             Router::json(['error' => 'Недопустимый статус заявки'], 400);
         }
 
+        if ($status === 'completed' && empty($input['force'])) {
+            Router::json([
+                'error' => 'Завершение вручную обходит проверку секретного слова и GPS. Подтвердите override полем force: true.'
+            ], 403);
+        }
+
         HelpRequest::updateStatus($reqId, $status);
-        Logger::info("Request #{$reqId} status changed to {$status} by Admin #{$admin['user_id']}");
+        if ($status === 'completed') {
+            Logger::warning("Request #{$reqId} manually completed by Admin #{$admin['user_id']} without proof-of-presence");
+        } else {
+            Logger::info("Request #{$reqId} status changed to {$status} by Admin #{$admin['user_id']}");
+        }
 
         Router::json([
             'success' => true,
@@ -391,12 +395,18 @@ class CoordinatorController
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
         $input = Router::getJsonInput();
-        $title = trim($input['title'] ?? '');
-        $description = trim($input['description'] ?? '');
-        $severity = $input['severity'] ?? 'warning';
+        $title = is_string($input['title'] ?? null) ? trim($input['title']) : '';
+        $description = is_string($input['description'] ?? null) ? trim($input['description']) : '';
+        $severity = is_string($input['severity'] ?? null) ? (string)$input['severity'] : 'warning';
 
         if (!$title || !$description) {
             Router::json(['error' => 'Заполните заголовок и текст предупреждения'], 400);
+        }
+        if (mb_strlen($title) > 255 || mb_strlen($description) > 5000) {
+            Router::json(['error' => 'Заголовок или текст предупреждения слишком длинные'], 400);
+        }
+        if (!in_array($severity, ['info', 'warning', 'danger'], true)) {
+            $severity = 'warning';
         }
 
         $id = FraudAlert::create([
@@ -449,10 +459,10 @@ class CoordinatorController
         ]);
     }
 
-
-
-
-
+    /**
+     * Active security & SOS alerts for coordinator
+     * Route: GET /api/coordinator/alerts
+     */
     public function alerts(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -468,10 +478,10 @@ class CoordinatorController
         ]);
     }
 
-
-
-
-
+    /**
+     * Watchdog overdue tasks feed
+     * Routes: GET /api/coordinator/watchdog, GET /api/coordinator/tasks/overdue, GET /api/requests/overdue
+     */
     public function watchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -486,10 +496,10 @@ class CoordinatorController
         ]);
     }
 
-
-
-
-
+    /**
+     * Manually trigger watchdog scan
+     * Route: POST /api/tasks/watchdog/run
+     */
     public function runWatchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
@@ -497,10 +507,10 @@ class CoordinatorController
         Router::json($result);
     }
 
-
-
-
-
+    /**
+     * Reassign overdue/stalled request back to neighborhood feed
+     * Route: POST /api/coordinator/requests/{id}/reassign
+     */
     public function reassignRequest(string $id): void
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);

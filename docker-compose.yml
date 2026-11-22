@@ -6,42 +6,48 @@ services:
       tags:
         - senior-care
     container_name: senior_care_platform
-    command: ["php", "-S", "0.0.0.0:8000", "router.php"]
+    command: >
+      sh -c "php database/migrate.php &&
+             php database/seed.php &&
+             php -S 0.0.0.0:8000 router.php"
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "8000:8000"
     volumes:
       - .:/var/www/html
     environment:
-      - APP_ENV=local
-      - APP_DEBUG=true
       - DB_CONNECTION=mysql
       - DB_HOST=mysql
       - DB_PORT=3306
-      - DB_DATABASE=${MYSQL_DATABASE:-senior_care}
-      - DB_USERNAME=${MYSQL_USER:-senior}
-      - DB_PASSWORD=${MYSQL_PASSWORD:-senior_dev_password}
+      - DB_DATABASE=senior_care
+      - DB_USERNAME=senior
+      - DB_PASSWORD=seniorpass
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - ELDERLY_AUTO_LOGIN=true
     depends_on:
       mysql:
         condition: service_healthy
 
   mysql:
     image: mysql:8.0
-    container_name: senior_care_mysql_dev
+    container_name: senior_care_dev_mysql
     restart: unless-stopped
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-senior_care}
-      - MYSQL_USER=${MYSQL_USER:-senior}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-senior_dev_password}
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-root_dev_password}
+      - MYSQL_DATABASE=senior_care
+      - MYSQL_USER=senior
+      - MYSQL_PASSWORD=seniorpass
+      - MYSQL_ROOT_PASSWORD=rootpass
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
     volumes:
-      - senior_care_mysql_dev:/var/lib/mysql
+      - senior_care_dev_mysql:/var/lib/mysql
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
 
 volumes:
-  senior_care_mysql_dev:
+  senior_care_dev_mysql:

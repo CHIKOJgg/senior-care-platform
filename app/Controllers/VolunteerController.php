@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Router;
 use App\Core\Logger;
 use App\Core\RateLimiter;
+use App\Core\Url;
 use App\Services\AuthService;
 use App\Services\BadgeService;
 use App\Services\Identity\IdentityProviderFactory;
@@ -15,16 +16,16 @@ use App\Models\User;
 
 class VolunteerController
 {
-
-
-
-
+    /**
+     * Self-service endpoint for verified volunteers to retrieve their active dynamic badge
+     * GET /api/volunteers/my-badge
+     */
     public function myBadge(): void
     {
-        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) ||
+        $hasExplicitAuth = !empty($_SERVER['HTTP_AUTHORIZATION']) || 
                            !empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION']) ||
-                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) ||
-                           !empty($_COOKIE['auth_token']) ||
+                           !empty($_SERVER['HTTP_X_AUTH_TOKEN']) || 
+                           !empty($_COOKIE['auth_token']) || 
                            !empty($_SERVER['HTTP_X_DEMO_USER']);
         if (!$hasExplicitAuth) {
             Router::json(['error' => 'Требуется авторизация в системе', 'code' => 'UNAUTHORIZED'], 401);
@@ -65,8 +66,8 @@ class VolunteerController
         $payload = BadgeService::verifyBadgeToken($token);
         $qrSvg = BadgeService::generateBadgeQrSvg($token);
 
-        $appUrl = getenv('APP_URL') ?: 'http://127.0.0.1:8000';
-        $verificationUrl = rtrim($appUrl, '/') . '/api/volunteers/badge/' . $token;
+        $appUrl = Url::base();
+        $verificationUrl = $appUrl . '/verify/' . rawurlencode($token);
         $vp = \App\Models\VolunteerProfile::find($userId);
         $badgeNumber = $payload['bid'] ?? sprintf(
             'BY-%s-%s-%04d',
@@ -87,10 +88,10 @@ class VolunteerController
         ]);
     }
 
-
-
-
-
+    /**
+     * Public verification endpoint for citizens/relatives scanning the QR code
+     * GET /api/volunteers/badge/{token}
+     */
     public function verifyPublicBadge(string $token): void
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -107,17 +108,18 @@ class VolunteerController
         Router::json($result, 200);
     }
 
-
-
-
-
+    /**
+     * Render dynamic visual SVG Badge Card directly
+     * GET /api/volunteers/badge/{token}/svg
+     */
     public function renderBadgeSvg(string $token): void
     {
-        $payload = BadgeService::verifyBadgeToken($token);
+        $result = BadgeService::verifyVolunteerBadge($token);
+        $payload = $result['valid'] ? BadgeService::verifyBadgeToken($token) : null;
         if (!$payload) {
             http_response_code(400);
             header('Content-Type: text/plain; charset=utf-8');
-            echo 'Срок действия динамического QR-кода истёк или подпись недействительна';
+            echo 'Срок действия динамического QR-кода истёк, подпись недействительна или волонтёр отозван';
             exit;
         }
 
@@ -132,10 +134,10 @@ class VolunteerController
         exit;
     }
 
-
-
-
-
+    /**
+     * Volunteer identity self-verification via external provider (MSI / Gosuslugi)
+     * POST /api/volunteers/verify-identity
+     */
     public function verifyIdentity(): void
     {
         $auth = AuthService::requireAuth(['volunteer', 'admin']);
@@ -172,7 +174,8 @@ class VolunteerController
             ], 422);
         }
 
-
+        // Update profile in database. A fresh identity check always returns the
+        // volunteer to moderation; previously granted access must not survive it.
         $vp = VolunteerProfile::find($userId);
         if ($vp) {
             VolunteerProfile::update($userId, [
@@ -180,6 +183,7 @@ class VolunteerController
                 'id_provider_user_id' => $res['personal_number_hash'] ?? null,
                 'passport_masked' => $res['personal_number_masked'] ?? null,
                 'verification_status' => 'PENDING',
+                'is_verified' => 0,
             ]);
         }
 

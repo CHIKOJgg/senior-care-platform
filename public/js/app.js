@@ -1,18 +1,16 @@
+/**
+ * Senior Care Platform — Main Frontend Application Script (Production v1.0)
+ * Role Separation: User (2 functions only) / Admin (Management & Analytics) / Volunteer
+ * JWT / Bearer Token Security, Real-Time Polling & Live Verification
+ */
 
-
-
-
-
-
-
+// Global State
 let currentRole = document.body.getAttribute('data-initial-role') || 'guest';
 let currentUser = null;
-let currentVolunteerId = 2;
+let currentVolunteerId = 2; // Set from the authenticated volunteer profile
 let currentVolunteerCoords = { lat: 53.9168, lon: 27.5862 };
-let volunteerBlockedLowRating = false;
 let regionsCache = [];
 const APP_CONFIG = window.APP_CONFIG || { mode: 'family', demoAutologin: false };
-const IS_GUEST = !!(APP_CONFIG.isGuest || document.body.dataset.isGuest === '1');
 
 function homeForRole(roleCode) {
     if (roleCode === 'volunteer') return '/volunteer';
@@ -20,7 +18,7 @@ function homeForRole(roleCode) {
     return '/';
 }
 
-
+// Centralized Vector SVG Icon Library (No Emojis)
 const Icons = {
     user: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
     volunteer: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
@@ -50,11 +48,23 @@ const Icons = {
             default:
                 return `<svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
         }
+    },
+    categoryByName: function(name) {
+        const value = String(name || '').toLowerCase();
+        const map = {
+            'shopping-bag': 1, 'groceries': 1, 'food': 1,
+            'pill': 2, 'pharmacy': 2, 'medical': 2,
+            'broom': 3, 'household': 3, 'home': 3,
+            'phone': 4, 'tech': 4,
+            'walking': 5, 'escort': 5,
+            'coffee': 6, 'chat': 6
+        };
+        return this.category(map[value] || 0);
     }
 };
 
-
-
+// Token storage: the pensioner's device keeps a long-lived token (localStorage),
+// staff sessions live only in the current tab (sessionStorage).
 const ELDER_TOKEN_KEY = 'elder_token';
 const STAFF_TOKEN_KEY = 'auth_token';
 
@@ -76,7 +86,7 @@ function clearTokens() {
     sessionStorage.removeItem(STAFF_TOKEN_KEY);
 }
 
-
+// Centralized Authenticated Fetch Wrapper
 async function authFetch(url, options = {}) {
     options.headers = options.headers || {};
     const token = getToken();
@@ -97,15 +107,16 @@ function handleSessionExpired() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-
-
+    // Smart narration first: it reads browser accessibility preferences and
+    // prepares the aria-live channel before any UI announcement is made.
     try { SpeechHelper.initSmartNarration(); } catch (e) { console.error(e); }
-
+    // Login must bind first: it is the only critical function on the login page.
     initSessionGate();
     initPasswordRecovery();
     initResetCodeForm();
-    initAdminCreateUserForm();
     initTopBarActions();
+    initModals();
+    checkSystemHealth();
     try { initUserFunctions(); } catch (e) { console.error(e); }
     try { initAccessibility(); } catch (e) { console.error(e); }
     try { initForms(); } catch (e) { console.error(e); }
@@ -117,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-
+    // Initial session bootstrap: the server already rendered only this role's workspace.
     bootstrapSession().then((ok) => {
         if (ok) {
             loadRoleData();
@@ -127,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-
+    // Auto-polling for live updates every 25 seconds (current role only)
     setInterval(() => {
         if (!currentUser) return;
         if (currentRole === 'volunteer') {
@@ -140,21 +151,18 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (currentRole === 'user') {
             loadAlerts();
             loadElderlyRequests();
+            loadElderlySosState();
         }
     }, 25000);
 });
 
-
-
-
+// =========================================================================
+// 1. Session Bootstrap
+// =========================================================================
 async function bootstrapSession() {
-    if (IS_GUEST) {
-        currentUser = null;
-        return true;
-    }
     try {
-
-
+        // The HttpOnly cookie is the single source of truth for the web UI; the server
+        // already rendered exactly this role from the same cookie.
         const res = await fetch('/api/auth/me', { headers: { 'Accept': 'application/json' } });
         const data = await res.json();
         if (data.success && data.user) {
@@ -163,7 +171,7 @@ async function bootstrapSession() {
                 clearTokens();
                 return false;
             }
-
+            // Drop any stale bearer token so API calls keep using the cookie identity.
             clearTokens();
             setCurrentUser(data.user);
             return true;
@@ -197,9 +205,9 @@ async function loginWithPhone(phone, password, showFeedback = true, remember = f
     }
 }
 
-
-
-
+// =========================================================================
+// Login gate: single entry point for every role
+// =========================================================================
 function initSessionGate() {
     const form = document.getElementById('sessionGateForm');
     if (!form) return;
@@ -259,7 +267,7 @@ function initSessionGate() {
         const result = await loginWithPhone(phone, password, true, remember);
         if (result === true) {
             form.reset();
-
+            // Full reload so the server renders only this account's role workspace.
             window.location.replace(homeForRole(currentUser ? currentUser.role_code : 'elderly'));
         } else {
             showError(result || 'Не удалось войти. Проверьте телефон и пароль.');
@@ -267,6 +275,22 @@ function initSessionGate() {
     });
 }
 
+// Top bar actions live outside the login gate and must work on every authenticated page.
+async function checkSystemHealth() {
+    const statusEl = document.getElementById('systemStatusText');
+    if (!statusEl) return;
+    try {
+        const res = await fetch('/api/health', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json();
+        const ok = res.ok && data.status === 'ok';
+        statusEl.textContent = ok ? 'СИСТЕМА ОНЛАЙН' : 'СИСТЕМА НЕДОСТУПНА';
+        statusEl.style.color = ok ? '' : 'var(--danger-color)';
+        statusEl.style.fontWeight = ok ? '' : '800';
+    } catch (e) {
+        statusEl.textContent = 'НЕТ СВЯЗИ';
+        statusEl.style.color = 'var(--danger-color)';
+    }
+}
 
 function initTopBarActions() {
     const logoutBtn = document.getElementById('btnLogout');
@@ -308,7 +332,7 @@ function hideSessionGate() {
     if (gate) gate.style.display = 'none';
 }
 
-
+// Family mode: change password and revoke all devices
 function initSecurityControls() {
     const openBtn = document.getElementById('btnChangePassword');
     const modal = document.getElementById('passwordModal');
@@ -384,7 +408,7 @@ function initSecurityControls() {
     });
 }
 
-
+// Family login gate: "Забыли пароль?" with a coordinator-issued one-time code
 function initPasswordRecovery() {
     const showBtn = document.getElementById('showResetFormBtn');
     const box = document.getElementById('resetPasswordBox');
@@ -462,7 +486,7 @@ function initPasswordRecovery() {
     });
 }
 
-
+// Coordinator console: issue a one-time password reset code
 function initResetCodeForm() {
     const form = document.getElementById('resetCodeForm');
     if (!form) return;
@@ -495,45 +519,6 @@ function initResetCodeForm() {
     });
 }
 
-function initAdminCreateUserForm() {
-    const form = document.getElementById('adminCreateUserForm');
-    if (!form) return;
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const msg = document.getElementById('adminCreateUserMessage');
-        const payload = {
-            role_id: parseInt(document.getElementById('newUserRole').value, 10),
-            name: document.getElementById('newUserName').value.trim(),
-            phone: document.getElementById('newUserPhone').value.trim(),
-            password: document.getElementById('newUserPassword').value,
-            region_code: document.getElementById('newUserRegion').value,
-            address: document.getElementById('newUserAddress').value.trim()
-        };
-        if (!payload.name || !payload.phone || !payload.password) {
-            if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = 'Заполните имя, телефон и пароль'; }
-            return;
-        }
-        try {
-            const res = await authFetch('/api/admin/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json().catch(() => ({}));
-            if (res.ok && data.success) {
-                if (msg) { msg.className = 'alert-banner alert-banner-success'; msg.style.display = 'block'; msg.textContent = `Пользователь создан: ${data.user?.name || ''} (${data.user?.phone || ''})`; }
-                form.reset();
-                document.getElementById('newUserRegion').value = 'MINSK_CITY';
-                loadAllVolunteers && loadAllVolunteers(volunteerFilterState?.filter || 'all', volunteerFilterState?.minRating ?? null);
-            } else {
-                if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = data.error || 'Не удалось создать пользователя'; }
-            }
-        } catch (err) {
-            if (msg) { msg.className = 'alert-banner alert-banner-danger'; msg.style.display = 'block'; msg.textContent = 'Ошибка сети'; }
-        }
-    });
-}
-
 function setCurrentUser(user) {
     currentUser = user;
     const display = document.getElementById('currentUserDisplay');
@@ -551,15 +536,14 @@ function setCurrentUser(user) {
     }
 }
 
-
-
-
+// =========================================================================
+// 2. Role workspace: load data for the single server-rendered role only
+// =========================================================================
 function loadRoleData() {
     if (currentRole === 'user') {
-        if (!IS_GUEST) {
-            loadElderlyRequests();
-        }
+        loadElderlyRequests();
         loadAlerts();
+        loadElderlySosState();
         loadEducation();
     } else if (currentRole === 'admin') {
         loadAdminAnalytics();
@@ -577,29 +561,59 @@ function loadRoleData() {
     }
 }
 
-
-
+// =========================================================================
+// 3. User View: Strictly 2 Functions
+// =========================================================================
+// Shared modal behaviour: Escape closes the topmost dialog and returns focus
+// to the element that opened it.
+function initModals() {
+    let lastFocused = null;
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        const openModal = Array.from(document.querySelectorAll('.modal-backdrop'))
+            .find(m => m.style.display && m.style.display !== 'none');
+        if (!openModal) return;
+        openModal.style.display = 'none';
+        if (openModal.id === 'geo-complete-modal') currentCompletingRequestId = null;
+        if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
+    });
+    document.addEventListener('focusin', (event) => {
+        const modal = event.target.closest ? event.target.closest('.modal-backdrop') : null;
+        if (modal) lastFocused = document.activeElement;
+    });
+}
 
 function initUserFunctions() {
-    const tabs = [
-        { btn: document.getElementById('btnFuncRequest'), pane: document.getElementById('func-request'), label: 'Мне нужна помощь' },
-        { btn: document.getElementById('btnFuncSafety'), pane: document.getElementById('func-safety'), label: 'Проверка на мошенничество' },
-        { btn: document.getElementById('btnFuncEducation'), pane: document.getElementById('func-education'), label: 'Уроки безопасности' }
-    ].filter(t => t.btn && t.pane);
+    const btnRequest = document.getElementById('btnFuncRequest');
+    const btnSafety = document.getElementById('btnFuncSafety');
+    const paneRequest = document.getElementById('func-request');
+    const paneSafety = document.getElementById('func-safety');
 
-    tabs.forEach(tab => {
-        tab.btn.addEventListener('click', () => {
-            tabs.forEach(t => {
-                t.btn.classList.toggle('active', t === tab);
-                t.pane.style.display = t === tab ? 'block' : 'none';
-            });
-            if (tab.pane.id === 'func-education') {
-                loadEducation();
-            }
-            SpeechHelper.speak('Открыт раздел: ' + tab.label);
+    if (btnRequest && btnSafety && paneRequest && paneSafety) {
+        btnRequest.setAttribute('aria-pressed', 'true');
+        btnSafety.setAttribute('aria-pressed', 'false');
+        btnRequest.addEventListener('click', () => {
+            btnRequest.classList.add('active');
+            btnSafety.classList.remove('active');
+            btnRequest.setAttribute('aria-pressed', 'true');
+            btnSafety.setAttribute('aria-pressed', 'false');
+            paneRequest.style.display = 'block';
+            paneSafety.style.display = 'none';
+            SpeechHelper.speak('Открыт раздел: Заказ помощи');
         });
-    });
 
+        btnSafety.addEventListener('click', () => {
+            btnSafety.classList.add('active');
+            btnRequest.classList.remove('active');
+            btnSafety.setAttribute('aria-pressed', 'true');
+            btnRequest.setAttribute('aria-pressed', 'false');
+            paneSafety.style.display = 'block';
+            paneRequest.style.display = 'none';
+            SpeechHelper.speak('Открыт раздел: Школа безопасности и проверка на мошенничество');
+        });
+    }
+
+    // Category selection in request form with dynamic helpful placeholders
     const catPlaceholders = {
         '1': 'Например: купите, пожалуйста, молоко 2.5% 1 пакет, буханку чёрного хлеба и десяток яиц...',
         '2': 'Например: купить в аптеке корвалол, аспирин и пластырь по рецепту врача...',
@@ -609,15 +623,17 @@ function initUserFunctions() {
         '6': 'Например: попить вместе чай, почитать свежую газету и пообщаться...'
     };
 
-
+    // Category cards: delegated handler so categories added via the admin panel work too
     const catGrid = document.getElementById('categoryGrid');
     if (catGrid && catGrid.dataset.bound !== '1') {
         catGrid.dataset.bound = '1';
-        catGrid.addEventListener('click', (ev) => {
-            const card = ev.target.closest('.category-card');
-            if (!card) return;
-            catGrid.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
+        const selectCard = (card) => {
+            catGrid.querySelectorAll('.category-card').forEach(c => {
+                c.classList.remove('selected');
+                c.setAttribute('aria-checked', 'false');
+            });
             card.classList.add('selected');
+            card.setAttribute('aria-checked', 'true');
             const catId = card.getAttribute('data-id');
             const selInput = document.getElementById('selectedCategory');
             if (selInput) selInput.value = catId;
@@ -627,9 +643,24 @@ function initUserFunctions() {
             }
             const title = card.querySelector('.category-title')?.innerText || '';
             SpeechHelper.speak('Выбрана категория: ' + title);
+        };
+        catGrid.addEventListener('click', (ev) => {
+            const card = ev.target.closest('.category-card');
+            if (card) selectCard(card);
+        });
+        catGrid.addEventListener('keydown', (ev) => {
+            if (ev.key !== 'Enter' && ev.key !== ' ') return;
+            const card = ev.target.closest('.category-card');
+            if (card) {
+                ev.preventDefault();
+                selectCard(card);
+            }
         });
     }
 
+    enhanceCategoryCards();
+
+    // Voice dictation for request
     const micBtn = document.getElementById('micBtn');
     const requestDesc = document.getElementById('requestDescription');
     if (micBtn && requestDesc) {
@@ -641,6 +672,7 @@ function initUserFunctions() {
         });
     }
 
+    // Voice dictation for fraud scanner
     const micFraudBtn = document.getElementById('micFraudBtn');
     const fraudInput = document.getElementById('fraudCheckInput');
     if (micFraudBtn && fraudInput) {
@@ -653,6 +685,39 @@ function initUserFunctions() {
     }
 }
 
+function enhanceCategoryCards() {
+    const grid = document.getElementById('categoryGrid');
+    if (!grid) return;
+    grid.setAttribute('role', 'radiogroup');
+    grid.setAttribute('aria-label', 'Категория помощи');
+    grid.querySelectorAll('.category-card').forEach(card => {
+        card.setAttribute('role', 'radio');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-checked', card.classList.contains('selected') ? 'true' : 'false');
+    });
+}
+
+// Reset the category picker after a form reset so the visible selection and
+// the hidden category_id always agree.
+function resetCategorySelection() {
+    const grid = document.getElementById('categoryGrid');
+    const selected = document.getElementById('selectedCategory');
+    const desc = document.getElementById('requestDescription');
+    if (!grid) return;
+    const cards = grid.querySelectorAll('.category-card');
+    cards.forEach(c => c.classList.remove('selected'));
+    const first = cards[0];
+    if (first) {
+        first.classList.add('selected');
+        cards.forEach(c => c.setAttribute('aria-checked', c === first ? 'true' : 'false'));
+        if (selected) selected.value = first.getAttribute('data-id') || '1';
+        if (desc) desc.placeholder = 'Например: купите, пожалуйста, молоко и хлеб...';
+    }
+    enhanceCategoryCards();
+}
+window.resetCategorySelection = resetCategorySelection;
+
+// Load request types from the API so admin-added categories appear for seniors
 async function loadCategoryCards() {
     const grid = document.getElementById('categoryGrid');
     if (!grid) return;
@@ -664,18 +729,19 @@ async function loadCategoryCards() {
         if (list.length === 0) return;
         grid.innerHTML = list.map((c, index) => `
             <div class="category-card${index === 0 ? ' selected' : ''}" data-id="${Number(c.id)}">
-                <span class="category-icon">${Icons.category(c.id)}</span>
+                <span class="category-icon">${Icons.categoryByName(c.icon)}</span>
                 <div class="category-title">${escapeHtml(c.title)}</div>
             </div>
         `).join('');
         const selected = document.getElementById('selectedCategory');
         if (selected && list[0]) selected.value = String(list[0].id);
+        enhanceCategoryCards();
     } catch (e) {
         console.error('Failed to load request categories', e);
     }
 }
 
-
+// Load the country-wide region catalogue (all regions of Belarus)
 async function loadRegions() {
     try {
         const res = await fetch('/api/regions', { headers: { 'Accept': 'application/json' } });
@@ -711,55 +777,7 @@ async function loadRegions() {
     }
 }
 
-
-async function rateRequest(requestId, rating) {
-    if (!requestId || rating < 1 || rating > 5) return;
-    try {
-        const res = await authFetch(`/api/requests/${requestId}/rate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rating })
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-            loadElderlyRequests();
-        } else {
-            alert(data.error || 'Не удалось сохранить оценку');
-        }
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка сети при сохранении оценки');
-    }
-}
-window.rateRequest = rateRequest;
-
-function renderRatingControl(req) {
-    const current = parseInt(req.rating_score || 0, 10);
-    if (current >= 1 && current <= 5) {
-        return `
-            <div class="secret-code-box" style="text-align:center;">
-                <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Оценка</div>
-                <div style="font-size: 1.1em; font-weight: 800; color: var(--accent-color);">Оценено ${current} ${current === 1 ? 'звезда' : (current < 5 ? 'звезды' : 'звёзд')}</div>
-            </div>
-        `;
-    }
-
-    const stars = [1,2,3,4,5].map(n => `
-        <button type="button"
-            class="btn btn-outline btn-sm"
-            style="min-width:44px; min-height:44px; font-size:1.2em; padding:4px 8px;"
-            aria-label="Оценить на ${n}"
-            onclick="rateRequest(${req.id}, ${n})">&#9733; ${n}</button>
-    `).join('');
-
-    return `
-        <div class="secret-code-box" style="text-align:center;">
-            <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold; margin-bottom: 8px;">Оцените работу волонтёра</div>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:center;">${stars}</div>
-        </div>
-    `;
-}
-
+// Load current user's active requests (with secret codes)
 async function loadElderlyRequests() {
     const container = document.getElementById('elderlyRequestsList');
     if (!container) return;
@@ -772,23 +790,14 @@ async function loadElderlyRequests() {
             container.innerHTML = json.data.map(req => {
                 let statusBadge = '';
                 if (req.status === 'open') {
-                    statusBadge = `<span class="badge badge-open">${Icons.clock} Ищет волонтёра</span>`;
+                    statusBadge = `<span class="badge badge-open">${Icons.clock} Ищем волонтёра</span>`;
                 } else if (req.status === 'in_progress') {
-                    statusBadge = `<span class="badge badge-warning">${Icons.volunteer} В пути (${escapeHtml(req.volunteer_name || 'Назначен')})</span>`;
+                    statusBadge = `<span class="badge badge-warning">${Icons.volunteer} Волонтёр в пути (${escapeHtml(req.volunteer_name || 'Назначен')})</span>`;
                 } else if (req.status === 'completed') {
                     statusBadge = `<span class="badge badge-success">${Icons.check} Выполнено</span>`;
                 } else {
                     statusBadge = `<span class="badge badge-cancelled">${Icons.cross} Отменено</span>`;
                 }
-
-                const rightBox = req.status === 'completed'
-                    ? renderRatingControl(req)
-                    : `
-                        <div class="secret-code-box">
-                            <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Секретное кодовое слово:</div>
-                            <div style="font-size: 1.3em; font-weight: 900; color: var(--accent-color); letter-spacing: 1px;">&lt;${escapeHtml(req.secret_code)}&gt;</div>
-                        </div>
-                    `;
 
                 return `
                     <div class="card card-accent-primary" style="margin-bottom: 14px;">
@@ -802,27 +811,39 @@ async function loadElderlyRequests() {
                                     ${Icons.mapPin} <span>${escapeHtml(req.address)} • Дата: ${escapeHtml(req.created_at)}</span>
                                 </p>
                             </div>
-                            ${rightBox}
+                            <div class="secret-code-box">
+                                <div style="font-size: 0.8em; color: var(--accent-color); font-weight: bold;">Секретное проверочное слово:</div>
+                                <div style="font-size: 1.3em; font-weight: 900; color: var(--accent-color); letter-spacing: 1px;">«${escapeHtml(req.secret_code)}»</div>
+                            </div>
                         </div>
                     </div>
                 `;
             }).join('');
         } else {
-            container.innerHTML = '<p class="text-muted">У вас пока нет активных заявок. Выберите категорию помощи выше и нажмите «Вызвать помощь».</p>';
+            container.innerHTML = '<p class="text-muted">У вас пока нет активных заявок. Выберите категорию выше и нажмите «Отправить заявку».</p>';
         }
     } catch (e) {
         console.error(e);
         container.innerHTML = '<p style="color: var(--danger-color);">Ошибка загрузки ваших заявок.</p>';
     }
 }
+
+// =========================================================================
+// 4. Admin View: Management & Analytics
+// =========================================================================
 function initAdminSubnav() {
     const adminBtns = document.querySelectorAll('.admin-subnav-btn');
     adminBtns.forEach(btn => {
+        btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
         btn.addEventListener('click', () => {
-            adminBtns.forEach(b => b.classList.remove('active'));
+            adminBtns.forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-pressed', 'false');
+            });
             document.querySelectorAll('.admin-tab-pane').forEach(p => p.style.display = 'none');
 
             btn.classList.add('active');
+            btn.setAttribute('aria-pressed', 'true');
             const targetId = btn.getAttribute('data-admin-tab');
             const targetPane = document.getElementById(targetId);
             if (targetPane) targetPane.style.display = 'block';
@@ -850,26 +871,26 @@ async function loadAdminAnalytics() {
             document.getElementById('statCompletedRequests').innerText = s.completed_requests;
             document.getElementById('statVerifiedVolunteers').innerText = `${s.verified_volunteers} / ${s.total_volunteers}`;
 
-
+            // Update pending badge
             const badge = document.getElementById('pendingCountBadge');
             if (badge) {
                 badge.innerText = s.pending_volunteers;
                 badge.style.display = s.pending_volunteers > 0 ? 'inline-block' : 'none';
             }
 
-
+            // Render category progress bars
             const barsContainer = document.getElementById('categoryAnalyticsBars');
             if (barsContainer && s.category_distribution) {
-                const maxCount = Math.max(...s.category_distribution.map(c => c.count), 1);
                 barsContainer.innerHTML = s.category_distribution.map(c => {
-                    const percent = Math.round((c.count / maxCount) * 100);
+                    const maxCount = Math.max(...s.category_distribution.map(x => Number(x.count) || 0), 1);
+                    const percent = Math.round(((Number(c.count) || 0) / maxCount) * 100);
                     return `
                         <div class="category-progress-item">
                             <div class="category-progress-label">
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">${Icons.category(c.id)} ${escapeHtml(c.title)}</span>
-                                <strong>${c.count} заявок</strong>
+                                <strong>${(Number(c.count) || 0)} заявок • ${percent}%</strong>
                             </div>
-                            <div class="progress-track">
+                            <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-label="${escapeHtml(c.title)}: ${percent}%">
                                 <div class="progress-bar-fill" style="width: ${percent}%;"></div>
                             </div>
                         </div>
@@ -878,11 +899,12 @@ async function loadAdminAnalytics() {
             }
         }
 
+        // Load leaderboard into admin
         const adminLb = document.getElementById('adminLeaderboardList');
         if (adminLb) {
             const lbRes = await authFetch('/api/volunteers/leaderboard');
             const lbJson = await lbRes.json();
-            if (lbJson.data) {
+            if (lbJson.data && lbJson.data.length > 0) {
                 adminLb.innerHTML = lbJson.data.map((v, i) => `
                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
                         <div>
@@ -894,14 +916,22 @@ async function loadAdminAnalytics() {
                         </div>
                     </div>
                 `).join('');
+            } else if (adminLb) {
+                adminLb.innerHTML = '<p class="text-muted">Пока нет верифицированных волонтёров с баллами.</p>';
             }
         }
     } catch (e) {
         console.error('Error loading admin analytics', e);
+        ['statTotalRequests', 'statActiveRequests', 'statCompletedRequests', 'statVerifiedVolunteers'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = '—';
+        });
+        const bars = document.getElementById('categoryAnalyticsBars');
+        if (bars) bars.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить аналитику. Обновите страницу.</p>';
     }
 }
 
-
+// Volunteer Verification Queue
 let volunteerFilterState = { filter: 'all', minRating: null };
 
 function applyRatingFilter() {
@@ -955,19 +985,10 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
             tbody.innerHTML = list.map(v => {
                 const status = parseInt(v.is_verified);
                 const rating = parseFloat(v.rating || 0);
-                const verificationStatus = String(v.verification_status || '').toUpperCase();
                 let badge = '';
                 let actions = '';
 
-                if (verificationStatus === 'BLOCKED_LOW_RATING' || (rating < 3 && status !== -1)) {
-                    badge = `<span class="badge badge-rejected" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.alert} Временно заблокирован (низкий рейтинг)</span>`;
-                    actions = `
-                        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-start;">
-                            <small style="color:var(--text-muted);">Обратиться в ТЦСОН или позвонить в поддержку: <strong>+375441111110</strong></small>
-                            ${currentRole === 'admin' ? `<button class="btn btn-success btn-xs" onclick="restoreVolunteer(${v.user_id})">${Icons.check} Восстановить права</button>` : '<span class="badge badge-open">Восстановление: только админ</span>'}
-                        </div>
-                    `;
-                } else if (status === 1) {
+                if (status === 1) {
                     badge = `<span class="badge badge-verified" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.check} Верифицирован</span>`;
                     actions = `<button class="btn btn-outline btn-xs" style="color: var(--danger-color);" onclick="rejectVolunteer(${v.user_id})">${Icons.cross} Отозвать</button>`;
                 } else if (status === 0) {
@@ -983,15 +1004,20 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                     actions = `<button class="btn btn-success btn-xs" onclick="verifyVolunteer(${v.user_id})">${Icons.check} Верифицировать</button>`;
                 }
 
-
-                if (rating < 3.5 && verificationStatus !== 'BLOCKED_LOW_RATING' && rating >= 3) {
+                // Low rating -> offer the rehabilitation track (training + re-verification)
+                if (rating < 3.5) {
                     actions += `
                         <button class="btn btn-danger btn-xs" style="margin-left: 6px;" onclick="rehabilitateVolunteer(${v.user_id})">
                             ${Icons.alert} Реабилитация
                         </button>
                     `;
                 }
-                const docStatus = v.masked_passport ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>` : '<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>';
+
+                const docStatus = v.masked_passport
+                    ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>`
+                    : (v.id_provider
+                        ? `<span class="badge badge-open" style="font-size: 0.8em;">МСИ РБ: Сверено</span>`
+                        : `<span class="badge badge-pending" style="font-size: 0.8em;">Документы не загружены</span>`);
                 const policeStatus = (v.police_clearance_status === 'CLEAN')
                     ? `<span class="badge badge-success" style="font-size: 0.8em;">МВД: Проверено</span>`
                     : `<span class="badge badge-warning" style="font-size: 0.8em;">МВД: Ожидает справку</span>`;
@@ -1015,23 +1041,6 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
     } catch (e) {
         console.error(e);
         tbody.innerHTML = `<tr><td colspan="7" style="color: red; text-align: center;">Ошибка загрузки списка волонтёров</td></tr>`;
-    }
-}
-
-async function restoreVolunteer(id) {
-    if (!confirm('Восстановить права волонтёра? Это действие доступно только администратору.')) return;
-    try {
-        const res = await authFetch(`/api/coordinator/volunteers/${id}/restore`, { method: 'POST' });
-        const json = await res.json();
-        if (res.ok && json.success) {
-            alert(json.message || 'Права волонтёра восстановлены.');
-            loadAllVolunteers(volunteerFilterState.filter || 'all', volunteerFilterState.minRating);
-            loadAdminAnalytics();
-        } else {
-            alert(json.error || 'Не удалось восстановить права');
-        }
-    } catch (e) {
-        alert('Ошибка сети при восстановлении прав');
     }
 }
 
@@ -1068,7 +1077,7 @@ async function rejectVolunteer(id) {
     }
 }
 
-
+// Rehabilitation track for volunteers with a low rating
 async function rehabilitateVolunteer(id) {
     if (!confirm('Направить волонтёра на реабилитацию? При низком рейтинге будет назначен набор обучающих материалов, рейтинг сброшен на 4.0, а доступ к заявкам приостановлен до повторной проверки.')) return;
     try {
@@ -1091,9 +1100,9 @@ async function rehabilitateVolunteer(id) {
     }
 }
 
-
-
-
+// =========================================================================
+// 4b. Admin: request types (categories) and educational materials
+// =========================================================================
 let adminCategoriesCache = [];
 
 function showFormMessage(elementId, text, ok) {
@@ -1244,34 +1253,17 @@ async function loadAdminEducation() {
     }
 }
 
-function toggleEducationMediaField() {
-    const type = document.getElementById('eduType')?.value || 'memo';
-    const group = document.getElementById('eduMediaUrlGroup');
-    const input = document.getElementById('eduMediaUrl');
-    const show = type === 'video' || type === 'audio';
-    if (group) group.style.display = show ? 'block' : 'none';
-    if (input) {
-        input.required = type === 'video';
-        if (!show) input.value = '';
-    }
-}
-window.toggleEducationMediaField = toggleEducationMediaField;
-
 async function submitEducationForm(event) {
     if (event) event.preventDefault();
     const payload = {
         title: document.getElementById('eduTitle').value.trim(),
         type: document.getElementById('eduType').value,
-        category: document.getElementById('eduCategory').value.trim() || 'Безопасность',
+        category: document.getElementById('eduCategory').value.trim() || 'Общее',
         content: document.getElementById('eduContent').value.trim(),
-        audio_url: document.getElementById('eduMediaUrl')?.value.trim() || null
+        audio_url: document.getElementById('eduAudioUrl')?.value.trim() || null
     };
     if (!payload.title || !payload.content) {
         showFormMessage('educationFormMessage', 'Укажите заголовок и текст материала', false);
-        return false;
-    }
-    if (payload.type === 'video' && !payload.audio_url) {
-        showFormMessage('educationFormMessage', 'Для видео укажите ссылку YouTube', false);
         return false;
     }
     try {
@@ -1282,20 +1274,19 @@ async function submitEducationForm(event) {
         });
         const json = await res.json();
         if (res.ok && json.success) {
-            showFormMessage('educationFormMessage', 'Материал добавлен', true);
+            showFormMessage('educationFormMessage', 'Обучающий материал добавлен', true);
             const form = document.getElementById('educationForm');
             if (form) form.reset();
-            toggleEducationMediaField();
             loadAdminEducation();
-            loadEducation();
         } else {
             showFormMessage('educationFormMessage', json.error || 'Не удалось добавить материал', false);
         }
     } catch (e) {
-        showFormMessage('educationFormMessage', 'Ошибка сети при сохранении', false);
+        showFormMessage('educationFormMessage', 'Сбой сети при сохранении', false);
     }
     return false;
 }
+
 async function deleteEducationMaterial(id) {
     if (!confirm('Удалить этот обучающий материал?')) return;
     try {
@@ -1372,11 +1363,14 @@ async function loadAdminRequests(status = 'all', region = null) {
 }
 
 async function adminChangeRequestStatus(id, newStatus) {
+    if (newStatus === 'completed' && !confirm(`Завершить заявку #${id} вручную? Это обходит проверку секретного слова и GPS; действие будет записано в журнал.`)) {
+        return;
+    }
     try {
         const res = await authFetch(`/api/coordinator/requests/${id}/status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
+            body: JSON.stringify({ status: newStatus, force: newStatus === 'completed' })
         });
         const data = await res.json();
         if (data.success) {
@@ -1415,6 +1409,7 @@ async function loadAdminAlerts() {
         }
     } catch (e) {
         console.error(e);
+        list.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить оповещения. Обновите страницу.</p>';
     }
 }
 
@@ -1432,9 +1427,9 @@ async function deleteAdminAlert(id) {
     }
 }
 
-
-
-
+// =========================================================================
+// 5. Volunteer View & Strict Verification Enforcement
+// =========================================================================
 async function checkVolunteerStatus() {
     const notice = document.getElementById('volunteerVerificationNotice');
     const title = document.getElementById('volVerifyTitle');
@@ -1446,45 +1441,40 @@ async function checkVolunteerStatus() {
         const json = await res.json();
         if (json.success && json.user) {
             const user = json.user;
-            const profile = user.profile || {};
-            const isVerified = parseInt(profile.is_verified || 0, 10);
-            const verificationStatus = String(profile.verification_status || '').toUpperCase();
-            const rating = parseFloat(profile.rating || 0);
-            volunteerBlockedLowRating = verificationStatus === 'BLOCKED_LOW_RATING' || rating < 3.0;
-
-            if (volunteerBlockedLowRating) {
-                notice.style.borderLeftColor = 'var(--danger-color)';
-                notice.style.background = '#fef2f2';
-                title.innerHTML = `${Icons.alert} <span>Статус волонтёра: Временно заблокирован из-за низкого рейтинга</span>`;
-                title.style.color = 'var(--danger-color)';
-                desc.innerHTML = 'Из-за низкого рейтинга вы временно не можете принимать задания. Обратитесь в ТЦСОН или позвоните в поддержку по номеру <strong>+375441111110</strong> для восстановления прав. Права может восстановить только администратор.';
-                return;
-            }
-
+            const isVerified = user.profile ? parseInt(user.profile.is_verified) : 0;
+            const badgeBtn = document.getElementById('btnOpenVolunteerBadge');
+            const feed = document.getElementById('volunteerRequestList');
+            const feedCard = feed ? feed.closest('.card') : null;
+            if (badgeBtn) badgeBtn.disabled = isVerified !== 1;
+            if (feedCard) feedCard.style.display = isVerified === 1 ? '' : 'none';
             if (isVerified === 1) {
                 notice.style.borderLeftColor = 'var(--accent-color)';
                 notice.style.background = '#f0fdf4';
                 title.innerHTML = `${Icons.check} <span>Статус волонтёра: Верифицирован</span>`;
                 title.style.color = 'var(--accent-color)';
-                desc.innerText = 'Ваш профиль подтверждён. Вы можете принимать заявки и помогать подопечным.';
+                desc.innerText = 'Ваша личность проверена ТЦСОН. Вы имеете полный доступ к приёму заявок.';
             } else if (isVerified === 0) {
                 notice.style.borderLeftColor = 'var(--warning-color)';
                 notice.style.background = '#fffbeb';
-                title.innerHTML = `${Icons.clock} <span>Статус волонтёра: Ожидает проверки</span>`;
+                title.innerHTML = `${Icons.clock} <span>Статус волонтёра: Ожидает верификации</span>`;
                 title.style.color = 'var(--warning-color)';
-                desc.innerText = 'Ваш профиль находится на проверке. До завершения проверки вы не можете брать заявки.';
+                desc.innerText = 'Ваш профиль проходит проверку координатором ТЦСОН. До окончания верификации вы НЕ можете брать заявки.';
             } else {
                 notice.style.borderLeftColor = 'var(--danger-color)';
                 notice.style.background = '#fef2f2';
                 title.innerHTML = `${Icons.cross} <span>Статус волонтёра: Отклонён / Заблокирован</span>`;
                 title.style.color = 'var(--danger-color)';
-                desc.innerText = 'Ваш доступ к заявкам ограничен. Обратитесь к координатору или администратору.';
+                desc.innerText = 'Ваш допуск к заявкам заблокирован администрацией.';
             }
         }
     } catch (e) {
         console.error(e);
+        title.innerHTML = `${Icons.alert} <span>Статус волонтёра недоступен</span>`;
+        title.style.color = 'var(--danger-color)';
+        desc.innerText = 'Не удалось проверить статус. Обновите страницу или обратитесь к координатору.';
     }
 }
+
 async function loadVolunteerActiveTasks() {
     const list = document.getElementById('volunteerActiveTasksList');
     if (!list) return;
@@ -1523,37 +1513,21 @@ async function loadVolunteerActiveTasks() {
     }
 }
 
-async function getLiveVolunteerCoords() {
-    if (!navigator.geolocation) return currentVolunteerCoords;
-    try {
-        const pos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-                enableHighAccuracy: true,
-                timeout: 5000,
-                maximumAge: 15000
-            });
-        });
-        currentVolunteerCoords = {
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude
-        };
-        return currentVolunteerCoords;
-    } catch (e) {
-        return currentVolunteerCoords;
-    }
-}
-
 async function loadVolunteerRequests() {
     const list = document.getElementById('volunteerRequestList');
     if (!list) return;
 
     try {
         const region = document.getElementById('volunteerRegionFilter')?.value || '';
-        const coords = await getLiveVolunteerCoords();
+        const coords = currentVolunteerCoords || { lat: 53.9168, lon: 27.5862 };
         const params = new URLSearchParams({ lat: String(coords.lat), lon: String(coords.lon) });
         if (region) params.set('region', region);
         const res = await authFetch('/api/requests?' + params.toString());
         const json = await res.json();
+        if (!res.ok) {
+            list.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить ленту заявок. Повторите попытку.</p>';
+            return;
+        }
         if (json.data) {
             if (json.data.length === 0) {
                 list.innerHTML = '<p class="text-muted">Сейчас нет открытых заявок в вашем районе.</p>';
@@ -1563,18 +1537,8 @@ async function loadVolunteerRequests() {
             list.innerHTML = json.data.map(req => {
                 let actionBtn = `<button class="btn btn-primary btn-sm" onclick="acceptRequest(${req.id})">${Icons.volunteer} Взять заявку</button>`;
                 if (req.status === 'in_progress') {
-                    actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (код)</button>`;
+                    actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (Код)</button>`;
                 }
-                if (volunteerBlockedLowRating && req.status === 'open') {
-                    actionBtn = `<div class="badge badge-cancelled" style="white-space:normal; text-align:center;">Низкий рейтинг: приём заявок временно недоступен</div>`;
-                }
-
-                const distanceMeters = (req.distance_meters !== undefined && req.distance_meters !== null)
-                    ? Math.round(Number(req.distance_meters))
-                    : null;
-                const distanceLabel = distanceMeters !== null
-                    ? (distanceMeters >= 1000 ? `${(distanceMeters / 1000).toFixed(1)} км` : `${distanceMeters} м`)
-                    : 'н/д';
 
                 return `
                     <div class="card card-accent-primary" style="margin-bottom: 12px;">
@@ -1584,7 +1548,7 @@ async function loadVolunteerRequests() {
                                 <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
                                 <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''} (Расстояние: ~${distanceLabel})</span>
+                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''}${req.distance_meters != null ? ' (расстояние: ~' + escapeHtml(String(req.distance_meters)) + ' м)' : ' (расстояние неизвестно)'}</span>
                                 </p>
                                 <p style="display: flex; align-items: center; gap: 6px;">
                                     ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
@@ -1600,8 +1564,10 @@ async function loadVolunteerRequests() {
         }
     } catch (e) {
         console.error(e);
+        list.innerHTML = '<p style="color: var(--danger-color);">Ошибка сети при загрузке заявок.</p>';
     }
 }
+
 async function acceptRequest(id) {
     try {
         const res = await authFetch(`/api/requests/${id}/accept`, {
@@ -1623,9 +1589,9 @@ async function acceptRequest(id) {
     }
 }
 
-
-
-
+// =========================================================================
+// M4: Geofenced Completion with Navigator Geolocation (Proof-of-Presence)
+// =========================================================================
 let currentCompletingRequestId = null;
 
 function openCompleteModal(id, addressHint = '') {
@@ -1654,6 +1620,8 @@ function openCompleteModal(id, addressHint = '') {
 
     if (coordsDisplay) {
         coordsDisplay.innerText = 'Определение GPS-координат...';
+        coordsDisplay.removeAttribute('data-lat');
+        coordsDisplay.removeAttribute('data-lon');
     }
 
     if (navigator.geolocation) {
@@ -1668,7 +1636,7 @@ function openCompleteModal(id, addressHint = '') {
             (err) => {
                 console.warn('Geolocation query warning:', err);
                 if (coordsDisplay) {
-                    coordsDisplay.innerText = 'GPS недоступен (будет использован адрес заявки)';
+                    coordsDisplay.innerText = 'GPS недоступен. Разрешите геолокацию в браузере — без координат подтвердить визит нельзя.';
                     coordsDisplay.removeAttribute('data-lat');
                     coordsDisplay.removeAttribute('data-lon');
                 }
@@ -1682,7 +1650,7 @@ function openCompleteModal(id, addressHint = '') {
     if (modal) modal.style.display = 'flex';
 }
 window.openCompleteModal = openCompleteModal;
-window.completeRequestPrompt = openCompleteModal;
+window.completeRequestPrompt = openCompleteModal; // Backward-compatible upgrade
 
 function closeCompleteModal() {
     const modal = document.getElementById('geo-complete-modal');
@@ -1691,7 +1659,7 @@ function closeCompleteModal() {
 }
 window.closeCompleteModal = closeCompleteModal;
 
-async function submitGeoComplete() {
+async function submitGeoComplete(overrideNoGps = false) {
     const reqIdInput = document.getElementById('geoCompleteRequestId');
     const id = reqIdInput ? reqIdInput.value : currentCompletingRequestId;
     const secretInput = document.getElementById('geoSecretWordInput');
@@ -1711,7 +1679,7 @@ async function submitGeoComplete() {
 
     if (confirmBtn) {
         confirmBtn.disabled = true;
-        confirmBtn.innerText = 'Проверка геолокации...';
+        confirmBtn.innerText = overrideNoGps ? 'Завершение по коду...' : 'Проверка геолокации...';
     }
 
     let lat = null;
@@ -1735,11 +1703,31 @@ async function submitGeoComplete() {
         }
     }
 
+    if ((lat === null || lon === null || isNaN(lat) || isNaN(lon)) && overrideNoGps) {
+        lat = 53.9168;
+        lon = 27.5862;
+    }
+
     try {
-        const payload = { secret_code: secretCode };
-        if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon)) {
-            payload.latitude = lat;
-            payload.longitude = lon;
+        if (lat === null || lon === null || isNaN(lat) || isNaN(lon)) {
+            if (errorBox) {
+                errorBox.style.display = 'block';
+                if (errorText) {
+                    errorText.innerHTML = `
+                        <div style="margin-bottom: 8px;">Не удалось определить GPS-координаты волонтёра.</div>
+                        <div style="font-size: 0.9em; margin-bottom: 10px;">Разрешите геолокацию в браузере или подтвердите визит только по кодовому слову подопечного:</div>
+                        <button type="button" class="btn btn-warning btn-sm" onclick="submitGeoComplete(true)" style="width: 100%; min-height: 40px; font-weight: 600;">
+                            ${Icons.check} Завершить по проверочному слову подопечного
+                        </button>
+                    `;
+                }
+            }
+            return;
+        }
+
+        const payload = { secret_code: secretCode, latitude: lat, longitude: lon };
+        if (overrideNoGps) {
+            payload.no_gps_override = true;
         }
 
         const res = await authFetch(`/api/requests/${id}/complete`, {
@@ -1752,7 +1740,10 @@ async function submitGeoComplete() {
         if (res.ok && data.success) {
             closeCompleteModal();
             SpeechHelper.speak('Визит успешно подтверждён! Вам начислено 50 очков опыта.');
-            alert(`Заявка #${id} успешно выполнена и подтверждена!\n\nРасстояние: ${data.distance_meters || 0} м.\nНачислено: +50 очков кармы.`);
+            const extraNote = data.verified_by === 'secret_word_override'
+                ? '\n(Подтверждено проверочным кодом подопечного без привязки к GPS)'
+                : `\nРасстояние: ${data.distance_meters || 0} м.`;
+            alert(`Заявка #${id} успешно выполнена и подтверждена!${extraNote}\nНачислено: +50 очков кармы.`);
             loadVolunteerRequests();
             loadVolunteerActiveTasks();
             loadLeaderboard();
@@ -1760,9 +1751,20 @@ async function submitGeoComplete() {
             const errMsg = data.error || 'Ошибка при завершении заявки';
             if (errorBox) {
                 errorBox.style.display = 'block';
-                if (errMsg.includes('вне допустимой зоны') || errMsg.includes('расстояние')) {
+                if (errMsg.includes('вне допустимой зоны') || errMsg.includes('расстояние') || data.can_override_with_secret) {
                     if (errorText) {
-                        errorText.innerHTML = `<strong>${Icons.alert} Превышение радиуса геозоны (до 150 м):</strong> ${escapeHtml(errMsg)}. Пожалуйста, подойдите ближе к дому подопечного.`;
+                        errorText.innerHTML = `
+                            <div style="margin-bottom: 8px;">
+                                <strong>${Icons.alert} Превышение радиуса геозоны (до 150 м):</strong>
+                            </div>
+                            <div style="font-size: 0.9em; margin-bottom: 12px; line-height: 1.4;">
+                                ${escapeHtml(errMsg)}.<br>
+                                Если подопечный подавал заявку с ПК (без точного GPS) или на устройстве высокая погрешность — вы можете завершить визит по кодовому слову:
+                            </div>
+                            <button type="button" class="btn btn-warning btn-sm" id="btnOverrideGeofence" onclick="submitGeoComplete(true)" style="width: 100%; min-height: 40px; font-weight: 600;">
+                                ${Icons.check} Завершить по проверочному слову подопечного
+                            </button>
+                        `;
                     }
                 } else {
                     if (errorText) errorText.innerText = errMsg;
@@ -1793,7 +1795,11 @@ async function loadLeaderboard() {
     try {
         const res = await authFetch('/api/volunteers/leaderboard');
         const json = await res.json();
-        if (json.data) {
+        if (!res.ok) {
+            box.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить таблицу лидеров.</p>';
+            return;
+        }
+        if (json.data && json.data.length > 0) {
             box.innerHTML = json.data.map((v, idx) => `
                 <div style="display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #e2e8f0;">
                     <div>
@@ -1805,13 +1811,43 @@ async function loadLeaderboard() {
                     </div>
                 </div>
             `).join('');
+        } else {
+            box.innerHTML = '<p class="text-muted">Пока нет выполненных заданий — таблица лидеров появится позже.</p>';
         }
     } catch (e) {
         console.error(e);
+        box.innerHTML = '<p style="color: var(--danger-color);">Ошибка загрузки таблицы лидеров.</p>';
+    }
+}
+
+// =========================================================================
+// 6. Shared Forms (Create Request, Anti-Fraud, Alerts)
+// =========================================================================
+function beginFormSubmit(form) {
+    if (!form || form.dataset.busy === '1') return false;
+    form.dataset.busy = '1';
+    const button = form.querySelector('button[type="submit"]') || form.querySelector('button:not([type])');
+    if (button) {
+        button.dataset.previousHtml = button.innerHTML;
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+    }
+    return true;
+}
+
+function endFormSubmit(form) {
+    if (!form) return;
+    form.dataset.busy = '0';
+    const button = form.querySelector('button[type="submit"]') || form.querySelector('button:not([type])');
+    if (button) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        if (button.dataset.previousHtml) button.innerHTML = button.dataset.previousHtml;
     }
 }
 
 function initForms() {
+    // Submit Help Request
     const helpForm = document.getElementById('helpForm');
     const selectedCatInput = document.getElementById('selectedCategory');
     const requestDesc = document.getElementById('requestDescription');
@@ -1819,9 +1855,13 @@ function initForms() {
     if (helpForm) {
         helpForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!beginFormSubmit(helpForm)) return;
+            try {
             const catId = selectedCatInput ? selectedCatInput.value : 1;
             const desc = requestDesc ? requestDesc.value.trim() : '';
-            const address = document.getElementById('requestAddress')?.value || 'Минск';
+            const address = document.getElementById('requestAddress')?.value
+                || document.getElementById('requestRegion')?.selectedOptions?.[0]?.textContent?.trim()
+                || 'Республика Беларусь';
 
             if (!desc) {
                 alert('Пожалуйста, укажите или надиктуйте, какая помощь вам нужна.');
@@ -1835,14 +1875,22 @@ function initForms() {
             }
 
             if (consentBox && consentBox.checked) {
-                authFetch('/api/consent', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        consent_type: 'DATA_PROCESSING_99Z',
-                        policy_version: '1.0'
-                    })
-                }).catch(() => {});
+                try {
+                    const consentRes = await authFetch('/api/consent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            consent_type: 'DATA_PROCESSING_99Z',
+                            policy_version: '1.0.0'
+                        })
+                    });
+                    if (!consentRes.ok) {
+                        throw new Error('consent rejected');
+                    }
+                } catch (consentErr) {
+                    alert('Не удалось зафиксировать согласие на обработку данных. Попробуйте ещё раз.');
+                    return;
+                }
             }
 
             const regionSelect = document.getElementById('requestRegion');
@@ -1850,20 +1898,19 @@ function initForms() {
             const selectedRegion = regionSelect?.selectedOptions?.[0];
             let reqLat = selectedRegion?.dataset?.lat ? parseFloat(selectedRegion.dataset.lat) : 53.9168;
             let reqLon = selectedRegion?.dataset?.lon ? parseFloat(selectedRegion.dataset.lon) : 27.5862;
-            let gpsCaptured = false;
             if (navigator.geolocation) {
                 try {
                     const pos = await new Promise((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(resolve, reject, {
                             enableHighAccuracy: true,
-                            timeout: 5000,
+                            timeout: 2500,
                             maximumAge: 60000
                         });
                     });
                     reqLat = pos.coords.latitude;
                     reqLon = pos.coords.longitude;
-                    gpsCaptured = true;
                 } catch (geoErr) {
+                    // Keep the regional centre as a fallback.
                 }
             }
 
@@ -1879,14 +1926,14 @@ function initForms() {
                         description: desc,
                         address: address,
                         latitude: reqLat,
-                        longitude: reqLon,
-                        gps_captured: gpsCaptured
+                        longitude: reqLon
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
                     showCreatedModal(data.secret_code);
                     helpForm.reset();
+                    resetCategorySelection();
                     loadElderlyRequests();
                     loadVolunteerRequests();
                 } else {
@@ -1896,10 +1943,13 @@ function initForms() {
                 console.error(err);
                 alert('Ошибка сети при создании заявки');
             }
+            } finally {
+                endFormSubmit(helpForm);
+            }
         });
     }
 
-
+    // Anti-Fraud Express Scanner
     const runFraudBtn = document.getElementById('runFraudCheckBtn');
     const fraudInput = document.getElementById('fraudCheckInput');
     const fraudResultBox = document.getElementById('fraudResultBox');
@@ -1944,7 +1994,7 @@ function initForms() {
         });
     }
 
-
+    // Anti-Fraud Quick Sample Buttons
     document.querySelectorAll('.fraud-sample-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const sampleText = btn.getAttribute('data-text');
@@ -1955,11 +2005,13 @@ function initForms() {
         });
     });
 
-
+    // Alert Form for Admin
     const alertForm = document.getElementById('alertForm');
     if (alertForm) {
         alertForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!beginFormSubmit(alertForm)) return;
+            try {
             const title = document.getElementById('alertInputTitle')?.value;
             const desc = document.getElementById('alertInputDesc')?.value;
             const severity = document.getElementById('alertInputSeverity')?.value || 'warning';
@@ -1981,6 +2033,9 @@ function initForms() {
                 }
             } catch (err) {
                 alert('Ошибка при публикации');
+            }
+            } finally {
+                endFormSubmit(alertForm);
             }
         });
     }
@@ -2013,22 +2068,12 @@ function clearEducationSearch() {
     renderEducationCards(selectedEducationCategory);
 }
 
-function getYoutubeEmbedUrl(url) {
-    if (!url) return null;
-    const raw = String(url).trim();
-    let m = raw.match(/[?&]v=([a-zA-Z0-9_-]{6,})/);
-    if (!m) m = raw.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/);
-    if (!m) m = raw.match(/youtube(?:-nocookie)?\.com\/embed\/([a-zA-Z0-9_-]{6,})/);
-    if (!m) m = raw.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/);
-    return m ? `https://www.youtube-nocookie.com/embed/${m[1]}` : null;
-}
-
 function renderEducationCards(category = 'all') {
     const container = document.getElementById('educationList');
-    const videoContainer = document.getElementById('educationVideoList');
     if (!container) return;
     selectedEducationCategory = category;
 
+    // Render category filter tabs
     const tabsContainer = document.getElementById('educationCategoryTabs');
     if (tabsContainer) {
         const categories = ['all', ...Array.from(new Set(allEducationMaterialsCache.map(m => m.category || 'Общее')))];
@@ -2038,7 +2083,7 @@ function renderEducationCards(category = 'all') {
                 ? allEducationMaterialsCache.length
                 : allEducationMaterialsCache.filter(m => (m.category || 'Общее') === cat).length;
             const label = cat === 'all' ? `Все (${count})` : `${escapeHtml(cat)} (${count})`;
-            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 38px; padding: 6px 12px;" onclick="renderEducationCards('${escapeJs(cat)}')">${label}</button>`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 38px; padding: 6px 12px;" onclick="renderEducationCards(${jsString(cat)})">${label}</button>`;
         }).join('');
     }
 
@@ -2055,50 +2100,23 @@ function renderEducationCards(category = 'all') {
         );
     }
 
-    const videos = filtered.filter(m => (m.type || 'memo') === 'video');
-    const memos = filtered.filter(m => (m.type || 'memo') !== 'video');
-
-    if (videoContainer) {
-        if (videos.length === 0) {
-            videoContainer.innerHTML = '<p class="text-muted">Видео пока не добавлены. Администратор может добавить видео по ссылке YouTube через панель управления.</p>';
-        } else {
-            videoContainer.innerHTML = videos.map(item => {
-                const embed = getYoutubeEmbedUrl(item.audio_url || item.content || '');
-                const videoBlock = embed
-                    ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:12px;background:#000;margin-bottom:12px;">
-                         <iframe src="${escapeHtml(embed)}" title="${escapeHtml(item.title || 'Видео-урок')}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-                       </div>`
-                    : `<p style="color:var(--danger-color);">Не удалось распознать ссылку YouTube. Укажите ссылку вида https://www.youtube.com/watch?v=...</p>`;
-                return `
-                    <div class="card" style="margin-bottom: 14px;">
-                        ${videoBlock}
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
-                            <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
-                            <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
-                        </div>
-                        ${item.content ? `<p style="margin: 8px 0 0 0; line-height: 1.5;">${escapeHtml(item.content)}</p>` : ''}
-                    </div>
-                `;
-            }).join('');
-        }
-    }
-
-    if (memos.length === 0) {
-        container.innerHTML = videos.length > 0
-            ? '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Текстовых памяток в этой категории нет.</div>'
-            : '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалы пока не найдены. Попробуйте другой запрос или категорию.</div>';
+    if (filtered.length === 0) {
+        container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted);">Материалов по вашему запросу не найдено. Попробуйте изменить поисковый запрос или выбрать категорию «Все».</div>';
         return;
     }
 
-    container.innerHTML = memos.map(item => `
+    container.innerHTML = filtered.map(item => `
         <div class="card" style="margin-bottom: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; flex-wrap: wrap;">
                 <h3 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">${Icons.shield} <span>${escapeHtml(item.title)}</span></h3>
                 <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
             </div>
             <p style="margin: 8px 0 12px 0; line-height: 1.5;">${escapeHtml(item.content)}</p>
-            <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak('${escapeJs(item.title)}. ${escapeJs(item.content)}')">
-                ${Icons.volume} Озвучить памятку
+            ${item.audio_url ? (String(item.type).toLowerCase() === 'video'
+                ? `<video controls preload="none" src="${escapeHtml(item.audio_url)}" style="max-width: 100%; margin-bottom: 12px; border-radius: 8px;"></video>`
+                : `<audio controls preload="none" src="${escapeHtml(item.audio_url)}" style="width: 100%; margin-bottom: 12px;"></audio>`) : ''}
+            <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak(${jsString(item.title + '. ' + item.content)})">
+                ${Icons.volume} Прослушать памятку
             </button>
         </div>
     `).join('');
@@ -2117,8 +2135,10 @@ async function loadEducation() {
         }
     } catch (e) {
         console.error('Error loading education materials', e);
+        container.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить памятки. Повторите попытку.</p>';
     }
 }
+
 let selectedVolunteerKnowledgeCategory = 'all';
 
 function renderVolunteerKnowledgeCards(category = 'all') {
@@ -2126,7 +2146,7 @@ function renderVolunteerKnowledgeCards(category = 'all') {
     if (!container) return;
     selectedVolunteerKnowledgeCategory = category;
 
-
+    // Filter relevant categories for volunteers
     const volunteerCategories = ['Волонтёрство', 'Реабилитация', 'Безопасность', 'Здоровье', 'Бытовая безопасность', 'Социальная помощь'];
     const relevantMaterials = allEducationMaterialsCache.filter(m => volunteerCategories.includes(m.category));
 
@@ -2139,7 +2159,7 @@ function renderVolunteerKnowledgeCards(category = 'all') {
                 ? relevantMaterials.length
                 : relevantMaterials.filter(m => (m.category || 'Общее') === cat).length;
             const label = cat === 'all' ? `Все стандарты (${count})` : `${escapeHtml(cat)} (${count})`;
-            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 36px; padding: 4px 10px;" onclick="renderVolunteerKnowledgeCards('${escapeJs(cat)}')">${label}</button>`;
+            return `<button type="button" class="btn ${isSelected ? 'btn-primary' : 'btn-outline'} btn-xs" style="min-height: 36px; padding: 4px 10px;" onclick="renderVolunteerKnowledgeCards(${jsString(cat)})">${label}</button>`;
         }).join('');
     }
 
@@ -2193,7 +2213,12 @@ async function loadAlerts() {
         if (json.data && json.data.length > 0) {
             const first = json.data[0];
             titleEl.innerHTML = `${Icons.alert} <span>${escapeHtml(first.title)}</span>`;
-            descEl.innerText = first.description;
+            descEl.innerHTML = json.data.map(a => `<p style="margin: 4px 0;"><strong>${escapeHtml(a.title)}:</strong> ${escapeHtml(a.description || '')}</p>`).join('');
+            alertBox.classList.remove('alert-banner-danger', 'alert-banner-warning', 'alert-banner-info', 'alert-banner-success');
+            const severityClass = first.severity === 'danger' ? 'alert-banner-danger'
+                : first.severity === 'warning' ? 'alert-banner-warning'
+                : first.severity === 'info' ? 'alert-banner-info' : 'alert-banner-warning';
+            alertBox.classList.add(severityClass);
             alertBox.style.display = 'block';
         } else {
             alertBox.style.display = 'none';
@@ -2203,13 +2228,34 @@ async function loadAlerts() {
     }
 }
 
+async function loadElderlySosState() {
+    const banner = document.getElementById('activeSosBanner');
+    const ticketSpan = document.getElementById('sosTicketId');
+    if (!banner) return;
+    try {
+        const res = await authFetch('/api/sos/my-active');
+        if (!res.ok) return;
+        const data = await res.json();
+        const alerts = data.data || data.alerts || [];
+        if (alerts.length > 0) {
+            if (ticketSpan) ticketSpan.innerText = alerts[0].emercom_ticket_id || ('SOS-' + alerts[0].id);
+            banner.style.display = 'block';
+        } else {
+            banner.style.display = 'none';
+        }
+    } catch (e) {
+        // The banner is optional on the senior home screen; keep the page usable.
+    }
+}
 
-
-
+// =========================================================================
+// 7. Accessibility Helpers & Escaping
+// =========================================================================
 function initAccessibility() {
     const toggleSeniorBtn = document.getElementById('toggleSeniorMode');
     if (toggleSeniorBtn) {
         const isSenior = localStorage.getItem('seniorMode') === 'true';
+        toggleSeniorBtn.setAttribute('aria-pressed', isSenior ? 'true' : 'false');
         if (isSenior) {
             document.body.classList.add('senior-mode');
             toggleSeniorBtn.classList.add('btn-primary');
@@ -2222,6 +2268,7 @@ function initAccessibility() {
 
         toggleSeniorBtn.addEventListener('click', () => {
             const active = document.body.classList.toggle('senior-mode');
+            toggleSeniorBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
             localStorage.setItem('seniorMode', active ? 'true' : 'false');
             if (active) {
                 toggleSeniorBtn.classList.add('btn-primary');
@@ -2253,15 +2300,16 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-function escapeJs(str) {
-    if (!str) return '';
-    return String(str)
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, ' ');
+// Safely embed a JavaScript string literal inside a double-quoted HTML
+// attribute. JSON.stringify handles quotes/newlines, escapeHtml protects the
+// attribute boundary, and the browser decodes entities before JS parses it.
+function jsString(value) {
+    return escapeHtml(JSON.stringify(String(value ?? '')));
 }
 
+// =========================================================================
+// M4: Senior Emergency SOS Implementation
+// =========================================================================
 async function triggerSos(customReason = 'Экстренная тревога подопечного: требуется срочная помощь') {
     const sosBtn = document.getElementById('sosBtn');
     if (sosBtn) {
@@ -2269,12 +2317,14 @@ async function triggerSos(customReason = 'Экстренная тревога п
         sosBtn.classList.add('sos-active');
     }
 
-    SpeechHelper.speak('Сигнал бедствия активирован. Передаём ваши координаты координатору ТЦСОН и в службу спасения 112.');
+    SpeechHelper.speak('Сигнал бедствия активирован. Передаём сигнал координатору ТЦСОН.', { priority: 0 });
 
-    let latitude = 53.9168;
-    let longitude = 27.5862;
+    // Do not invent a location: if GPS is unavailable the server falls back to
+    // the elderly profile stored in the account (the actual home address).
+    let latitude = null;
+    let longitude = null;
 
-
+    // Fast Geolocation attempt with 3.5s timeout
     if (navigator.geolocation) {
         try {
             const pos = await new Promise((resolve, reject) => {
@@ -2287,19 +2337,20 @@ async function triggerSos(customReason = 'Экстренная тревога п
             latitude = pos.coords.latitude;
             longitude = pos.coords.longitude;
         } catch (geoErr) {
-            console.warn('Geolocation unavailable, using profile fallback coordinates:', geoErr);
+            console.warn('Geolocation unavailable, server will use the profile address:', geoErr);
         }
     }
 
     try {
+        const payload = { reason: customReason };
+        if (latitude !== null && longitude !== null) {
+            payload.latitude = latitude;
+            payload.longitude = longitude;
+        }
         const res = await authFetch('/api/sos', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                latitude: latitude,
-                longitude: longitude,
-                reason: customReason
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await res.json();
@@ -2310,7 +2361,11 @@ async function triggerSos(customReason = 'Экстренная тревога п
             if (ticketSpan) ticketSpan.innerText = ticketId;
             if (banner) banner.style.display = 'block';
 
-            SpeechHelper.speak('Сигнал принят! Служба 112 и координатор района оповещены. Помощь направлена.');
+            if (data.emercom_notified === true) {
+                SpeechHelper.speak('Сигнал принят! Служба 112 и координатор района оповещены. Помощь направлена.', { priority: 0 });
+            } else {
+                SpeechHelper.speak('Сигнал принят координатором ТЦСОН. Если опасность непосредственная, срочно позвоните по номеру 112.', { priority: 0 });
+            }
             showSosConfirmationModal(data);
         } else {
             alert('Ошибка вызова экстренной помощи: ' + (data.error || 'Попробуйте позвонить 112 напрямую'));
@@ -2336,7 +2391,11 @@ function showSosConfirmationModal(data) {
         document.body.appendChild(modal);
     }
 
+    const notified = data.emercom_notified === true;
     const ticketId = data.emercom_ticket_id || ('SOS-' + (data.sos_id || '1'));
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'sosConfirmationTitle');
     modal.innerHTML = `
         <div class="modal-dialog card-accent-danger" style="border: 4px solid var(--danger-color); max-width: 500px;">
             <div style="text-align: center; margin-bottom: 20px;">
@@ -2347,8 +2406,8 @@ function showSosConfirmationModal(data) {
                         <line x1="12" y1="16" x2="12.01" y2="16"/>
                     </svg>
                 </div>
-                <h2 style="color: var(--danger-color); font-size: 1.5em; margin-bottom: 8px;">СИГНАЛ SOS ПРИНЯТ!</h2>
-                <p style="font-weight: bold; font-size: 1.05em;">Координатор ТЦСОН и служба МЧС (112) оповещены.</p>
+                <h2 id="sosConfirmationTitle" style="color: var(--danger-color); font-size: 1.5em; margin-bottom: 8px;">СИГНАЛ SOS ПРИНЯТ!</h2>
+                <p style="font-weight: bold; font-size: 1.05em;">${notified ? 'Координатор ТЦСОН и служба МЧС (112) оповещены.' : 'Координатор ТЦСОН оповещён. Интеграция с МЧС работает в тестовом режиме.'}</p>
             </div>
             <div style="background: var(--card-subtle); padding: 16px; border-radius: 12px; margin-bottom: 20px; font-size: 0.95em;">
                 <p style="margin-bottom: 8px;"><strong>Номер экстренного талона:</strong> <code style="font-size: 1.05em; font-weight: bold;">${escapeHtml(ticketId)}</code></p>
@@ -2363,105 +2422,21 @@ function showSosConfirmationModal(data) {
     modal.style.display = 'flex';
 }
 
-
-
-
-let sirenAudioCtx = null;
-let sirenOscillator = null;
-let sirenGainNode = null;
-let sirenInterval = null;
-let isSirenMuted = false;
-
-function initAudioContext() {
-    if (!sirenAudioCtx) {
-        const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
-        if (AudioCtxClass) {
-            sirenAudioCtx = new AudioCtxClass();
-        }
-    }
-    if (sirenAudioCtx && sirenAudioCtx.state === 'suspended') {
-        sirenAudioCtx.resume();
-    }
-}
-
-function playSiren() {
-    if (isSirenMuted) return;
-    initAudioContext();
-    if (!sirenAudioCtx) return;
-
-    if (sirenOscillator) {
-        return;
-    }
-
-    try {
-        sirenOscillator = sirenAudioCtx.createOscillator();
-        sirenGainNode = sirenAudioCtx.createGain();
-
-        sirenOscillator.type = 'sawtooth';
-        sirenGainNode.gain.setValueAtTime(0.12, sirenAudioCtx.currentTime);
-
-        sirenOscillator.connect(sirenGainNode);
-        sirenGainNode.connect(sirenAudioCtx.destination);
-
-        let highFreq = false;
-        sirenOscillator.frequency.setValueAtTime(600, sirenAudioCtx.currentTime);
-
-        sirenInterval = setInterval(() => {
-            if (!sirenOscillator || !sirenAudioCtx) return;
-            const targetFreq = highFreq ? 600 : 900;
-            sirenOscillator.frequency.cancelScheduledValues(sirenAudioCtx.currentTime);
-            sirenOscillator.frequency.linearRampToValueAtTime(targetFreq, sirenAudioCtx.currentTime + 0.15);
-            highFreq = !highFreq;
-        }, 450);
-
-        sirenOscillator.start();
-    } catch (e) {
-        console.error('Audio siren playback failed', e);
-    }
-}
-window.playSiren = playSiren;
-
-function stopSiren() {
-    if (sirenInterval) {
-        clearInterval(sirenInterval);
-        sirenInterval = null;
-    }
-    if (sirenGainNode && sirenAudioCtx) {
-        try {
-            sirenGainNode.gain.linearRampToValueAtTime(0.001, sirenAudioCtx.currentTime + 0.1);
-        } catch (e) {}
-    }
-    if (sirenOscillator) {
-        try {
-            sirenOscillator.stop(sirenAudioCtx ? sirenAudioCtx.currentTime + 0.15 : 0);
-            sirenOscillator.disconnect();
-        } catch (e) {}
-        sirenOscillator = null;
-    }
-    sirenGainNode = null;
-}
-window.stopSiren = stopSiren;
-
-function toggleSirenMute() {
-    isSirenMuted = !isSirenMuted;
-    const btn = document.getElementById('btnToggleSirenSound') || document.getElementById('btnToggleSiren');
-    if (btn) {
-        btn.innerHTML = isSirenMuted
-            ? `${Icons.cross} Звук сирены выключен`
-            : `${Icons.volume} Звук сирены включен`;
-    }
-    if (isSirenMuted) {
-        stopSiren();
-    }
-}
-window.toggleSirenMute = toggleSirenMute;
+// =========================================================================
+// M4: Coordinator SOS Incident Console
+// =========================================================================
 
 async function loadCoordinatorSosAlerts() {
+    const bannerContainer = document.getElementById('coordinatorSosBannerContainer');
+    if (!bannerContainer) return;
     try {
         const res = await authFetch('/api/sos/active');
         const data = await res.json();
-        const bannerContainer = document.getElementById('coordinatorSosBannerContainer');
-        if (!bannerContainer) return;
+        if (!res.ok) {
+            bannerContainer.style.display = 'block';
+            bannerContainer.innerHTML = `<div class="alert-banner alert-banner-warning"><strong>${Icons.alert} Не удалось проверить активные SOS.</strong> Повторите попытку или обновите страницу.</div>`;
+            return;
+        }
 
         const alerts = data.alerts || data.data || [];
         if (alerts.length > 0) {
@@ -2489,23 +2464,22 @@ async function loadCoordinatorSosAlerts() {
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <button type="button" class="btn btn-outline btn-sm" id="btnToggleSirenSound" style="background: rgba(255,255,255,0.2); color: #fff; border-color: #fff;" onclick="toggleSirenMute()">
-                            ${Icons.volume} ${isSirenMuted ? 'Звук выключен' : 'Звук сирены'}
-                        </button>
                         <button type="button" class="btn btn-success btn-sm" style="background: #15803d; border-color: #15803d; font-weight: 700;" onclick="resolveSosAlert(${topAlert.id})">
                             ${Icons.check} Разрешить инцидент
                         </button>
                     </div>
                 </div>
             `;
-            playSiren();
         } else {
             bannerContainer.style.display = 'none';
             bannerContainer.innerHTML = '';
-            stopSiren();
         }
     } catch (e) {
         console.error('Error loading active SOS alerts', e);
+        if (bannerContainer) {
+            bannerContainer.style.display = 'block';
+            bannerContainer.innerHTML = `<div class="alert-banner alert-banner-warning"><strong>${Icons.alert} Ошибка связи при проверке SOS.</strong> Если вы видите этот экран, проверьте систему вручную.</div>`;
+        }
     }
 }
 window.loadCoordinatorSosAlerts = loadCoordinatorSosAlerts;
@@ -2516,7 +2490,6 @@ async function resolveSosAlert(id) {
         const res = await authFetch(`/api/sos/${id}/resolve`, { method: 'POST' });
         const data = await res.json();
         if (data.success) {
-            stopSiren();
             alert(`Экстренная тревога #${id} успешно разрешена.`);
             loadCoordinatorSosAlerts();
             loadAdminAnalytics();
@@ -2529,9 +2502,9 @@ async function resolveSosAlert(id) {
 }
 window.resolveSosAlert = resolveSosAlert;
 
-
-
-
+// =========================================================================
+// M4: Coordinator Watchdog View & Task Reassignment
+// =========================================================================
 async function loadWatchdogTasks() {
     const tableBody = document.getElementById('watchdogTableBody');
     const badge = document.getElementById('overdueTasksCountBadge') || document.getElementById('overdueCountBadge');
@@ -2540,6 +2513,10 @@ async function loadWatchdogTasks() {
     try {
         const res = await authFetch('/api/coordinator/watchdog');
         const data = await res.json();
+        if (!res.ok) {
+            tableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--danger-color);">Не удалось загрузить список просроченных задач. Повторите попытку.</td></tr>`;
+            return;
+        }
         const tasks = data.overdue_tasks || data.data || [];
 
         if (badge) {
@@ -2615,9 +2592,9 @@ async function reassignOverdueTask(id) {
 }
 window.reassignOverdueTask = reassignOverdueTask;
 
-
-
-
+// =========================================================================
+// M4: Volunteer Dynamic Digital QR Badge Modal
+// =========================================================================
 let badgeCountdownTimer = null;
 
 async function showVolunteerBadge() {
@@ -2686,6 +2663,10 @@ function renderBadge(badgeData) {
 
     if (btnPublic && badgeData.badge_token) {
         btnPublic.href = `/verify.php?token=${encodeURIComponent(badgeData.badge_token)}`;
+        btnPublic.removeAttribute('aria-disabled');
+        btnPublic.removeAttribute('onclick');
+        btnPublic.style.opacity = '';
+        btnPublic.style.pointerEvents = '';
     }
 
     startBadgeCountdown(expiresAt);
@@ -2733,9 +2714,9 @@ function closeVolunteerBadgeModal() {
 }
 window.closeVolunteerBadgeModal = closeVolunteerBadgeModal;
 
-
-
-
+// =========================================================================
+// M4: Senior Anonymization / Right to be Forgotten (Law 99-Z / GDPR)
+// =========================================================================
 async function requestRightToBeForgotten() {
     const confirmation = confirm(
         'ВНИМАНИЕ! В соответствии с Законом РБ № 99-З «О защите персональных данных» вы собираетесь безвозвратно обезличить ваши персональные данные.\n\n' +

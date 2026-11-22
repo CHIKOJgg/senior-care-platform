@@ -1,11 +1,28 @@
 <?php
 declare(strict_types=1);
 
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+
+// Resolve application classes for badge verification (DB revocation checks,
+// URL helper, models). Without this the page could only validate the HMAC and
+// would keep showing a revoked volunteer as verified.
+spl_autoload_register(function (string $class): void {
+    $prefix = 'App\\';
+    if (!str_starts_with($class, $prefix)) {
+        return;
+    }
+    $file = __DIR__ . '/../app/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+    if (is_file($file)) {
+        require $file;
+    }
+});
+
 require_once __DIR__ . '/../app/Services/BadgeService.php';
 
 use App\Services\BadgeService;
 
-
+// Извлечение токена из query параметра или path_info
 $token = trim((string)($_GET['token'] ?? ''));
 if ($token === '') {
     $requestUri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH);
@@ -33,9 +50,9 @@ if ($token !== '') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <title>Официальная проверка волонтёра — Республика Беларусь</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/css/accessibility.css">
+    <link rel="stylesheet" href="/css/accessibility.css">
     <style>
         .verify-card {
             max-width: 560px;
@@ -91,7 +108,7 @@ if ($token !== '') {
 <body class="senior-mode">
     <main class="container">
         <div class="verify-card">
-
+            <!-- Header with Official TЦСОН Seal (Pure Vector SVG) -->
             <div class="seal-header">
                 <svg class="badge-seal-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <circle cx="50" cy="50" r="46" stroke="#004085" stroke-width="4" fill="#F0F7FF"/>
@@ -123,11 +140,18 @@ if ($token !== '') {
                 <?php endif; ?>
             </div>
 
-            <?php if ($isValid && isset($badgeData['volunteer'])):
+            <div style="text-align: center; margin: 18px 0 8px 0;">
+                <button type="button" id="verifySpeakBtn" class="btn btn-outline" style="min-height: 48px; display: inline-flex; align-items: center; gap: 8px;">
+                    <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                    Озвучить результат
+                </button>
+            </div>
+
+            <?php if ($isValid && isset($badgeData['volunteer'])): 
                 $v = $badgeData['volunteer'];
                 $fullNameFormatted = htmlspecialchars(trim(($v['first_name'] ?? '') . ' ' . ($v['last_initial'] ?? '')));
             ?>
-
+                <!-- Valid Volunteer Details (Law 99-Z Compliant: No full phone or passport) -->
                 <div style="margin-top: 20px;">
                     <div class="data-row">
                         <span class="data-label">Имя волонтёра:</span>
@@ -157,7 +181,7 @@ if ($token !== '') {
                     </p>
                 </div>
             <?php else: ?>
-
+                <!-- Warning Notice for Invalid / Expired Badge -->
                 <div class="alert-banner alert-banner-danger" style="margin-top: 20px;">
                     <h3 style="display: flex; align-items: center; gap: 8px;">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -173,7 +197,7 @@ if ($token !== '') {
                 </div>
             <?php endif; ?>
 
-
+            <!-- Hotline Support Footer -->
             <div style="margin-top: 30px; text-align: center; border-top: 1px solid #cbd5e1; padding-top: 20px;">
                 <p style="font-size: 0.95rem; color: #334155; margin-bottom: 6px;">
                     Дежурная служба ТЦСОН: <strong>+375 (17) 377-00-00</strong>
@@ -190,5 +214,22 @@ if ($token !== '') {
             </div>
         </div>
     </main>
+    <script>
+        (function () {
+            var button = document.getElementById('verifySpeakBtn');
+            if (!button || !('speechSynthesis' in window)) {
+                if (button) button.style.display = 'none';
+                return;
+            }
+            button.addEventListener('click', function () {
+                var card = document.querySelector('.verify-card');
+                if (!card) return;
+                window.speechSynthesis.cancel();
+                var utterance = new SpeechSynthesisUtterance(card.innerText);
+                utterance.lang = 'ru-RU';
+                window.speechSynthesis.speak(utterance);
+            });
+        }());
+    </script>
 </body>
 </html>

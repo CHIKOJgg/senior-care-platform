@@ -43,7 +43,7 @@ class Router
 
     public function dispatch(string $method, string $uri): void
     {
-
+        // Remove query string
         $path = parse_url($uri, PHP_URL_PATH);
         $path = rtrim($path, '/');
         if ($path === '') {
@@ -78,7 +78,7 @@ class Router
             $duration = microtime(true) - (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true));
             MetricsService::recordRequest(self::$currentRoute, $status, $duration);
         } catch (\Throwable $e) {
-
+            // Never let metrics break a response
         }
 
         http_response_code($status);
@@ -90,16 +90,12 @@ class Router
         }
         header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
         $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
-        if (getenv('APP_ENV') !== 'production') {
+        if (\App\Services\AuthService::isDevMode()) {
             $allowedHeaders .= ', X-Demo-User';
         }
         header('Access-Control-Allow-Headers: ' . $allowedHeaders);
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
-        header('Referrer-Policy: strict-origin-when-cross-origin');
-        header('Permissions-Policy: geolocation=(self), microphone=(self), camera=()');
-        header('Cross-Origin-Resource-Policy: same-origin');
-        header('X-Permitted-Cross-Domain-Policies: none');
         $output = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
         header('Content-Length: ' . (string)strlen($output));
         echo $output;

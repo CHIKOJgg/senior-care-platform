@@ -24,7 +24,7 @@ class TestHarness
     private bool $verbose = false;
     private float $startTime = 0.0;
 
-
+    // Cached tokens for standard demo roles
     private ?string $adminToken = null;
     private ?string $coordinatorToken = null;
     private ?string $volunteerToken = null;
@@ -37,10 +37,10 @@ class TestHarness
         $this->startTime = microtime(true);
     }
 
-
-
-
-
+    /**
+     * Base URL can be overridden with TEST_BASE_URL (used when tests run inside a container,
+     * e.g. against the production Nginx/PHP-FPM stack on port 80).
+     */
     private static function defaultBaseUrl(): string
     {
         $env = getenv('TEST_BASE_URL');
@@ -70,9 +70,9 @@ class TestHarness
         return $this->baseUrl;
     }
 
-
-
-
+    /**
+     * Perform an HTTP API request (opaque-box black-box interaction)
+     */
     public function apiCall(string $method, string $path, ?array $data = null, array $headers = []): array
     {
         $url = $this->baseUrl . $path;
@@ -110,9 +110,9 @@ class TestHarness
         ];
     }
 
-
-
-
+    /**
+     * Record and assert test outcome
+     */
     public function assert(string $name, bool $condition, string $details = '', string $tier = 'Tier 1'): bool
     {
         if ($condition) {
@@ -138,10 +138,10 @@ class TestHarness
         }
     }
 
-
-
-
-
+    /**
+     * Progressive testability: if feature belongs to an unmerged milestone and returns 404/405/not implemented,
+     * record as SKIPPED unless strict mode is enabled.
+     */
     public function assertMilestone(string $milestone, string $name, callable $testFn, string $tier = 'Tier 1'): void
     {
         try {
@@ -181,9 +181,9 @@ class TestHarness
         }
     }
 
-
-
-
+    /**
+     * Get or create admin bearer token
+     */
     public function getAdminToken(): string
     {
         if ($this->adminToken !== null) {
@@ -200,9 +200,9 @@ class TestHarness
         return '';
     }
 
-
-
-
+    /**
+     * Get or create coordinator bearer token
+     */
     public function getCoordinatorToken(): string
     {
         if ($this->coordinatorToken !== null) {
@@ -219,9 +219,9 @@ class TestHarness
         return '';
     }
 
-
-
-
+    /**
+     * Get or create volunteer bearer token
+     */
     public function getVolunteerToken(): string
     {
         if ($this->volunteerToken !== null) {
@@ -238,9 +238,9 @@ class TestHarness
         return '';
     }
 
-
-
-
+    /**
+     * Get or create elderly user bearer token
+     */
     public function getElderlyToken(): string
     {
         if ($this->elderlyToken !== null) {
@@ -257,9 +257,9 @@ class TestHarness
         return '';
     }
 
-
-
-
+    /**
+     * Register a unique random user for isolated test cases
+     */
     public function registerUser(int $roleId, string $name, ?string $skills = null): array
     {
         $phone = '+37529' . rand(2000000, 8999999);
@@ -282,9 +282,9 @@ class TestHarness
         ];
     }
 
-
-
-
+    /**
+     * Helper to create a help request
+     */
     public function createHelpRequest(
         int $elderlyId = 1,
         int $categoryId = 1,

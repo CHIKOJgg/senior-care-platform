@@ -33,7 +33,7 @@ class ChatController
             if (!$isParticipant) {
                 Router::json(['error' => 'Доступ к сообщениям данной заявки ограничен участниками'], 403);
             }
-        } elseif (AuthService::isProduction()) {
+        } elseif (!AuthService::isDevMode()) {
             AuthService::requireAuth();
         }
 
@@ -70,11 +70,11 @@ class ChatController
             if (!$isParticipant) {
                 Router::json(['error' => 'Доступ запрещён: отправлять сообщения могут только участники заявки'], 403);
             }
-        } elseif (AuthService::isProduction()) {
+        } elseif (!AuthService::isDevMode()) {
             AuthService::requireAuth();
             return;
         } else {
-
+            // Local dev fallback only
             $senderId = (int)($input['sender_id'] ?? 1);
         }
 
@@ -82,6 +82,9 @@ class ChatController
 
         if ($text === '') {
             Router::json(['error' => 'Текст сообщения не может быть пустым'], 400);
+        }
+        if (mb_strlen($text) > 2000) {
+            Router::json(['error' => 'Сообщение не должно превышать 2000 символов'], 400);
         }
 
         try {

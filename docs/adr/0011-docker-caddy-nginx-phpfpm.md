@@ -1,24 +1,35 @@
-# ADR-0011. One-click MySQL-стек и production-контейнеры Caddy/Nginx/PHP-FPM
+# ADR-0011. Docker, Caddy, Nginx + PHP-FPM
 
 - **Статус:** Принято
-- **Дата:** 2026-11-22
+- **Дата:** 2026-11-08
 - **Категория:** Инфраструктура
-- **Связанные ADR:** [ADR-0003](0003-database-sqlite-mysql.md), [ADR-0010](0010-observability-stack.md), [ADR-0013](0013-backups-secrets-healthchecks.md)
+- **Связанные ADR:** [ADR-0003](0003-database-mysql.md), [ADR-0010](0010-observability-stack.md), [ADR-0013](0013-backups-secrets-healthchecks.md)
 
 ## Контекст
 
-Нужен предсказуемый запуск на Windows, macOS и Linux, отдельный production-стек с HTTPS и MySQL, а также запуск в один клик без установки PHP на хост. Демонстрационная среда должна максимально совпадать с production по СУБД.
+Нужно обеспечить:
+
+- одинаковый запуск на Windows/macOS/Linux и в CI;
+- отдельные dev- и prod-конфигурации;
+- HTTPS и единую точку входа в production;
+- изоляцию БД и мониторинга от публичной сети;
+- воспроизводимую сборку без установки PHP/Nginx на хост;
+- ограничение ресурсов и ротацию логов.
+
+При этом команда небольшая, а бюджет на инфраструктуру минимален.
 
 ## Решение
 
-### One-click development
+### Development
 
-`start.bat`, `start.command` и `start.sh` вызывают `docker compose up --build`. В `docker-compose.yml` два сервиса:
+`docker-compose.yml` + `Dockerfile`:
 
-- `app` — PHP 8.2 CLI с PDO MySQL/SQLite, встроенный сервер, порт `${APP_PORT:-8000}`;
-- `mysql` — MySQL 8.0 с healthcheck и томом `senior_care_mysql_dev`.
-
-`docker/dev-entrypoint.sh` ждёт MySQL, выполняет `migrate.php` и `seed.php`, затем запускает приложение. Браузер открывается после ответа `/api/health`.
+- образ `php:8.2-cli-alpine`;
+- `pdo`, `pdo_mysql`;
+- MySQL 8 в отдельном сервисе `mysql` (порт `3307` на хосте);
+- встроенный сервер `php -S 0.0.0.0:8000 router.php`;
+- порт `8000`, volume `.:/var/www/html`;
+- `APP_ENV=local`, `APP_DEBUG=true`.
 
 ### Production
 
@@ -26,64 +37,83 @@
 
 ```text
 Caddy 2.8 (edge, 80/443)
-└── app: Nginx + PHP-FPM 8.2
-    ├── MySQL 8.0
-    ├── backup
-    ├── mysqld-exporter
-    ├── Prometheus
-    ├── Loki + Promtail
-    └── Grafana
+   └── app: Nginx + PHP-FPM 8.2 (php:8.2-fpm-alpine)
+          ├── MySQL 8.0 (InnoDB, utf8mb4)
+          ├── backup (mysqldump, 24h, retention 7d)
+          ├── mysqld-exporter
+          ├── Prometheus
+          ├── Loki + Promtail
+          └── Grafana
 ```
 
 Особенности:
 
-- Caddy — единственный контейнер, опубликованный наружу.
-- Nginx отдаёт статику, проксирует PHP на `127.0.0.1:9000` и добавляет security-заголовки.
-- PHP-FPM работает с `display_errors=Off`, `log_errors=On`.
-- Healthchecks контролируют приложение, MySQL, Prometheus, Loki и Grafana.
-- Ресурсы ограничены через `deploy.resources`.
-- Логи Docker ограничены 10 МБ × 3 файла.
+- **Caddy** — единственный контейнер, опубликованный наружу; автоматический HTTPS (Let's Encrypt) при `CADDY_DOMAIN=домен`; HSTS; reverse proxy на `app:80`.
+- **Nginx** — `root /var/www/html/public`, `try_files` на `index.php`, FastCGI на `127.0.0.1:9000`, security headers (CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy), gzip, кэш статики 1h, ACL для `/api/metrics`, запрет доступа к `database/`, `storage/`, `app/`.
+- **PHP-FPM** — `display_errors=Off`, `log_errors=On`, `error_log` в `storage/logs/php-error.log`, `expose_php=Off`.
+- **Entrypoint** — создаёт каталоги, запускает `migrate.php` и `seed.php`, выставляет права `www-data`, стартует PHP-FPM и Nginx.
+- **Healthchecks** — `/api/health` для app, `mysqladmin ping` для MySQL, `/api/health` для Grafana, `/ready` для Prometheus/Loki.
+- **Resource limits** — CPU/RAM для каждого сервиса (app 1 CPU/512M, MySQL 1 CPU/1G и т.д.).
+- **Logging** — json-file, `max-size: 10m`, `max-file: 3`.
+- **Volumes** — MySQL, логи, метрики, Prometheus, Loki, Grafana, Caddy, бэкапы.
 
 ## Обоснование
 
-1. Docker убирает различия окружений.
-2. MySQL в one-click исключает расхождение с production.
-3. Caddy автоматически получает TLS-сертификаты.
-4. Nginx + PHP-FPM — проверенная связка.
-5. Внутренние сервисы не опубликованы наружу.
-6. Браузер открывается только после готовности БД и приложения.
+1. **Воспроизводимость.** Docker убирает «у меня работает» и фиксирует версии PHP/MySQL/Nginx.
+2. **Parity dev/prod.** Один код, разные compose-файлы; production максимально близок к реальному.
+3. **Caddy вместо ручного TLS.** Автоматические сертификаты, HTTP→HTTPS, HSTS, минимум конфигурации.
+4. **Nginx + PHP-FPM — проверенная связка.** Высокая производительность, статические файлы отдаёт Nginx, PHP — FPM.
+5. **Изоляция.** MySQL, Prometheus, Loki, Grafana не опубликованы наружу; metrics доступен только из приватных сетей.
+6. **Единая точка входа.** Caddy упрощает TLS, логирование реального IP и будущее подключение WAF.
+7. **Ограничение ресурсов.** Защищает хост от «съедания» памяти при пиках.
+8. **Ротация логов.** Предотвращает переполнение диска.
 
 ## Последствия
 
 ### Положительные
 
-- Одинаковый запуск локально и на сервере.
-- MySQL и приложение стартуют одной командой.
-- HTTPS и security-заголовки из коробки.
-- Бэкапы и мониторинг входят в production-стек.
+- Одинаковый запуск локально, в CI и на сервере.
+- HTTPS «из коробки» с Caddy.
+- Безопасные заголовки и закрытые внутренние сервисы.
+- Простое масштабирование ресурсов через `deploy.resources`.
+- Бэкапы и мониторинг поднимаются вместе с приложением.
+- Healthchecks дают автоматический перезапуск при сбое.
 
 ### Отрицательные / риски
 
-- Для one-click нужен Docker.
-- Production-образ одностадийный и содержит лишние файлы.
-- Caddy остаётся единой точкой отказа.
-- Секреты передаются через переменные окружения.
-- Нет Kubernetes и автоскейлинга.
+- **`Dockerfile.prod` — одностадийный.** В образ копируется весь контекст (`COPY . /var/www/html`), включая тесты, docs, `.git` (если не исключён `.dockerignore`). Образ больше, чем мог бы быть при multi-stage.
+- **`Dockerfile` dev запускает миграции на этапе сборки** (`RUN php database/migrate.php && php database/seed.php`), а не только при старте; это может создать БД внутри образа.
+- **Нет оркестратора.** Один хост, нет автоскейлинга и self-healing уровня Kubernetes.
+- **Caddy — single point of failure.** При падении edge недоступен весь сервис.
+- **Секреты в env.** Переменные окружения видны в `docker inspect`; нужен secret manager для усиления.
+- **Prometheus/Loki/Grafana на localhost.** Удалённый доступ требует туннеля или отдельной авторизации.
+- **Nginx `set_real_ip_from` доверяет приватным сетям.** При неправильной сети можно подделать IP; Caddy должен быть единственным edge.
+- **CSP допускает `unsafe-inline`.** Ослабляет защиту от XSS; требуется вынос inline-скриптов/стилей.
+- **Нет WAF/rate limiting на edge.** Rate limiting реализован в приложении, а не на Caddy/Nginx.
 
-## Альтернативы
+### Нейтральные
 
-| Альтернатива | Почему не выбрана |
+- Порт приложения в dev — `8000`, в prod — только `80` внутри, наружу — Caddy.
+- MySQL и monitoring используют bridge-сеть `backend`.
+
+## Рассмотренные альтернативы
+
+| Альтернатива | Почему отклонена |
 |---|---|
-| PHP на хосте | Разные окружения и ручная установка MySQL |
-| Kubernetes | Избыточен для одного сервиса |
-| Apache + mod_php | Менее удобен в контейнерах |
-| Nginx как edge | Ручной Certbot вместо автоматического TLS Caddy |
-| Traefik | Caddy проще для текущего масштаба |
+| **Bare-metal PHP/Nginx** | Сложнее воспроизводить, обновлять и изолировать; нет parity с CI. |
+| **Kubernetes** | Избыточен для одного сервиса и небольшой команды; высокая операционная сложность. |
+| **Docker Swarm** | Проще K8s, но всё ещё оркестратор; текущего compose достаточно. |
+| **Apache + mod_php** | Менее производителен и менее распространён в контейнерах; Nginx+FPM стандартнее. |
+| **Traefik вместо Caddy** | Хорош, но Caddy проще для автоматического TLS и минимального конфига. |
+| **Nginx как edge** | Пришлось бы вручную настраивать Certbot/ACME; Caddy делает это автоматически. |
+| **Multi-stage build** | Рекомендуется как улучшение; текущий образ проще, но больше. |
 
 ## Ссылки
 
-- `start.bat`, `start.command`, `start.sh`
 - `docker-compose.yml`, `docker-compose.prod.yml`
 - `Dockerfile`, `Dockerfile.prod`
-- `docker/dev-entrypoint.sh`, `docker/entrypoint.sh`
-- `docker/nginx.conf`, `docker/php.ini`
+- `docker/nginx.conf`, `docker/php.ini`, `docker/entrypoint.sh`
+- `monitoring/caddy/Caddyfile`
+- `.dockerignore`
+- `README.md` — разделы запуска.
+- `PROJECT.md` — «Environment».

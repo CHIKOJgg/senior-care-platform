@@ -13,7 +13,28 @@ jobs:
     env:
       APP_ENV: local
       APP_SECRET: ci_test_secret_0123456789abcdef
-      APP_ENCRYPTION_KEY: ci_test_encryption_key_2026
+      APP_ENCRYPTION_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: senior_care_test
+      DB_USERNAME: senior
+      DB_PASSWORD: seniorpass
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: senior_care_test
+          MYSQL_USER: senior
+          MYSQL_PASSWORD: seniorpass
+          MYSQL_ROOT_PASSWORD: rootpass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpass"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout Code
@@ -23,82 +44,60 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: pdo, pdo_sqlite, curl, json, mbstring
+          extensions: pdo, pdo_mysql, curl, json, mbstring
           coverage: none
 
       - name: Check PHP Syntax & Lint
         run: |
-          find app public tests -type f -name "*.php" -exec php -l {} +
+          find app public tests database -type f -name "*.php" -exec php -l {} +
+          php -l router.php
 
       - name: Run Database Migrations & Seeds
         run: |
           php database/migrate.php
           php database/seed.php
 
-      - name: Execute Unit, Integration & Security Tests
+      - name: Execute Full Deterministic Test Matrix
         run: |
-          php tests/run_tests.php
+          php tests/run_all.php
 
-      - name: Execute REST API Tests
+      - name: Execute Crypto & Migration Stress
         run: |
-          php -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &
-          APP_PID=$!
-          trap 'kill $APP_PID 2>/dev/null || true' EXIT
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/api/health > /dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8000/api/health
-          php tests/test_api_requests.php
+          php tests/stress_m1_crypto.php
 
-      - name: Execute Frontend WCAG Tests
-        run: php tests/test_frontend_wcag.php
-
-      - name: Execute Node ADR & Regex Tests
+      - name: Execute Frontend Static, Zero-Emoji & Voice-Regex Audits
         run: |
-          node tests/test_adr_and_emoji.js
+          node --check public/js/app.js
+          node --check public/js/speech.js
+          node tests/test_plan_and_emoji.js
           node tests/test_v8_regex.js
-
-      - name: Execute Comprehensive E2E Tests
-        run: |
-          php -d display_errors=1 -d error_reporting=E_ALL -S 127.0.0.1:8000 router.php > /tmp/care-app.log 2>&1 &
-          APP_PID=$!
-          trap 'kill $APP_PID 2>/dev/null || true' EXIT
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/api/health > /dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          curl -fsS http://127.0.0.1:8000/api/health
-          set +e
-          php tests/test_e2e_comprehensive.php > /tmp/e2e.log 2>&1
-          status=$?
-          cat /tmp/e2e.log
-          if [ "$status" -ne 0 ]; then
-            fails=$(grep -a '\[FAIL\]' /tmp/e2e.log || true)
-            if [ -n "$fails" ]; then
-              echo "$fails" | while IFS= read -r line; do echo "::error::$line"; done
-            else
-              echo "::error::E2E suite exited with code $status"
-            fi
-            exit "$status"
-          fi
 
       - name: Verify Production Docker Build & Health
         run: |
+          php database/reset.php
+          php database/migrate.php
           docker build -t senior-care:ci -f Dockerfile.prod .
-          docker run -d --name senior-care-ci -p 8080:80 \
+          docker run -d --name senior-care-ci --network host \
             -e APP_ENV=production \
-            -e APP_SECRET=ci_test_secret_0123456789abcdef \
-            -e APP_ENCRYPTION_KEY=ci_test_encryption_key_2026 \
+            -e APP_SECRET=ci_test_secret_0123456789abcdef0123456789abcdef \
+            -e APP_ENCRYPTION_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
             -e ADMIN_PHONE=+375290000001 \
             -e ADMIN_PASSWORD=CiTestPassword1 \
+            -e ELDERLY_AUTO_LOGIN=false \
+            -e DB_CONNECTION=mysql \
+            -e DB_HOST=127.0.0.1 \
+            -e DB_PORT=3306 \
+            -e DB_DATABASE=senior_care_test \
+            -e DB_USERNAME=senior \
+            -e DB_PASSWORD=seniorpass \
             senior-care:ci
-          sleep 8
-          curl -fsS http://localhost:8080/api/health
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost/api/health; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://localhost/api/health
           docker rm -f senior-care-ci
 
   mysql-smoke:
@@ -128,7 +127,7 @@ jobs:
       DB_PASSWORD: seniorpass
       APP_ENV: local
       APP_SECRET: ci_test_secret_0123456789abcdef
-      APP_ENCRYPTION_KEY: ci_test_encryption_key_2026
+      APP_ENCRYPTION_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       SEED_DEMO: "true"
     steps:
       - name: Checkout Code
@@ -138,7 +137,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
-          extensions: pdo, pdo_mysql, pdo_sqlite, curl, json, mbstring
+          extensions: pdo, pdo_mysql, curl, json, mbstring
 
       - name: Migrate and seed MySQL
         run: |

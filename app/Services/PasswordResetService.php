@@ -9,10 +9,10 @@ use App\Core\Logger;
 use App\Models\User;
 use Throwable;
 
-
-
-
-
+/**
+ * Coordinator-assisted password recovery (Law 99-Z friendly):
+ * the coordinator issues a one-time 6-digit code, the family sets a new password.
+ */
 class PasswordResetService
 {
     public const TTL_SECONDS = 1800;
@@ -24,7 +24,7 @@ class PasswordResetService
     {
         $pdo = Database::getConnection();
 
-
+        // Only one active code per user
         $pdo->prepare("UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE user_id = :uid AND used_at IS NULL")
             ->execute(['uid' => $userId]);
 
@@ -90,8 +90,16 @@ class PasswordResetService
 
         try {
             $pdo->beginTransaction();
-            $pdo->prepare("UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = :id")
-                ->execute(['id' => $reset['id']]);
+
+            // Atomically consume the code. Two simultaneous submissions with the
+            // same code must not both change the password.
+            $claim = $pdo->prepare("UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = :id AND used_at IS NULL");
+            $claim->execute(['id' => $reset['id']]);
+            if ($claim->rowCount() !== 1) {
+                $pdo->rollBack();
+                return ['success' => false, 'error' => self::GENERIC_ERROR];
+            }
+
             $pdo->prepare("
                 UPDATE users
                 SET password_hash = :hash, token_version = COALESCE(token_version, 1) + 1
@@ -102,7 +110,9 @@ class PasswordResetService
             ]);
             $pdo->commit();
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             throw $e;
         }
 

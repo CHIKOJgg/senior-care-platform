@@ -49,9 +49,9 @@ function assertStress(string $description, bool $condition, string $details = ''
     }
 }
 
-
-
-
+// ====================================================================
+// SECTION 1: AES-256-GCM IV UNIQUENESS (10,000 ENCRYPTIONS)
+// ====================================================================
 echo "[STRESS 1] IV Uniqueness & Entropy Stress-Test (10,000 encryptions)...\n";
 $ivSet = [];
 $collisionCount = 0;
@@ -70,14 +70,14 @@ for ($i = 0; $i < 10000; $i++) {
         $collisionCount++;
         continue;
     }
-
+    // IV is first 12 bytes
     $iv = substr($raw, 0, 12);
     if (isset($ivSet[$iv])) {
         $collisionCount++;
     }
     $ivSet[$iv] = true;
 
-
+    // Track byte histogram for entropy sanity
     for ($j = 0; $j < 12; $j++) {
         $ivBytesHistogram[ord($iv[$j])]++;
     }
@@ -97,9 +97,9 @@ assertStress("10,000 IV generations completed in {$ivDuration} ms", $uniqueIvCou
 assertStress("Zero IV collisions detected (0 in 10,000 samples)", $collisionCount === 0, "Collisions: {$collisionCount}");
 assertStress("Full 8-bit byte range coverage in IV entropy (all 256 byte values present in 120,000 sampled bytes)", $zeroFrequencyBytes === 0, "Zero freq count: {$zeroFrequencyBytes}");
 
-
-
-
+// ====================================================================
+// SECTION 2: BIT-FLIP TAMPERING (AUTHENTICATION TAG & CIPHERTEXT)
+// ====================================================================
 echo "\n[STRESS 2] Bit-Flip Tampering Attack Harness...\n";
 
 $originalSecret = "Пациент Ковалева А.И.: постельный режим, гипертония III ст., аллергия на пенициллин!";
@@ -110,7 +110,7 @@ $iv = substr($rawPayload, 0, 12);
 $tag = substr($rawPayload, 12, 16);
 $ciphertext = substr($rawPayload, 28);
 
-
+// 2.1 Bit flips across ALL 128 bits of the authentication tag
 $tagBitFlipAttempts = 0;
 $tagBitFlipRejections = 0;
 for ($byteIdx = 0; $byteIdx < 16; $byteIdx++) {
@@ -124,18 +124,18 @@ for ($byteIdx = 0; $byteIdx < 16; $byteIdx++) {
         $tagBitFlipAttempts++;
         try {
             CryptoService::decrypt($tamperedWire);
-
+            // If decrypt succeeds, that is a cryptographic failure!
         } catch (\RuntimeException $e) {
             $tagBitFlipRejections++;
         }
     }
 }
-assertStress("Tag bit-flip tampering: 100% rejection across all 128 bits of authentication tag",
-    $tagBitFlipAttempts === 128 && $tagBitFlipRejections === 128,
+assertStress("Tag bit-flip tampering: 100% rejection across all 128 bits of authentication tag", 
+    $tagBitFlipAttempts === 128 && $tagBitFlipRejections === 128, 
     "Attempts: {$tagBitFlipAttempts}, Rejections: {$tagBitFlipRejections}"
 );
 
-
+// 2.2 Bit flips across ALL bits of ciphertext
 $ctLength = strlen($ciphertext);
 $ctBitFlipAttempts = 0;
 $ctBitFlipRejections = 0;
@@ -156,12 +156,12 @@ for ($byteIdx = 0; $byteIdx < $ctLength; $byteIdx++) {
         }
     }
 }
-assertStress("Ciphertext bit-flip tampering: 100% rejection across all {$ctBitFlipAttempts} bits of ciphertext",
-    $ctBitFlipAttempts === ($ctLength * 8) && $ctBitFlipRejections === $ctBitFlipAttempts,
+assertStress("Ciphertext bit-flip tampering: 100% rejection across all {$ctBitFlipAttempts} bits of ciphertext", 
+    $ctBitFlipAttempts === ($ctLength * 8) && $ctBitFlipRejections === $ctBitFlipAttempts, 
     "Attempts: {$ctBitFlipAttempts}, Rejections: {$ctBitFlipRejections}"
 );
 
-
+// 2.3 Bit flips across ALL 96 bits of IV
 $ivBitFlipAttempts = 0;
 $ivBitFlipRejections = 0;
 for ($byteIdx = 0; $byteIdx < 12; $byteIdx++) {
@@ -180,12 +180,12 @@ for ($byteIdx = 0; $byteIdx < 12; $byteIdx++) {
         }
     }
 }
-assertStress("IV bit-flip tampering: 100% rejection across all 96 bits of IV",
-    $ivBitFlipAttempts === 96 && $ivBitFlipRejections === 96,
+assertStress("IV bit-flip tampering: 100% rejection across all 96 bits of IV", 
+    $ivBitFlipAttempts === 96 && $ivBitFlipRejections === 96, 
     "Attempts: {$ivBitFlipAttempts}, Rejections: {$ivBitFlipRejections}"
 );
 
-
+// 2.4 Truncation, payload corruption & malformed data
 $corruptedPayloads = [
     'Empty payload after prefix' => 'enc:v1:',
     'Truncated below IV+TAG (5 bytes)' => 'enc:v1:' . base64_encode('abcde'),
@@ -203,12 +203,12 @@ foreach ($corruptedPayloads as $desc => $malformedWire) {
         $malformedRejections++;
     }
 }
-assertStress("Malformed & truncated payload resistance (all 6 rejected)",
-    $malformedRejections === count($corruptedPayloads),
+assertStress("Malformed & truncated payload resistance (all 6 rejected)", 
+    $malformedRejections === count($corruptedPayloads), 
     "Rejections: {$malformedRejections}/" . count($corruptedPayloads)
 );
 
-
+// 2.5 AAD (Additional Authenticated Data) stress
 $aad1 = "patient_id:42;scope:mobility_notes";
 $aad2 = "patient_id:43;scope:mobility_notes";
 $encWithAad = CryptoService::encrypt("Диагноз: артрит коленного сустава", $aad1);
@@ -237,12 +237,12 @@ assertStress("AAD matching succeeds correctly", $aadMatchPass);
 assertStress("Tampered AAD causes authenticated decryption rejection", $aadTamperFail);
 assertStress("Missing AAD on authenticated payload causes rejection", $aadEmptyFail);
 
-
-
-
+// ====================================================================
+// SECTION 3: EDGE CASES & ENCODINGS
+// ====================================================================
 echo "\n[STRESS 3] Edge Cases: Nulls, Empty Strings, Belarusian UTF-8, Large Payloads...\n";
 
-
+// 3.1 Null and empty values
 $nullEnc = CryptoService::encrypt(null);
 $nullDec = CryptoService::decrypt(null);
 assertStress("Null plaintext encrypts to null", $nullEnc === null);
@@ -253,7 +253,7 @@ $emptyDec = CryptoService::decrypt("");
 assertStress("Empty string encrypts to empty string", $emptyEnc === "");
 assertStress("Empty string decrypts to empty string", $emptyDec === "");
 
-
+// 3.2 Whitespace and special non-printable bytes
 $whitespace = "   \t\r\n   ";
 $wsEnc = CryptoService::encrypt($whitespace);
 $wsDec = CryptoService::decrypt($wsEnc);
@@ -264,31 +264,31 @@ $binEnc = CryptoService::encrypt($binaryData);
 $binDec = CryptoService::decrypt($binEnc);
 assertStress("Embedded null bytes and binary strings preserve exact bytes", $binDec === $binaryData);
 
-
+// 3.3 Multi-byte UTF-8 & Belarusian specific letters
 $belarusianText = "У Іўі хутка пачнецца свята. Беларускія літары: ў, і, ё, Ы, Э, апостраф ’ (напрыклад: з’ява, аб’ект, пад’езд, сям’я). Патрабуецца дапамога ветэрану працы.";
 $byEnc = CryptoService::encrypt($belarusianText);
 $byDec = CryptoService::decrypt($byEnc);
-assertStress("Belarusian letters (ў, і, ё, Ы, Э, апостраф ’) round-trip identically",
-    $byDec === $belarusianText,
+assertStress("Belarusian letters (ў, і, ё, Ы, Э, апостраф ’) round-trip identically", 
+    $byDec === $belarusianText, 
     "Decrypted: " . mb_substr($byDec ?? '', 0, 40)
 );
 
-
+// 3.4 Multi-lingual strings & emojis (UTF-8 4-byte astral plane)
 $multiLingual = "Мінск / Минск / Minsk \u{1F3E5} \u{1F48A} \u{1FA7A} \u{1F475} \u{1F474} \u{2764}\u{FE0F} Спасибо за заботу! 100% надзейнасць.";
 $mlEnc = CryptoService::encrypt($multiLingual);
 $mlDec = CryptoService::decrypt($mlEnc);
 assertStress("Multi-lingual and 4-byte astral UTF-8 characters round-trip identically", $mlDec === $multiLingual);
 
-
+// 3.5 Double-encryption idempotency check
 $doubleEnc = CryptoService::encrypt($byEnc);
 assertStress("Double encryption is prevented (idempotent prefix check)", $doubleEnc === $byEnc);
 $doubleDec = CryptoService::decrypt($doubleEnc);
 assertStress("Decryption of idempotent ciphertext restores original plaintext", $doubleDec === $belarusianText);
 
-
+// 3.6 Very large strings (100 KB and 256 KB)
 echo "  [INFO] Generating 100 KB and 256 KB payloads for throughput & memory stress...\n";
-$chunk100k = str_repeat("ТЦСОН Советского района г. Минска: регулярный патронаж и медицинский уход. ", 1200);
-$payload100k = mb_substr($chunk100k, 0, 102400);
+$chunk100k = str_repeat("ТЦСОН Советского района г. Минска: регулярный патронаж и медицинский уход. ", 1200); // ~100 KB
+$payload100k = mb_substr($chunk100k, 0, 102400); // exactly 102,400 chars
 $size100k = strlen($payload100k);
 
 $tLarge0 = microtime(true);
@@ -297,7 +297,7 @@ $dec100k = CryptoService::decrypt($enc100k);
 $tLarge1 = microtime(true);
 $duration100k = round(($tLarge1 - $tLarge0) * 1000, 2);
 
-assertStress("100 KB payload ({$size100k} bytes) encrypts & decrypts successfully in {$duration100k} ms",
+assertStress("100 KB payload ({$size100k} bytes) encrypts & decrypts successfully in {$duration100k} ms", 
     $dec100k === $payload100k && hash('sha256', $dec100k) === hash('sha256', $payload100k)
 );
 
@@ -306,13 +306,13 @@ $payload256k = mb_substr($chunk256k, 0, 262144);
 $size256k = strlen($payload256k);
 $enc256k = CryptoService::encrypt($payload256k);
 $dec256k = CryptoService::decrypt($enc256k);
-assertStress("256 KB payload ({$size256k} bytes) encrypts & decrypts with exact SHA-256 match",
+assertStress("256 KB payload ({$size256k} bytes) encrypts & decrypts with exact SHA-256 match", 
     $dec256k === $payload256k && hash('sha256', $dec256k) === hash('sha256', $payload256k)
 );
 
-
-
-
+// ====================================================================
+// SECTION 4: MIGRATION STRESS TEST (5 RAPID SUCCESSIVE EXECUTIONS)
+// ====================================================================
 echo "\n[STRESS 4] Database Migration Rapid Idempotency Stress (5 successive runs)...\n";
 
 $migrateScript = __DIR__ . '/../database/migrate.php';
@@ -341,42 +341,42 @@ for ($run = 1; $run <= 5; $run++) {
     }
 }
 
-assertStress("Migration script executes 5 times in rapid succession with exit code 0",
-    $migrationSuccessCount === 5,
+assertStress("Migration script executes 5 times in rapid succession with exit code 0", 
+    $migrationSuccessCount === 5, 
     implode("; ", $migrationErrors)
 );
-assertStress("Zero duplicate column or SQLite DDL errors observed during rapid migrations",
+assertStress("Zero duplicate column or MySQL DDL errors observed during rapid migrations",
     count($migrationErrors) === 0,
     implode("; ", $migrationErrors)
 );
 
-
+// 4.2 MySQL table integrity check
 $pdo = Database::getConnection();
-$driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-if ($driver === 'sqlite') {
-    $integrityStmt = $pdo->query("PRAGMA integrity_check;");
-    $integrityResult = $integrityStmt ? $integrityStmt->fetchColumn() : 'failed';
-    assertStress("SQLite database passes PRAGMA integrity_check with 'ok'", $integrityResult === 'ok', "Result: {$integrityResult}");
-} else {
-    $checkRows = $pdo->query("CHECK TABLE users, elderly_profiles, volunteer_profiles, help_requests, sos_alerts")->fetchAll(PDO::FETCH_ASSOC);
-    $okRows = array_filter($checkRows, static fn(array $row): bool => strtoupper((string)($row['Msg_text'] ?? '')) === 'OK');
-    assertStress('MySQL CHECK TABLE reports OK for all core tables', count($okRows) === count($checkRows) && count($checkRows) > 0, json_encode($checkRows, JSON_UNESCAPED_UNICODE));
+$integrityErrors = [];
+foreach (['users', 'help_requests', 'elderly_profiles', 'volunteer_profiles', 'sos_alerts'] as $table) {
+    $rows = $pdo->query("CHECK TABLE `{$table}`")->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($rows as $row) {
+        if (strtolower((string)($row['Msg_type'] ?? '')) === 'error') {
+            $integrityErrors[] = $table . ': ' . ($row['Msg_text'] ?? 'unknown');
+        }
+    }
 }
+assertStress('MySQL CHECK TABLE passes for all core tables', $integrityErrors === [], implode('; ', $integrityErrors));
 
-
+// 4.3 Verify data consistency after 5 migrations
 $stmtProfile = $pdo->query("SELECT user_id, mobility_notes FROM elderly_profiles WHERE user_id = 1;");
 $rowProfile = $stmtProfile ? $stmtProfile->fetch(PDO::FETCH_ASSOC) : null;
 $profileNotesEncrypted = ($rowProfile && CryptoService::isEncrypted($rowProfile['mobility_notes']));
 $decryptedProfileNotes = $profileNotesEncrypted ? CryptoService::decrypt($rowProfile['mobility_notes']) : null;
 
 assertStress("Elderly profile #1 mobility_notes remains validly encrypted after repeated migrations", $profileNotesEncrypted);
-assertStress("Elderly profile #1 mobility_notes decrypts to valid human-readable note",
+assertStress("Elderly profile #1 mobility_notes decrypts to valid human-readable note", 
     !empty($decryptedProfileNotes) && is_string($decryptedProfileNotes) && str_contains($decryptedProfileNotes, 'Трудно')
 );
 
-
-
-
+// ====================================================================
+// SUMMARY & TIMING
+// ====================================================================
 $totalDuration = round((microtime(true) - $startTime) * 1000, 2);
 
 echo "\n--------------------------------------------------------------------\n";

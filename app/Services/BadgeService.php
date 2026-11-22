@@ -9,30 +9,32 @@ use InvalidArgumentException;
 use App\Models\User;
 use App\Models\VolunteerProfile;
 use App\Core\Logger;
+use App\Core\Url;
 use App\Services\RegionService;
 
 require_once __DIR__ . '/RegionService.php';
+require_once __DIR__ . '/../Core/Url.php';
 
 class BadgeService
 {
-    public const DEFAULT_TTL = 3600;
+    public const DEFAULT_TTL = 3600; // 1 hour dynamic TTL
     public const DEFAULT_ORG = 'ТЦСОН Республики Беларусь';
 
     private static ?string $customSecret = null;
     private static array $gfExp = [];
     private static array $gfLog = [];
 
-
-
-
+    /**
+     * Override HMAC secret at runtime (for unit tests and rotation)
+     */
     public static function setSecret(?string $secret): void
     {
         self::$customSecret = $secret;
     }
 
-
-
-
+    /**
+     * Retrieve active HMAC secret key
+     */
     public static function getSecret(): string
     {
         if (self::$customSecret !== null && self::$customSecret !== '') {
@@ -50,9 +52,9 @@ class BadgeService
         return $secret;
     }
 
-
-
-
+    /**
+     * Region short code for badge numbering (BY-BRE-2026-0007).
+     */
     private static function regionShortForUser(int $userId): string
     {
         try {
@@ -63,17 +65,17 @@ class BadgeService
                 }
             }
         } catch (\Throwable $e) {
-
+            // Fall back to the capital region code.
         }
         return RegionService::short('MINSK_CITY');
     }
 
-
-
-
-
-
-
+    /**
+     * Parse full Russian/Slavic name into safe public components (Law 99-Z)
+     *
+     * @param string $raw
+     * @return array{first_name: string, patronymic: string, last_initial: string, display_name: string}
+     */
     public static function formatPublicVolunteerName(string $raw): array
     {
         $raw = trim($raw);
@@ -105,13 +107,13 @@ class BadgeService
             };
 
             if ($isPatronymic($parts[2])) {
-
+                // Last First Patronymic ("Смирнов Алексей Сергеевич")
                 $lastName = $parts[0];
                 $firstName = $parts[1];
                 $patronymic = $parts[2];
                 $lastInitial = mb_substr($lastName, 0, 1, 'UTF-8') . '.';
             } elseif ($isPatronymic($parts[1])) {
-
+                // First Patronymic Last ("Алексей Сергеевич Смирнов")
                 $firstName = $parts[0];
                 $patronymic = $parts[1];
                 $lastName = $parts[2];
@@ -133,15 +135,15 @@ class BadgeService
         ];
     }
 
-
-
-
-
-
-
-
-
-
+    /**
+     * Generate dynamic HMAC-SHA256 badge token
+     *
+     * @param int $volunteerUserId Primary key of volunteer user
+     * @param string|null $name Optional override of volunteer display name
+     * @param string|null $org Optional override of organization
+     * @param int $ttlSeconds Time to live in seconds (default 3600s = 1 hour)
+     * @return string URL-safe signed badge token
+     */
     public static function generateBadgeToken(
         int $volunteerUserId,
         ?string $name = null,
@@ -169,7 +171,7 @@ class BadgeService
                     }
                 }
             } catch (\Throwable $e) {
-
+                // Database may be offline during isolated unit testing
             }
             if ($displayName === null || $displayName === '') {
                 $displayName = 'Волонтёр #' . $volunteerUserId;
@@ -202,7 +204,7 @@ class BadgeService
 
         $fullToken = $payloadEncoded . '.' . $signatureEncoded;
 
-
+        // Persist active token and expiration in database if volunteer profile exists
         try {
             if (class_exists(VolunteerProfile::class)) {
                 $vp = VolunteerProfile::find($volunteerUserId);
@@ -214,18 +216,18 @@ class BadgeService
                 }
             }
         } catch (\Throwable $e) {
-
+            // Silently continue if database is absent in test environment
         }
 
         return $fullToken;
     }
 
-
-
-
-
-
-
+    /**
+     * Verify token signature and expiration (stateless crypto check)
+     *
+     * @param string $token Dynamic token string
+     * @return array|null Decoded payload on success, null on invalid/expired/tampered
+     */
     public static function verifyBadgeToken(string $token): ?array
     {
         $parts = explode('.', $token);
@@ -235,7 +237,7 @@ class BadgeService
 
         [$payloadEncoded, $signature] = $parts;
 
-
+        // Check HMAC signature with timing-attack resistance (support both Base64Url and Hex)
         $expectedRaw = hash_hmac('sha256', $payloadEncoded, self::getSecret(), true);
         $expectedBase64Url = rtrim(strtr(base64_encode($expectedRaw), '+/', '-_'), '=');
         $expectedHex = hash_hmac('sha256', $payloadEncoded, self::getSecret(), false);
@@ -247,7 +249,7 @@ class BadgeService
             return null;
         }
 
-
+        // Decode Base64Url payload
         $normalizedB64 = strtr($payloadEncoded, '-_', '+/');
         $padding = strlen($normalizedB64) % 4;
         if ($padding > 0) {
@@ -264,12 +266,12 @@ class BadgeService
             return null;
         }
 
-
+        // Verify expiration
         if (time() > (int)$payload['exp']) {
             return null;
         }
 
-
+        // Verify not issued in the future (with 60s clock skew tolerance)
         if (isset($payload['iat']) && (time() + 60) < (int)$payload['iat']) {
             return null;
         }
@@ -277,12 +279,12 @@ class BadgeService
         return $payload;
     }
 
-
-
-
-
-
-
+    /**
+     * Full business verification of volunteer badge (crypto + database active status)
+     *
+     * @param string $token Badge token
+     * @return array Standard response array with public profile or error details
+     */
     public static function verifyVolunteerBadge(string $token): array
     {
         $payload = self::verifyBadgeToken($token);
@@ -295,7 +297,7 @@ class BadgeService
 
         $userId = (int)($payload['vid'] ?? $payload['user_id'] ?? 0);
 
-
+        // Database status check for instant revocation
         try {
             if (class_exists(VolunteerProfile::class) && class_exists(User::class)) {
                 $profile = VolunteerProfile::find($userId);
@@ -320,7 +322,7 @@ class BadgeService
                     ];
                 }
 
-
+                // Format safe public names from actual user record
                 $parsed = self::formatPublicVolunteerName($user['name']);
                 $firstName = $parsed['first_name'];
                 $patronymic = $parsed['patronymic'];
@@ -359,13 +361,13 @@ class BadgeService
         ];
     }
 
-
-
-
-
-
-
-
+    /**
+     * Standalone QR Code Vector SVG Generator (Pure PHP, Zero External Dependencies)
+     *
+     * @param string $text Content to encode
+     * @param array $options Configuration options (size, margin, color, bgColor, title)
+     * @return string Standalone SVG XML string
+     */
     public static function generateQrSvg(string $text, array $options = []): string
     {
         $size = (int)($options['size'] ?? 240);
@@ -377,8 +379,8 @@ class BadgeService
         self::initGf();
         $textLen = strlen($text);
 
-
-
+        // Version table for Byte mode (Level L error correction)
+        // [total_data_bytes, ec_per_block, [[num_blocks, block_size]], alignments, version_bits]
         $versions = [
             1  => [19,  7,  [[1, 19]], [], 0],
             2  => [34,  10, [[1, 34]], [6, 18], 0],
@@ -424,25 +426,25 @@ class BadgeService
         $verBits = $vInfo[4];
         $dim = 17 + 4 * $ver;
 
-
-        $bits = '0100';
+        // 1. Bitstream assembly
+        $bits = '0100'; // Byte mode indicator
         $countBits = $ver >= 10 ? 16 : 8;
         $bits .= str_pad(decbin($textLen), $countBits, '0', STR_PAD_LEFT);
         for ($i = 0; $i < $textLen; $i++) {
             $bits .= str_pad(decbin(ord($text[$i])), 8, '0', STR_PAD_LEFT);
         }
 
-
+        // Terminator (up to 4 zeroes)
         $totalBits = $totalDataBytes * 8;
         $remain = $totalBits - strlen($bits);
         $bits .= str_repeat('0', min(4, $remain));
 
-
+        // Pad to byte boundary
         if (strlen($bits) % 8 !== 0) {
             $bits .= str_repeat('0', 8 - (strlen($bits) % 8));
         }
 
-
+        // Alternate padding bytes 0xEC and 0x11
         $padBytes = [0xEC, 0x11];
         $pIdx = 0;
         while (strlen($bits) < $totalBits) {
@@ -450,13 +452,13 @@ class BadgeService
             $pIdx++;
         }
 
-
+        // Convert bitstream into raw data bytes
         $allDataBytes = [];
         for ($i = 0; $i < strlen($bits); $i += 8) {
             $allDataBytes[] = bindec(substr($bits, $i, 8));
         }
 
-
+        // 2. Division into blocks and Reed-Solomon computation
         $dataBlocks = [];
         $ecBlocks = [];
         $offset = 0;
@@ -469,7 +471,7 @@ class BadgeService
             }
         }
 
-
+        // 3. Interleaving data and error correction codewords
         $interleaved = [];
         $maxDataLen = 0;
         foreach ($dataBlocks as $b) {
@@ -493,12 +495,12 @@ class BadgeService
             $finalBits .= str_pad(decbin($byte), 8, '0', STR_PAD_LEFT);
         }
         if ($ver >= 2 && $ver <= 6) {
-            $finalBits .= str_repeat('0', 7);
+            $finalBits .= str_repeat('0', 7); // Remainder bits
         } elseif ($ver >= 14 && $ver <= 20) {
-            $finalBits .= str_repeat('0', 3);
+            $finalBits .= str_repeat('0', 3); // Remainder bits for versions 14-20
         }
 
-
+        // 4. Matrix Layout
         $matrix = array_fill(0, $dim, array_fill(0, $dim, null));
         $isFunction = array_fill(0, $dim, array_fill(0, $dim, false));
 
@@ -521,7 +523,7 @@ class BadgeService
         $setFinder(0, $dim - 7);
         $setFinder($dim - 7, 0);
 
-
+        // Timing patterns
         for ($i = 8; $i < $dim - 8; $i++) {
             $val = ($i % 2 === 0) ? 1 : 0;
             if (!$isFunction[6][$i]) {
@@ -534,7 +536,7 @@ class BadgeService
             }
         }
 
-
+        // Alignment patterns
         if (!empty($alignPos)) {
             $coords = [];
             foreach ($alignPos as $r) {
@@ -556,12 +558,12 @@ class BadgeService
             }
         }
 
-
+        // Dark module
         $darkRow = 4 * $ver + 9;
         $matrix[$darkRow][8] = 1;
         $isFunction[$darkRow][8] = true;
 
-
+        // Reserve format info modules
         for ($i = 0; $i < 9; $i++) {
             $isFunction[8][$i] = true;
             $isFunction[$i][8] = true;
@@ -573,7 +575,7 @@ class BadgeService
             $isFunction[$i][8] = true;
         }
 
-
+        // Reserve version info modules for V >= 7
         if ($ver >= 7) {
             for ($i = 0; $i < 6; $i++) {
                 for ($j = 0; $j < 3; $j++) {
@@ -583,7 +585,7 @@ class BadgeService
             }
         }
 
-
+        // 5. Place data bits in zigzag order with Mask 0 ((r+c)%2 == 0)
         $bitIdx = 0;
         $bitLen = strlen($finalBits);
         $col = $dim - 1;
@@ -608,7 +610,7 @@ class BadgeService
             $col -= 2;
         }
 
-
+        // 6. Write Format Information (EC Level L = 01, Mask 0 = 000 -> 0x77C4)
         $fiBits = sprintf('%015b', 0x77C4);
         $coords1 = [
             [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5],
@@ -625,7 +627,7 @@ class BadgeService
             $matrix[$coords2[$i][0]][$coords2[$i][1]] = $val;
         }
 
-
+        // 7. Write Version Information for V >= 7
         if ($ver >= 7 && $verBits) {
             $vbStr = sprintf('%018b', $verBits);
             for ($i = 0; $i < 18; $i++) {
@@ -637,7 +639,7 @@ class BadgeService
             }
         }
 
-
+        // 8. Generate Run-Length Compressed SVG Path
         $viewSize = $dim + 2 * $margin;
         $pathD = '';
         for ($r = 0; $r < $dim; $r++) {
@@ -667,19 +669,17 @@ class BadgeService
         return $svg;
     }
 
-
-
-
+    /**
+     * Generate standalone SVG QR Code specifically for a dynamic badge token
+     */
     public static function generateBadgeQrSvg(string $badgeToken, array $options = []): string
     {
-        $appUrl = getenv('APP_URL') ?: 'https://zabotaryadom.by';
-        $verificationUrl = rtrim($appUrl, '/') . '/api/volunteers/badge/' . $badgeToken;
-        return self::generateQrSvg($verificationUrl, $options);
+        return self::generateQrSvg(Url::verifyBadge($badgeToken), $options);
     }
 
-
-
-
+    /**
+     * Generate complete visual SVG Badge Card for in-person verification (WCAG 2.1 AAA, Zero-Emoji)
+     */
     public static function generateBadgeSvg(
         int $volunteerUserId,
         ?string $badgeToken = null,
@@ -703,7 +703,7 @@ class BadgeService
 
         $expiresAtFormatted = date('H:i:s d.m.Y', $expTimestamp);
 
-
+        // Generate inner QR code SVG (240x240)
         $qrSvg = self::generateBadgeQrSvg($token, [
             'size' => 240,
             'margin' => 3,
@@ -721,25 +721,25 @@ class BadgeService
         $badge .= '<filter id="cardShadow" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="4" stdDeviation="6" flood-opacity="0.12"/></filter>';
         $badge .= '</defs>';
 
-
+        // Card Frame
         $badge .= '<rect x="10" y="10" width="400" height="620" rx="16" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2" filter="url(#cardShadow)"/>';
 
-
+        // Header Background
         $badge .= '<path d="M10 26 Q10 10 26 10 L394 10 Q410 10 410 26 L410 110 L10 110 Z" fill="url(#headerGrad)"/>';
         $badge .= '<rect x="10" y="108" width="400" height="4" fill="#D97706"/>';
 
-
+        // Shield Vector Icon (Zero-Emoji)
         $badge .= '<g transform="translate(30, 28)" fill="none" stroke="#F8FAFC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
         $badge .= '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>';
         $badge .= '<path d="m9 12 2 2 4-4" stroke="#F59E0B" stroke-width="2.5"/>';
         $badge .= '</g>';
 
-
+        // Header Text
         $badge .= '<text x="68" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="700" fill="#F59E0B" letter-spacing="1">ГОСУДАРСТВЕННАЯ СЛУЖБА ПОДДЕРЖКИ</text>';
         $badge .= '<text x="68" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="800" fill="#FFFFFF">' . htmlspecialchars($org) . '</text>';
         $badge .= '<text x="68" y="80" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500" fill="#E2E8F0">Платформа взаимной помощи «ЗаботаРядом»</text>';
 
-
+        // Status Badge Pill
         $badge .= '<g transform="translate(100, 126)">';
         $badge .= '<rect x="0" y="0" width="220" height="28" rx="14" fill="#DCFCE7" stroke="#16A34A" stroke-width="1.5"/>';
         $badge .= '<circle cx="16" cy="14" r="6" fill="#16A34A"/>';
@@ -747,45 +747,45 @@ class BadgeService
         $badge .= '<text x="32" y="19" font-family="system-ui, sans-serif" font-size="12" font-weight="700" fill="#166534">' . htmlspecialchars($status) . '</text>';
         $badge .= '</g>';
 
-
+        // Volunteer Details
         $badge .= '<text x="210" y="186" text-anchor="middle" font-family="system-ui, sans-serif" font-size="20" font-weight="800" fill="#0F172A">' . htmlspecialchars($name) . '</text>';
         $badge .= '<text x="210" y="206" text-anchor="middle" font-family="monospace, monospace" font-size="13" font-weight="600" fill="#475569">№ ' . htmlspecialchars($bid) . '</text>';
         $badge .= '<text x="210" y="225" text-anchor="middle" font-family="system-ui, sans-serif" font-size="12" font-weight="500" fill="#64748B">Официальный волонтёр платформы «ЗаботаРядом»</text>';
 
-
+        // QR Code Container Frame with crosshairs
         $badge .= '<rect x="85" y="240" width="250" height="250" rx="12" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="2"/>';
 
-
+        // Crosshairs
         $badge .= '<path d="M90 255 L90 245 L100 245" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>';
         $badge .= '<path d="M330 255 L330 245 L320 245" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>';
         $badge .= '<path d="M90 475 L90 485 L100 485" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>';
         $badge .= '<path d="M330 475 L330 485 L320 485" fill="none" stroke="#94A3B8" stroke-width="2.5" stroke-linecap="round"/>';
 
-
+        // Embedded QR Code
         $badge .= '<g transform="translate(90, 245)">' . $qrClean . '</g>';
 
-
+        // Scan Instructions
         $badge .= '<text x="210" y="508" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#334155">Отсканируйте камерой смартфона</text>';
         $badge .= '<text x="210" y="522" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="400" fill="#64748B">для мгновенной проверки аккредитации на портале</text>';
 
-
+        // Security Divider
         $badge .= '<line x1="30" y1="538" x2="390" y2="538" stroke="#E2E8F0" stroke-width="1"/>';
 
-
+        // Clock / TTL Icon & Text
         $badge .= '<g transform="translate(36, 548)" fill="none" stroke="#2563EB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
         $badge .= '<circle cx="8" cy="8" r="7"/><polyline points="8 4 8 8 11 9"/>';
         $badge .= '</g>';
         $badge .= '<text x="58" y="560" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1E293B">Динамический QR (TTL: 1 ч)</text>';
         $badge .= '<text x="58" y="574" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#64748B">Действителен до: ' . htmlspecialchars($expiresAtFormatted) . '</text>';
 
-
+        // Padlock / HMAC Icon & Text
         $badge .= '<g transform="translate(245, 548)" fill="none" stroke="#059669" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
         $badge .= '<rect x="3" y="7" width="10" height="8" rx="2"/><path d="M5 7V4a3 3 0 0 1 6 0v3"/>';
         $badge .= '</g>';
         $badge .= '<text x="265" y="560" font-family="system-ui, sans-serif" font-size="11" font-weight="600" fill="#1E293B">HMAC-SHA256 подпись</text>';
         $badge .= '<text x="265" y="574" font-family="system-ui, sans-serif" font-size="10" font-weight="500" fill="#64748B">Защищено от копирования</text>';
 
-
+        // Footer hotline bar
         $badge .= '<rect x="10" y="596" width="400" height="34" rx="0" fill="#F1F5F9"/>';
         $badge .= '<path d="M10 610 L10 618 Q10 630 26 630 L394 630 Q410 630 410 618 L410 610 Z" fill="#F1F5F9"/>';
         $badge .= '<text x="210" y="618" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="#475569">ТЦСОН: +375 (17) 377-00-00 • Единый номер 8-801-100-8-801</text>';
@@ -794,9 +794,9 @@ class BadgeService
         return $badge;
     }
 
-
-
-
+    // =========================================================================
+    // Private Mathematical Helpers for GF(256) and Reed-Solomon
+    // =========================================================================
 
     private static function initGf(): void
     {

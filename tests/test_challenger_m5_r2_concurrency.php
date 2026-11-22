@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * Challenger M5-r2-2: Concurrency & SOS Priority 0 Empirical Adversarial Harness
+ * 
+ * Objectives:
+ * 1. Empirically verify MySQL storage configuration and concurrent write resilience:
+ *    - InnoDB engine, utf8mb4 charset, declared foreign keys, durable commits.
+ *    - Multi-process / burst load stress tests against MySQL database inside container.
+ *    - Rapid sequential and concurrent transactions (SOS creation, task assignment, completion, profile anonymization, consent logging)
+ *      with ZERO deadlocks / lock-wait timeouts.
+ * 2. Empirically verify SOS Emergency Priority 0:
+ *    - SOS alerts default to Priority 0 both in API response and in MySQL sos_alerts.priority.
+ *    - Resolving SOS alert with valid resolution note properly transitions status to RESOLVED and records resolution timestamp.
+ */
 
 require_once __DIR__ . '/../app/Core/Database.php';
 require_once __DIR__ . '/../app/Core/Model.php';
@@ -76,51 +76,55 @@ echo "==========================================================================
 
 $pdo = Database::getConnection();
 
+// =============================================================================
+// SECTION 1: MySQL Storage Engine, Charset & Foreign-Key Verification
+// =============================================================================
+echo "--- [SECTION 1] MySQL Storage Engine & Foreign-Key Verification ---\n";
 
+$engine = strtolower((string)$pdo->query("
+    SELECT ENGINE FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn());
+assertChallenger(
+    'CHAL-DB-01',
+    'MySQL uses InnoDB for transactional help_requests',
+    $engine === 'innodb',
+    "Actual engine: {$engine}"
+);
 
+$charset = strtolower((string)$pdo->query("
+    SELECT DEFAULT_CHARACTER_SET_NAME FROM INFORMATION_SCHEMA.SCHEMATA
+    WHERE SCHEMA_NAME = DATABASE()
+")->fetchColumn());
+assertChallenger(
+    'CHAL-DB-02',
+    'MySQL database uses utf8mb4 for Cyrillic and emoji-safe text',
+    $charset === 'utf8mb4',
+    "Actual charset: {$charset}"
+);
 
-echo "--- [SECTION 1] SQLite WAL Mode & Pragma Verification ---\n";
+$foreignKeys = (int)$pdo->query("
+    SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'help_requests'
+")->fetchColumn();
+assertChallenger(
+    'CHAL-DB-03',
+    'MySQL foreign keys are declared for help_requests',
+    $foreignKeys > 0,
+    "Foreign keys: {$foreignKeys}"
+);
 
-$driver = (string)$pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-if ($driver === 'sqlite') {
-    $journalMode = strtolower((string)$pdo->query("PRAGMA journal_mode")->fetchColumn());
-    assertChallenger(
-        'CHAL-WAL-01',
-        'SQLite journal_mode is configured as WAL (Write-Ahead Logging)',
-        $journalMode === 'wal',
-        "Actual journal_mode: {$journalMode}"
-    );
+$flush = (int)$pdo->query('SELECT @@innodb_flush_log_at_trx_commit')->fetchColumn();
+assertChallenger(
+    'CHAL-DB-04',
+    'InnoDB is configured for durable commits (innodb_flush_log_at_trx_commit = 1)',
+    $flush === 1,
+    "Actual innodb_flush_log_at_trx_commit: {$flush}"
+);
 
-    $busyTimeout = (int)$pdo->query("PRAGMA busy_timeout")->fetchColumn();
-    assertChallenger(
-        'CHAL-WAL-02',
-        'SQLite busy_timeout is set to at least 5000ms',
-        $busyTimeout >= 5000,
-        "Actual busy_timeout: {$busyTimeout}ms"
-    );
-
-    $synchronous = (int)$pdo->query("PRAGMA synchronous")->fetchColumn();
-    assertChallenger(
-        'CHAL-WAL-03',
-        'SQLite synchronous pragma is NORMAL (1) for high-performance WAL writes',
-        $synchronous === 1,
-        "Actual synchronous: {$synchronous}"
-    );
-
-    $foreignKeys = (int)$pdo->query("PRAGMA foreign_keys")->fetchColumn();
-    assertChallenger(
-        'CHAL-WAL-04',
-        'SQLite foreign_keys pragma is enabled (1)',
-        $foreignKeys === 1,
-        "Actual foreign_keys: {$foreignKeys}"
-    );
-} else {
-    echo "  [SKIP] SQLite WAL checks do not apply to driver: {$driver}\n";
-}
-
-
-
-
+// =============================================================================
+// SECTION 2: SOS Emergency Priority 0 & Resolution Lifecycle
+// =============================================================================
 echo "\n--- [SECTION 2] SOS Emergency Priority 0 & Resolution Lifecycle ---\n";
 
 $elderlyUser = $harness->registerUser(1, 'Пенсионер Приоритет Ноль');
@@ -130,7 +134,7 @@ $elderlyToken = $elderlyUser['token'];
 $coordinatorToken = $harness->getCoordinatorToken();
 $volunteerToken = $harness->getVolunteerToken();
 
-
+// 2.1 SOS Creation via API: default Priority 0 in HTTP API response
 $sosApiRes = $harness->apiCall('POST', '/api/sos', [
     'latitude' => 53.9168,
     'longitude' => 27.5862,
@@ -141,18 +145,18 @@ $sosId = (int)($sosApiRes['data']['sos_id'] ?? 0);
 assertChallenger(
     'CHAL-SOS-PRIO-01',
     'POST /api/sos response defaults to priority 0 and status ACTIVE',
-    $sosApiRes['code'] === 201
+    $sosApiRes['code'] === 201 
         && ($sosApiRes['data']['success'] ?? false) === true
         && ($sosApiRes['data']['priority'] ?? -1) === 0
         && ($sosApiRes['data']['status'] ?? '') === 'ACTIVE',
     "HTTP {$sosApiRes['code']}, Priority=" . var_export($sosApiRes['data']['priority'] ?? null, true)
 );
 
-
+// 2.2 Direct MySQL verification of Priority 0 in database
 $dbSos = SosAlert::find($sosId);
 assertChallenger(
     'CHAL-SOS-PRIO-02',
-    'SQLite database table sos_alerts stores priority = 0 and status = ACTIVE',
+    'MySQL database table sos_alerts stores priority = 0 and status = ACTIVE',
     $dbSos !== null
         && (int)$dbSos['priority'] === 0
         && $dbSos['status'] === 'ACTIVE'
@@ -160,7 +164,7 @@ assertChallenger(
     "DB priority=" . var_export($dbSos['priority'] ?? null, true) . ", status=" . ($dbSos['status'] ?? 'null')
 );
 
-
+// 2.3 Table schema constraint default check
 $schemaStmt = $pdo->prepare("INSERT INTO sos_alerts (elderly_id, latitude, longitude, address, reason, status) VALUES (:eid, 53.9168, 27.5862, 'Тестовый адрес', 'Тест схемы', 'ACTIVE')");
 $schemaStmt->execute(['eid' => $elderlyId]);
 $schemaAlertId = (int)$pdo->lastInsertId();
@@ -168,12 +172,12 @@ $dbSchemaAlert = SosAlert::find($schemaAlertId);
 
 assertChallenger(
     'CHAL-SOS-PRIO-03',
-    'SQLite DDL default constraint automatically assigns priority 0 when omitted from INSERT',
+    'MySQL DDL default constraint automatically assigns priority 0 when omitted from INSERT',
     $dbSchemaAlert !== null && (int)$dbSchemaAlert['priority'] === 0,
     "Schema default priority: " . var_export($dbSchemaAlert['priority'] ?? null, true)
 );
 
-
+// 2.4 Priority sorting in active alerts feed
 $activeAlertsRes = $harness->apiCall('GET', '/api/sos/active', null, ["Authorization: Bearer {$coordinatorToken}"]);
 $activeAlerts = $activeAlertsRes['data']['data'] ?? [];
 $isFirstPriority0 = count($activeAlerts) > 0 && (int)$activeAlerts[0]['priority'] === 0;
@@ -185,7 +189,7 @@ assertChallenger(
     "Count: " . count($activeAlerts) . ", Head Priority: " . ($activeAlerts[0]['priority'] ?? 'none')
 );
 
-
+// 2.5 SOS Alert Resolution with valid resolution note
 $resolveRes = $harness->apiCall('POST', "/api/sos/{$sosId}/resolve", [
     'resolution_note' => 'Медицинская бригада СМП прибыла на место, состояние гражданина стабилизировано',
     'resolved_by' => 2
@@ -207,7 +211,7 @@ assertChallenger(
     "HTTP {$resolveRes['code']}, DB status: {$dbSosResolved['status']}, resolved_at: {$dbSosResolved['resolved_at']}, delta: " . abs($nowTs - $resolvedTs) . "s"
 );
 
-
+// 2.6 Resolved alert is excluded from active feeds
 $activeAfterRes = $harness->apiCall('GET', '/api/sos/active', null, ["Authorization: Bearer {$coordinatorToken}"]);
 $activeIdsAfter = array_column($activeAfterRes['data']['data'] ?? [], 'id');
 
@@ -218,7 +222,7 @@ assertChallenger(
     "Resolved ID {$sosId} present in active list: " . var_export(in_array($sosId, $activeIdsAfter, false), true)
 );
 
-
+// 2.7 Security RBAC: non-coordinator/admin cannot resolve SOS alert
 $unauthResolveRes = $harness->apiCall('POST', "/api/sos/{$schemaAlertId}/resolve", [
     'resolution_note' => 'Попытка закрытия волонтёром'
 ], ["Authorization: Bearer {$volunteerToken}"]);
@@ -230,7 +234,7 @@ assertChallenger(
     "HTTP {$unauthResolveRes['code']}"
 );
 
-
+// 2.8 Resolving non-existent SOS alert returns HTTP 404
 $notFoundResolveRes = $harness->apiCall('POST', "/api/sos/999999/resolve", [
     'resolution_note' => 'Несуществующая тревога'
 ], ["Authorization: Bearer {$coordinatorToken}"]);
@@ -242,24 +246,24 @@ assertChallenger(
     "HTTP {$notFoundResolveRes['code']}"
 );
 
-
-
-
+// =============================================================================
+// SECTION 3: Multi-Process & Burst Load Concurrency Resilience
+// =============================================================================
 echo "\n--- [SECTION 3] Multi-Process & Burst Load Concurrency Resilience ---\n";
 
-
+// Clear rate limits before running burst test
 RateLimiter::clear('create_request:127.0.0.1');
 
-
+// Setup verified volunteer for task assignment and completion
 $burstVolUser = $harness->registerUser(2, 'Волонтёр Стресс-Теста Смирнов');
 $burstVolId = (int)$burstVolUser['user']['id'];
 $burstVolToken = $burstVolUser['token'];
 $harness->apiCall('POST', "/api/coordinator/verify-volunteer/{$burstVolId}");
 
-
+// 3.1: Sequential cross-domain transaction chain (SOS, Task, Complete, Anonymize, Consent)
 $chainErrors = [];
 try {
-
+    // A: SOS Creation
     $chainSosId = SosAlert::create([
         'elderly_id' => $elderlyId,
         'latitude' => 53.9168,
@@ -272,7 +276,7 @@ try {
         'created_at' => date('Y-m-d H:i:s')
     ]);
 
-
+    // B: Task Creation & Assignment
     $chainReqId = HelpRequest::create([
         'elderly_id' => $elderlyId,
         'category_id' => 1,
@@ -287,13 +291,13 @@ try {
         'assigned_at' => date('Y-m-d H:i:s')
     ]);
 
-
+    // C: Task Completion
     HelpRequest::update($chainReqId, [
         'status' => 'completed',
         'completed_at' => date('Y-m-d H:i:s')
     ]);
 
-
+    // D: Electronic Consent Logging
     $privacyService = new PrivacyService();
     $consentRecorded = $privacyService->recordConsent(
         $elderlyId,
@@ -303,7 +307,7 @@ try {
         'Challenger M5-r2-2 Concurrency Harness'
     );
 
-
+    // E: User Anonymization on a dedicated user
     $anonUser = $harness->registerUser(1, 'Гражданин Для Забвения');
     $anonUid = (int)$anonUser['user']['id'];
     $anonRes = $privacyService->anonymizeUser($anonUid);
@@ -320,8 +324,8 @@ assertChallenger(
     "Errors: " . implode('; ', $chainErrors)
 );
 
-
-
+// 3.2: Multi-Process Concurrent Stress Test: 20 Parallel CLI Processes
+// Each process opens its own MySQL PDO connection and performs multi-statement write transactions
 $workerScript = __DIR__ . '/_tmp_concurrency_worker.php';
 $workerCode = <<<'PHP'
 <?php
@@ -347,6 +351,7 @@ $pdo = Database::getConnection();
 $errors = [];
 
 try {
+    // 1. Insert SOS Alert
     $sosId = SosAlert::create([
         'elderly_id' => $elderlyId,
         'latitude' => 53.9168 + ($workerId * 0.0001),
@@ -359,6 +364,7 @@ try {
         'created_at' => date('Y-m-d H:i:s')
     ]);
 
+    // 2. Insert Help Request
     $reqId = HelpRequest::create([
         'elderly_id' => $elderlyId,
         'category_id' => 1,
@@ -371,17 +377,20 @@ try {
         'status' => 'open'
     ]);
 
+    // 3. Assign task to volunteer
     HelpRequest::update((int)$reqId, [
         'volunteer_id' => $volunteerId,
         'status' => 'in_progress',
         'assigned_at' => date('Y-m-d H:i:s')
     ]);
 
+    // 4. Complete task
     HelpRequest::update((int)$reqId, [
         'status' => 'completed',
         'completed_at' => date('Y-m-d H:i:s')
     ]);
 
+    // 5. Consent record in ledger
     $privSvc = new PrivacyService();
     $privSvc->recordConsent(
         $elderlyId,
@@ -391,6 +400,7 @@ try {
         "Process-{$workerId}-Worker"
     );
 
+    // 6. Resolve SOS Alert
     SosAlert::resolveAlert((int)$sosId);
 
     echo "OK:{$workerId}:{$sosId}:{$reqId}\n";
@@ -409,7 +419,7 @@ $procHandles = [];
 $procPipes = [];
 $cmdBase = 'php ' . escapeshellarg($workerScript) . ' ';
 
-
+// Spawn 20 processes in parallel
 for ($i = 1; $i <= $numProcesses; $i++) {
     $descriptors = [
         0 => ['pipe', 'r'],
@@ -445,8 +455,9 @@ foreach ($procHandles as $i => $proc) {
         $createdWorkerSosIds[] = (int)($parts[2] ?? 0);
         $createdWorkerReqIds[] = (int)($parts[3] ?? 0);
     } else {
-        if (str_contains($outTrim, 'database is locked') || str_contains($stderr, 'database is locked')
-            || str_contains($outTrim, 'SQLITE_BUSY') || str_contains($stderr, 'SQLITE_BUSY')) {
+        if (str_contains($outTrim, 'Deadlock found') || str_contains($stderr, 'Deadlock found')
+            || str_contains($outTrim, 'Lock wait timeout') || str_contains($stderr, 'Lock wait timeout')
+            || str_contains($outTrim, 'SQLSTATE[40001]') || str_contains($stderr, 'SQLSTATE[40001]')) {
             $lockBusyErrors++;
         }
         $otherErrors[] = "Worker {$i}: exit={$exitCode}, out={$outTrim}, err={$stderr}";
@@ -464,12 +475,12 @@ assertChallenger(
 
 assertChallenger(
     'CHAL-CONCUR-03',
-    'Zero SQLITE_BUSY or database is locked occurrences during parallel 20-process burst',
+    'Zero MySQL deadlocks or lock-wait timeouts during parallel 20-process burst',
     $lockBusyErrors === 0,
     "Lock Busy Count: {$lockBusyErrors}"
 );
 
-
+// 3.3 Verify database state from multi-process burst
 $persistedSosCount = 0;
 $persistedReqCount = 0;
 
@@ -491,7 +502,7 @@ assertChallenger(
     "Persisted SOS: {$persistedSosCount}/{$numProcesses}, Persisted Requests: {$persistedReqCount}/{$numProcesses}"
 );
 
-
+// 3.4 HTTP curl_multi concurrent API burst: 10 parallel HTTP requests simultaneously
 $mh = curl_multi_init();
 $curls = [];
 $httpSosIds = [];
@@ -552,7 +563,7 @@ assertChallenger(
     "HTTP 201: {$httpSuccessCount}/10, Unique IDs: " . count(array_unique($httpSosIds))
 );
 
-
+// 3.5 Cleanup test records
 unset($stmtSos, $stmtReq, $schemaStmt);
 Database::resetConnection();
 $cleanupPdo = Database::getConnection();

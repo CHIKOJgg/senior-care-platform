@@ -17,8 +17,17 @@ class Logger
 
         $timestamp = date('Y-m-d H:i:s');
         $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $uri = $_SERVER['REQUEST_URI'] ?? '-';
+        $uri = (string)($_SERVER['REQUEST_URI'] ?? '-');
         $method = $_SERVER['REQUEST_METHOD'] ?? '-';
+
+        // Never persist bearer/QNR tokens or query credentials in log files.
+        $uri = (string)preg_replace('#(/api/volunteers/badge/|/verify/)([^/?]+)#', '$1[redacted]', $uri);
+        $uri = (string)preg_replace('/([?&](?:token|code)=)[^&]+/i', '$1[redacted]', $uri);
+        foreach ($context as $key => $value) {
+            if (preg_match('/phone|password|token|secret/i', (string)$key) && is_scalar($value)) {
+                $context[$key] = '[redacted]';
+            }
+        }
 
         $contextStr = !empty($context) ? ' ' . json_encode($context, JSON_UNESCAPED_UNICODE) : '';
         $entry = sprintf("[%s] [%s] [%s %s] [IP: %s] %s%s\n", $timestamp, strtoupper($level), $method, $uri, $ip, $message, $contextStr);
