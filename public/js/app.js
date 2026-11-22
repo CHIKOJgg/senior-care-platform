@@ -1227,6 +1227,8 @@ async function deleteCategory(id) {
     }
 }
 
+let adminEducationCache = [];
+
 async function loadAdminEducation() {
     const tbody = document.getElementById('adminEducationTableBody');
     if (!tbody) return;
@@ -1234,6 +1236,7 @@ async function loadAdminEducation() {
         const res = await authFetch('/api/education');
         const json = await res.json();
         const list = Array.isArray(json.data) ? json.data : [];
+        adminEducationCache = list;
         if (list.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 18px;">Материалов пока нет</td></tr>`;
             return;
@@ -1244,7 +1247,12 @@ async function loadAdminEducation() {
                 <td><strong>${escapeHtml(m.title)}</strong></td>
                 <td>${escapeHtml(m.type || 'memo')}</td>
                 <td>${escapeHtml(m.category || 'Общее')}</td>
-                <td><button class="btn btn-danger btn-xs" onclick="deleteEducationMaterial(${m.id})">Удалить</button></td>
+                <td>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn btn-outline btn-xs" onclick="editEducationMaterial(${m.id})">Изменить</button>
+                        <button class="btn btn-danger btn-xs" onclick="deleteEducationMaterial(${m.id})">Удалить</button>
+                    </div>
+                </td>
             </tr>
         `).join('');
     } catch (e) {
@@ -1253,8 +1261,43 @@ async function loadAdminEducation() {
     }
 }
 
+function resetEducationForm() {
+    const form = document.getElementById('educationForm');
+    if (form) form.reset();
+    const idInput = document.getElementById('eduId');
+    if (idInput) idInput.value = '';
+    const btn = document.getElementById('eduSubmitBtn');
+    if (btn) btn.textContent = 'Добавить материал';
+    const msg = document.getElementById('educationFormMessage');
+    if (msg) msg.style.display = 'none';
+}
+
+function editEducationMaterial(id) {
+    const m = adminEducationCache.find(item => Number(item.id) === Number(id));
+    if (!m) return;
+    const idInput = document.getElementById('eduId');
+    if (idInput) idInput.value = m.id;
+    const titleInput = document.getElementById('eduTitle');
+    if (titleInput) titleInput.value = m.title || '';
+    const typeInput = document.getElementById('eduType');
+    if (typeInput) typeInput.value = m.type || 'memo';
+    const catInput = document.getElementById('eduCategory');
+    if (catInput) catInput.value = m.category || 'Безопасность';
+    const audioInput = document.getElementById('eduAudioUrl');
+    if (audioInput) audioInput.value = m.audio_url || '';
+    const contentInput = document.getElementById('eduContent');
+    if (contentInput) contentInput.value = m.content || '';
+    const btn = document.getElementById('eduSubmitBtn');
+    if (btn) btn.textContent = 'Сохранить изменения';
+    const form = document.getElementById('educationForm');
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+window.resetEducationForm = resetEducationForm;
+window.editEducationMaterial = editEducationMaterial;
+
 async function submitEducationForm(event) {
     if (event) event.preventDefault();
+    const id = document.getElementById('eduId')?.value;
     const payload = {
         title: document.getElementById('eduTitle').value.trim(),
         type: document.getElementById('eduType').value,
@@ -1267,19 +1310,20 @@ async function submitEducationForm(event) {
         return false;
     }
     try {
-        const res = await authFetch('/api/education', {
-            method: 'POST',
+        const url = id ? `/api/education/${id}` : '/api/education';
+        const method = id ? 'PUT' : 'POST';
+        const res = await authFetch(url, {
+            method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const json = await res.json();
         if (res.ok && json.success) {
-            showFormMessage('educationFormMessage', 'Обучающий материал добавлен', true);
-            const form = document.getElementById('educationForm');
-            if (form) form.reset();
+            showFormMessage('educationFormMessage', id ? 'Обучающий материал обновлён' : 'Обучающий материал добавлен', true);
+            resetEducationForm();
             loadAdminEducation();
         } else {
-            showFormMessage('educationFormMessage', json.error || 'Не удалось добавить материал', false);
+            showFormMessage('educationFormMessage', json.error || 'Не удалось сохранить материал', false);
         }
     } catch (e) {
         showFormMessage('educationFormMessage', 'Сбой сети при сохранении', false);
