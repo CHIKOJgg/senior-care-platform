@@ -185,6 +185,18 @@ if (!$isAuthed || $requestUri === '/login') {
                 <button type="submit" class="btn btn-primary" id="loginSubmitBtn" style="width: 100%; min-height: 56px; font-size: 1.1em;">Войти</button>
             </form>
 
+            <?php if ((getenv('APP_ENV') ?: 'local') !== 'production'): ?>
+            <div style="margin-top: 16px; padding: 12px; background: var(--card-bg, #f8fafc); border-radius: 8px; border: 1px dashed var(--border-color, #cbd5e1);">
+                <div style="font-size: 0.85em; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Быстрый выбор роли для тестирования:</div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-outline btn-xs" onclick="fillDemoLogin('+375299999999', 'password123')">Администратор</button>
+                    <button type="button" class="btn btn-outline btn-xs" onclick="fillDemoLogin('+375295556677', 'password123')">Координатор</button>
+                    <button type="button" class="btn btn-outline btn-xs" onclick="fillDemoLogin('+375292223344', 'password123')">Волонтёр</button>
+                    <button type="button" class="btn btn-outline btn-xs" onclick="fillDemoLogin('+375291112233', 'password123')">Подопечный</button>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <button type="button" id="showResetFormBtn" class="btn btn-outline" style="width: 100%; margin-top: 12px;">Забыли пароль?</button>
 
             <div id="resetPasswordBox" style="display: none; margin-top: 18px; border-top: 1px solid var(--border-color); padding-top: 16px;">
@@ -269,6 +281,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
         <?php if ($isAuthed && $roleCode !== 'elderly'): ?>
         <button type="button" id="btnChangePassword" class="btn btn-outline btn-xs" style="height: 30px;">Сменить пароль</button>
         <button type="button" id="btnLogout" class="btn btn-outline btn-xs" style="height: 30px;">Выйти</button>
+        <?php elseif ($isAuthed && $roleCode === 'elderly'): ?>
+        <a href="/login" class="btn btn-outline btn-xs" style="height: 30px; text-decoration: none; display: inline-flex; align-items: center;">Вход для волонтёров и ТЦСОН</a>
+        <button type="button" id="btnLogout" class="btn btn-outline btn-xs" style="height: 30px;">Выйти</button>
+        <?php else: ?>
+        <a href="/login" class="btn btn-primary btn-xs" style="height: 30px; text-decoration: none; display: inline-flex; align-items: center;">Войти</a>
         <?php endif; ?>
         <div class="live-indicator">
             <span class="pulse-dot"></span>
