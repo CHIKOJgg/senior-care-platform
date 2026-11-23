@@ -1294,6 +1294,18 @@ function editEducationMaterial(id) {
 }
 window.resetEducationForm = resetEducationForm;
 window.editEducationMaterial = editEducationMaterial;
+window.submitEducationForm = submitEducationForm;
+window.deleteEducationMaterial = deleteEducationMaterial;
+
+function fillDemoLogin(phone, pass) {
+    const p = document.getElementById('gatePhone');
+    const pwd = document.getElementById('gatePassword');
+    if (p) p.value = phone;
+    if (pwd) pwd.value = pass;
+    const btn = document.getElementById('loginSubmitBtn');
+    if (btn) btn.focus();
+}
+window.fillDemoLogin = fillDemoLogin;
 
 async function submitEducationForm(event) {
     if (event) event.preventDefault();
