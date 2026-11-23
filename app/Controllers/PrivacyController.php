@@ -183,7 +183,7 @@ class PrivacyController
                     'expires' => time() - 3600,
                     'path' => '/',
                     'httponly' => true,
-                    'secure' => !empty($_SERVER['HTTPS']),
+                    'secure' => \App\Services\AuthService::cookieSecure(),
                     'samesite' => 'Lax'
                 ]);
             }

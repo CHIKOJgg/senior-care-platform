@@ -63,36 +63,22 @@ const Icons = {
     }
 };
 
-// Token storage: the pensioner's device keeps a long-lived token (localStorage),
-// staff sessions live only in the current tab (sessionStorage).
-const ELDER_TOKEN_KEY = 'elder_token';
-const STAFF_TOKEN_KEY = 'auth_token';
-
-function getToken() {
-    return sessionStorage.getItem(STAFF_TOKEN_KEY) || localStorage.getItem(ELDER_TOKEN_KEY);
-}
-
-function saveToken(token, remember) {
-    if (remember) {
-        localStorage.setItem(ELDER_TOKEN_KEY, token);
-        sessionStorage.removeItem(STAFF_TOKEN_KEY);
-    } else {
-        sessionStorage.setItem(STAFF_TOKEN_KEY, token);
-    }
-}
+// Authentication: the HttpOnly auth_token cookie is the single source of truth.
+// Tokens are never stored in localStorage/sessionStorage, so an XSS cannot read
+// them. The legacy keys are purged for browsers that still have old tokens.
+const LEGACY_TOKEN_KEYS = ['elder_token', 'auth_token'];
 
 function clearTokens() {
-    localStorage.removeItem(ELDER_TOKEN_KEY);
-    sessionStorage.removeItem(STAFF_TOKEN_KEY);
+    for (const key of LEGACY_TOKEN_KEYS) {
+        localStorage.removeItem(key);
+        sessionStorage.removeItem(key);
+    }
 }
 
-// Centralized Authenticated Fetch Wrapper
+// Centralized Authenticated Fetch Wrapper. Same-origin fetch sends the
+// HttpOnly cookie automatically; no bearer token is attached from JavaScript.
 async function authFetch(url, options = {}) {
     options.headers = options.headers || {};
-    const token = getToken();
-    if (token) {
-        options.headers['Authorization'] = `Bearer ${token}`;
-    }
     const res = await fetch(url, options);
     if (res.status === 401 && !url.startsWith('/api/auth/login')) {
         handleSessionExpired();
@@ -191,7 +177,7 @@ async function loginWithPhone(phone, password, showFeedback = true, remember = f
         });
         const data = await res.json();
         if (data.success) {
-            saveToken(data.token, remember && data.user.role_code === 'elderly');
+            // The server already set the HttpOnly cookie with the requested TTL.
             setCurrentUser(data.user);
             if (showFeedback) {
                 SpeechHelper.speak(`Вход выполнен: ${data.user.name}`);
@@ -380,7 +366,7 @@ function initSecurityControls() {
             return;
         }
 
-        const remember = !!localStorage.getItem(ELDER_TOKEN_KEY) && currentUser?.role_code === 'elderly';
+        const remember = currentUser?.role_code === 'elderly';
         const res = await authFetch('/api/auth/password', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -389,7 +375,7 @@ function initSecurityControls() {
         const data = await res.json().catch(() => ({}));
 
         if (res.ok && data.success) {
-            saveToken(data.token, remember);
+            // The response sets a fresh HttpOnly cookie; nothing to store in JS.
             setCurrentUser(data.user);
             form.reset();
             showMessage('Пароль изменён. Остальные устройства вышли из системы.', true);

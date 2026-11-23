@@ -49,43 +49,37 @@ if ($hasAuthCookie && $sessionUser === null) {
         'expires' => time() - 3600,
         'path' => '/',
         'httponly' => true,
-        'secure' => !empty($_SERVER['HTTPS']),
+        'secure' => \App\Services\AuthService::cookieSecure(),
         'samesite' => 'Lax',
     ]);
     unset($_COOKIE['auth_token']);
     $hasAuthCookie = false;
 }
 
-// Senior entrance: a fresh device opening "/" goes straight to the elderly workspace,
-// no password. Enabled outside production by default; in production opt in with
-// ELDERLY_AUTO_LOGIN=true (kiosk / demo stands). Staff areas still require /login.
-if ($sessionUser === null && !$hasAuthCookie && $requestUri === '/') {
-    $autoFlag = getenv('ELDERLY_AUTO_LOGIN');
-    $autoEnabled = ($autoFlag !== false)
-        ? ($autoFlag === 'true')
-        : ((getenv('APP_ENV') ?: 'local') !== 'production');
-
-    if ($autoEnabled) {
-        $elderlyPhone = getenv('ELDERLY_DEMO_PHONE') ?: '+375291112233';
-        try {
-            $elderly = \App\Models\User::findByPhone($elderlyPhone);
-            if ($elderly) {
-                $profile = \App\Models\User::getWithProfile((int)$elderly['id']);
-                if (($profile['role_code'] ?? '') === 'elderly') {
-                    $deviceToken = \App\Services\AuthService::createToken($profile, \App\Services\AuthService::TTL_DEVICE);
-                    setcookie('auth_token', $deviceToken, [
-                        'expires' => time() + \App\Services\AuthService::TTL_DEVICE,
-                        'path' => '/',
-                        'httponly' => true,
-                        'secure' => !empty($_SERVER['HTTPS']),
-                        'samesite' => 'Lax',
-                    ]);
-                    $sessionUser = $profile;
-                }
+// Senior kiosk entrance: opening "/" may provision the device session without a
+// password, but only when ELDERLY_AUTO_LOGIN=true is set explicitly. There is no
+// implicit auto-login: a fresh browser gets the guest screen and must choose.
+$autoLoginEnabled = getenv('ELDERLY_AUTO_LOGIN') === 'true';
+if ($autoLoginEnabled && $sessionUser === null && !$hasAuthCookie && $requestUri === '/') {
+    $elderlyPhone = getenv('ELDERLY_DEMO_PHONE') ?: '+375291112233';
+    try {
+        $elderly = \App\Models\User::findByPhone($elderlyPhone);
+        if ($elderly) {
+            $profile = \App\Models\User::getWithProfile((int)$elderly['id']);
+            if (($profile['role_code'] ?? '') === 'elderly') {
+                $deviceToken = \App\Services\AuthService::createToken($profile, \App\Services\AuthService::TTL_DEVICE);
+                setcookie('auth_token', $deviceToken, [
+                    'expires' => time() + \App\Services\AuthService::TTL_DEVICE,
+                    'path' => '/',
+                    'httponly' => true,
+                    'secure' => \App\Services\AuthService::cookieSecure(),
+                    'samesite' => 'Lax',
+                ]);
+                $sessionUser = $profile;
             }
-        } catch (\Throwable $e) {
-            $sessionUser = null;
         }
+    } catch (\Throwable $e) {
+        $sessionUser = null;
     }
 }
 
@@ -125,7 +119,82 @@ if ($isAuthed) {
 }
 
 // -------------------------------------------------------------------------
-// Dedicated staff/volunteer login page (seniors never see it: "/" auto-opens)
+// Guest landing page: "/" is a neutral entry point when the kiosk auto-login
+// is off. It never creates a session by itself; the visitor must choose.
+// -------------------------------------------------------------------------
+if (!$isAuthed && $requestUri === '/' && !$hasAuthCookie) {
+    $demoAuthAllowed = \App\Services\AuthService::isDemoAuthAllowed();
+    ?>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>ЗаботаРядом — главная</title>
+    <link rel="stylesheet" href="/css/accessibility.css?v=<?php echo @filemtime(__DIR__ . '/css/accessibility.css') ?: time(); ?>">
+</head>
+<body data-initial-role="guest" data-mode="app" class="login-body">
+<div class="login-shell">
+    <header class="login-header">
+        <a href="/" class="brand" aria-label="ЗаботаРядом — на главную">
+            <svg class="ui-icon ui-icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+            </svg>
+            ЗаботаРядом
+        </a>
+        <div class="a11y-controls">
+            <span id="a11yModeBadge" class="badge badge-verified" style="display: none;">Режим доступности</span>
+            <button id="speakPageBtn" class="btn btn-outline" title="Озвучить страницу">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                Озвучить
+            </button>
+            <button id="toggleNarrationBtn" class="btn btn-outline" aria-pressed="true" title="Включить или выключить озвучку">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                <span id="toggleNarrationLabel">Озвучка: вкл</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="login-main">
+        <section class="login-card" aria-labelledby="guestTitle">
+            <h1 id="guestTitle">Добро пожаловать</h1>
+            <p class="login-sub">Платформа взаимной помощи пожилым людям</p>
+            <p class="login-notice">Выберите, как продолжить.</p>
+
+            <?php if ($demoAuthAllowed): ?>
+            <form method="post" action="/api/auth/device" style="margin: 0;">
+                <button type="submit" class="btn btn-primary" style="width: 100%; min-height: 64px; font-size: 1.15em;">
+                    Я подопечный — продолжить без пароля
+                </button>
+            </form>
+            <p class="login-note" style="margin-top: 10px;">Демонстрационный режим: откроется тестовый профиль подопечного.</p>
+            <?php else: ?>
+            <p class="login-note">Подопечным: обратитесь к координатору ТЦСОН, чтобы настроить это устройство.</p>
+            <?php endif; ?>
+
+            <a href="/login" class="btn btn-outline" style="width: 100%; margin-top: 14px; min-height: 56px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">
+                Вход для сотрудников ТЦСОН и волонтёров
+            </a>
+        </section>
+    </main>
+
+    <footer class="login-footer">
+        Платформа взаимной помощи «ЗаботаРядом» • ТЦСОН Республики Беларусь
+    </footer>
+</div>
+<div id="a11yLiveRegion" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => 'guest', 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
+<script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
+<script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
+</body>
+</html>
+    <?php
+    exit;
+}
+
+// -------------------------------------------------------------------------
+// Dedicated staff/volunteer login page (not shown to seniors at "/")
 // -------------------------------------------------------------------------
 if (!$isAuthed || $requestUri === '/login') {
     $loginNotice = isset($_GET['expired'])
@@ -185,7 +254,7 @@ if (!$isAuthed || $requestUri === '/login') {
                 <button type="submit" class="btn btn-primary" id="loginSubmitBtn" style="width: 100%; min-height: 56px; font-size: 1.1em;">Войти</button>
             </form>
 
-            <?php if ((getenv('APP_ENV') ?: 'local') !== 'production'): ?>
+            <?php if (\App\Services\AuthService::isDemoAuthAllowed()): ?>
             <div style="margin-top: 16px; padding: 12px; background: var(--card-bg, #f8fafc); border-radius: 8px; border: 1px dashed var(--border-color, #cbd5e1);">
                 <div style="font-size: 0.85em; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Быстрый выбор роли для тестирования:</div>
                 <div style="display: flex; gap: 6px; flex-wrap: wrap;">
@@ -227,7 +296,7 @@ if (!$isAuthed || $requestUri === '/login') {
             </div>
 
             <div class="login-note">
-                Вы подопечный? <a href="/">Откройте главную страницу</a> — вход не требуется.
+                Вы подопечный? <a href="/">Вернитесь на главную</a> и выберите «Продолжить без пароля».
             </div>
         </section>
     </main>

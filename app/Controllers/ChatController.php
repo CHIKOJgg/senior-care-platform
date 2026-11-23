@@ -33,7 +33,7 @@ class ChatController
             if (!$isParticipant) {
                 Router::json(['error' => 'Доступ к сообщениям данной заявки ограничен участниками'], 403);
             }
-        } elseif (!AuthService::isDevMode()) {
+        } elseif (!AuthService::isDemoAuthAllowed()) {
             AuthService::requireAuth();
         }
 
@@ -70,7 +70,7 @@ class ChatController
             if (!$isParticipant) {
                 Router::json(['error' => 'Доступ запрещён: отправлять сообщения могут только участники заявки'], 403);
             }
-        } elseif (!AuthService::isDevMode()) {
+        } elseif (!AuthService::isDemoAuthAllowed()) {
             AuthService::requireAuth();
             return;
         } else {

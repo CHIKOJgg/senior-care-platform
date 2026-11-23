@@ -41,7 +41,7 @@
 - **Healthcheck** проверяет БД, crypto, auth и запись в `database`, `storage/logs`, `storage/cache`, `storage/metrics`; при проблеме возвращает 503.
 - **Watchdog** запускается фоновым процессом в production-контейнере, а не только при открытии админки.
 - **Демо-оповещение** о «лже-сантехниках» больше не создаётся в production (`SEED_DEMO=false`).
-- **Автовход подопечного** в production по умолчанию выключен (`ELDERLY_AUTO_LOGIN=false`).
+- **Автовход подопечного** в production по умолчанию выключен (`ELDERLY_AUTO_LOGIN=false`), а неявный demo-вход и `X-Demo-User` запрещены (`ALLOW_DEMO_AUTH=false`).
 - **Документация** синхронизирована: убраны несуществующий `/family`, PostgreSQL и multi-stage claims, удалена сирена из UI/кода/документации.
 
 ---
@@ -51,7 +51,7 @@
 1. Скопировать `.env.prod.example` → `.env.prod`, заменить **все** секреты.
 2. `APP_SECRET` — не короче 32 символов; `APP_ENCRYPTION_KEY` — строго `base64:` 32 байта, 64 hex или 32 raw-символа, иначе production вернёт 503.
 3. Задать `APP_URL=https://<домен>` — от него строятся QR-ссылки.
-4. Оставить `ELDERLY_AUTO_LOGIN=false` для многопользовательского режима.
+4. Оставить `ELDERLY_AUTO_LOGIN=false` и `ALLOW_DEMO_AUTH=false` для многопользовательского режима.
 5. Оставить `IDENTITY_PROVIDER_LIVE=false`, пока не подключён реальный шлюз МСИ/ЕСИА.
 6. Подключить реальный адаптер МЧС/112 или явно принять, что `dispatch_mode=simulated`.
 7. Проверить `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build`.

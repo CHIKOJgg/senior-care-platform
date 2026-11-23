@@ -41,6 +41,7 @@ $router->get('/api/metrics', [MetricsController::class, 'index']);
 
 // Auth routes
 $router->post('/api/auth/login', [AuthController::class, 'login']);
+$router->post('/api/auth/device', [AuthController::class, 'deviceLogin']);
 $router->post('/api/auth/register', [AuthController::class, 'register']);
 $router->get('/api/auth/me', [AuthController::class, 'me']);
 $router->post('/api/auth/logout', [AuthController::class, 'logout']);
@@ -140,7 +141,7 @@ if ($method === 'OPTIONS') {
     }
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     $allowedHeaders = 'Content-Type, Authorization, X-Auth-Token';
-    if (\App\Services\AuthService::isDevMode()) {
+    if (\App\Services\AuthService::isDemoAuthAllowed()) {
         $allowedHeaders .= ', X-Demo-User';
     }
     header('Access-Control-Allow-Headers: ' . $allowedHeaders);

@@ -28,6 +28,7 @@ $suites = [
     'tests/test_frontend_wcag.php',
     'tests/test_api_requests.php',
     'tests/test_security_headers.php',
+    'tests/test_auth_security.php',
     'tests/test_privacy.php',
     'tests/test_badge.php',
     'tests/test_sos_geofence.php',
@@ -85,6 +86,17 @@ $dbEnv = [
 foreach ($dbEnv as $key => $value) {
     putenv("{$key}={$value}");
 }
+
+// Environment for both the PHP test server and every suite process. The
+// dedicated testing environment enables the cross-role integration fixture;
+// local development and production keep anonymous requests unauthenticated.
+$serverEnv = array_merge(getenv() ?: [], $dbEnv, [
+    'APP_ENV' => 'testing',
+    'ALLOW_DEMO_AUTH' => 'true',
+    'ALLOW_ANONYMOUS_ADMIN' => 'true',
+    'ELDERLY_AUTO_LOGIN' => 'false',
+    'TEST_BASE_URL' => $baseUrl,
+]);
 
 if (!in_array('mysql', PDO::getAvailableDrivers(), true)) {
     fwrite(STDERR, "PDO MySQL driver is not enabled. Install/enable pdo_mysql or run tests in Docker:" . PHP_EOL);
@@ -155,7 +167,8 @@ if (!healthOk($baseUrl)) {
         [PHP_BINARY, '-S', '127.0.0.1:8000', 'router.php'],
         $descriptors,
         $pipes,
-        $root
+        $root,
+        $serverEnv
     );
 
     for ($i = 0; $i < 40; $i++) {
@@ -230,15 +243,9 @@ function resetDatabase(array $env): array
     return ['ok' => true, 'output' => ''];
 }
 
-$env = getenv();
-if (!is_array($env)) {
-    $env = [];
-}
-$env = array_merge($env, $dbEnv, [
-    'APP_ENV' => 'local',
-    'TEST_BASE_URL' => $baseUrl,
-    'PATH' => getenv('PATH') ?: ($env['PATH'] ?? ''),
-]);
+// Reuse exactly the same environment for the suites as for the test server.
+$env = $serverEnv;
+$env['PATH'] = getenv('PATH') ?: ($env['PATH'] ?? '');
 
 $results = [];
 $startedAt = microtime(true);
