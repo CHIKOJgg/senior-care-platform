@@ -23,7 +23,13 @@ services:
       - DB_PASSWORD=seniorpass
       - APP_ENV=local
       - APP_DEBUG=true
-      - ELDERLY_AUTO_LOGIN=true
+      # Local demo only: enables X-Demo-User and the explicit "continue without
+      # password" senior button. Never enable together with a public deployment.
+      - ALLOW_DEMO_AUTH=true
+      # Kiosk mode only. With false, "/" shows a neutral guest screen and the
+      # senior chooses the passwordless demo login explicitly.
+      - ELDERLY_AUTO_LOGIN=false
+      - ELDERLY_DEMO_PHONE=+375291112233
     depends_on:
       mysql:
         condition: service_healthy

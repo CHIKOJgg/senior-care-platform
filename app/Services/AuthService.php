@@ -43,6 +43,29 @@ class AuthService
     }
 
     /**
+     * Impersonation via X-Demo-User (and the passwordless demo device login)
+     * is never implicit: it must be explicitly enabled for a local/testing
+     * environment. Production and accidental staging deployments stay locked.
+     */
+    public static function isDemoAuthAllowed(): bool
+    {
+        return self::isDevMode() && getenv('ALLOW_DEMO_AUTH') === 'true';
+    }
+
+    /**
+     * Session cookies must always be Secure in production (the public entry
+     * point is HTTPS), even when PHP sees plain HTTP from the reverse proxy.
+     */
+    public static function cookieSecure(): bool
+    {
+        if (self::isProduction()) {
+            return true;
+        }
+        $https = strtolower((string)($_SERVER['HTTPS'] ?? ''));
+        return $https !== '' && $https !== 'off';
+    }
+
+    /**
      * Create an HMAC-SHA256 signed stateless token
      */
     public static function createToken(array $user, int $ttlSeconds = self::TTL_SESSION): string
@@ -142,9 +165,9 @@ class AuthService
             ];
         }
 
-        // Explicit demo user header for local/testing only
+        // Explicit demo-user impersonation, opt-in only (local/testing).
         $demoUserId = $_SERVER['HTTP_X_DEMO_USER'] ?? null;
-        if ($demoUserId && self::isDevMode()) {
+        if ($demoUserId && self::isDemoAuthAllowed()) {
             $user = User::getWithProfile((int)$demoUserId);
             if ($user) {
                 return [
@@ -157,9 +180,15 @@ class AuthService
             }
         }
 
-        // In local development mode without explicit token, default to admin for seamless UX
-        $env = getenv('APP_ENV') ?: 'local';
-        if ($env === 'local') {
+        // Automated integration tests use a dedicated fixture identity because
+        // they exercise endpoints across all roles. This is never active in
+        // local development or production: both the environment name and the
+        // explicit opt-in flag must match.
+        if (
+            getenv('APP_ENV') === 'testing'
+            && getenv('ALLOW_ANONYMOUS_ADMIN') === 'true'
+            && in_array(PHP_SAPI, ['cli', 'cli-server'], true)
+        ) {
             return [
                 'user_id' => 4,
                 'role_id' => 4,
@@ -169,6 +198,7 @@ class AuthService
             ];
         }
 
+        // No implicit identity: anonymous requests stay anonymous everywhere else.
         return null;
     }
 

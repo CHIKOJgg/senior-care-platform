@@ -77,7 +77,7 @@ class HelpRequestController
         $elderlyId = null;
         if ($currentUser && $currentUser['role_code'] === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
-        } elseif (AuthService::isDevMode() && isset($_GET['elderly_id'])) {
+        } elseif (AuthService::isDemoAuthAllowed() && isset($_GET['elderly_id'])) {
             $elderlyId = (int)$_GET['elderly_id'];
         }
         if ($elderlyId === null) {
@@ -100,7 +100,7 @@ class HelpRequestController
         $volunteerId = null;
         if ($currentUser && $currentUser['role_code'] === 'volunteer') {
             $volunteerId = (int)$currentUser['user_id'];
-        } elseif (AuthService::isDevMode() && isset($_GET['volunteer_id'])) {
+        } elseif (AuthService::isDemoAuthAllowed() && isset($_GET['volunteer_id'])) {
             $volunteerId = (int)$_GET['volunteer_id'];
         }
         if ($volunteerId === null) {
@@ -150,7 +150,7 @@ class HelpRequestController
         $elderlyId = null;
         if ($currentUser && $currentUser['role_code'] === 'elderly') {
             $elderlyId = (int)$currentUser['user_id'];
-        } elseif (AuthService::isDevMode()) {
+        } elseif (AuthService::isDemoAuthAllowed()) {
             $elderlyId = (int)($input['elderly_id'] ?? 1);
         }
         if ($elderlyId === null) {
@@ -246,7 +246,7 @@ class HelpRequestController
         $volunteerId = null;
         if ($currentUser && $currentUser['role_code'] === 'volunteer') {
             $volunteerId = (int)$currentUser['user_id'];
-        } elseif (AuthService::isDevMode()) {
+        } elseif (AuthService::isDemoAuthAllowed()) {
             $volunteerId = (int)($input['volunteer_id'] ?? 2);
         }
         if ($volunteerId === null) {
@@ -309,7 +309,7 @@ class HelpRequestController
             } elseif (!in_array($role, ['admin', 'coordinator'], true)) {
                 Router::json(['error' => 'Доступ запрещён: завершать заявки могут волонтёры и координаторы'], 403);
             }
-        } elseif (!AuthService::isDevMode()) {
+        } elseif (!AuthService::isDemoAuthAllowed()) {
             AuthService::requireAuth();
         }
 
@@ -450,7 +450,7 @@ class HelpRequestController
             if (!$allowed) {
                 Router::json(['error' => 'Доступ запрещён: нельзя отменить чужую заявку'], 403);
             }
-        } elseif (!AuthService::isDevMode()) {
+        } elseif (!AuthService::isDemoAuthAllowed()) {
             AuthService::requireAuth();
         }
 

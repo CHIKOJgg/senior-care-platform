@@ -54,7 +54,7 @@ class AuthController
             'expires' => time() + $ttl,
             'path' => '/',
             'httponly' => true,
-            'secure' => !empty($_SERVER['HTTPS']),
+            'secure' => AuthService::cookieSecure(),
             'samesite' => 'Lax'
         ]);
 
@@ -66,6 +66,59 @@ class AuthController
             'token' => $token,
             'user' => $withProfile
         ]);
+    }
+
+    /**
+     * Explicit passwordless demo login for a senior device.
+     *
+     * This is intentionally opt-in (ALLOW_DEMO_AUTH=true in local/testing) and
+     * never available in production. Kiosk deployments that need completely
+     * automatic provisioning must set ELDERLY_AUTO_LOGIN=true explicitly.
+     */
+    public function deviceLogin(): void
+    {
+        if (!AuthService::isDemoAuthAllowed()) {
+            Router::json(['error' => 'Вход по устройству недоступен', 'code' => 'FORBIDDEN'], 403);
+        }
+
+        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        if (!RateLimiter::check("device_login:{$ip}", 10, 300)) {
+            Logger::warning("Rate limit exceeded for device login on IP {$ip}");
+            Router::json(['error' => 'Слишком много попыток входа. Подождите 5 минут.'], 429);
+        }
+
+        $phone = getenv('ELDERLY_DEMO_PHONE') ?: '+375291112233';
+        $user = User::findByPhone($phone);
+        $profile = $user ? User::getWithProfile((int)$user['id']) : null;
+
+        if (!$profile || ($profile['role_code'] ?? '') !== 'elderly') {
+            Router::json(['error' => 'Демонстрационный профиль подопечного не найден'], 404);
+        }
+
+        unset($profile['password_hash']);
+        $token = AuthService::createToken($profile, AuthService::TTL_DEVICE);
+        @setcookie('auth_token', $token, [
+            'expires' => time() + AuthService::TTL_DEVICE,
+            'path' => '/',
+            'httponly' => true,
+            'secure' => AuthService::cookieSecure(),
+            'samesite' => 'Lax'
+        ]);
+
+        RateLimiter::clear("device_login:{$ip}");
+        Logger::info("Demo senior device login for user #{$profile['id']}");
+
+        if (str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json')) {
+            Router::json([
+                'success' => true,
+                'message' => 'Вход по устройству выполнен',
+                'token' => $token,
+                'user' => $profile
+            ]);
+        }
+
+        header('Location: /', true, 303);
+        exit;
     }
 
     public function changePassword(): void
@@ -115,7 +168,7 @@ class AuthController
             'expires' => time() + $ttl,
             'path' => '/',
             'httponly' => true,
-            'secure' => !empty($_SERVER['HTTPS']),
+            'secure' => AuthService::cookieSecure(),
             'samesite' => 'Lax'
         ]);
 
@@ -143,7 +196,7 @@ class AuthController
             'expires' => time() - 3600,
             'path' => '/',
             'httponly' => true,
-            'secure' => !empty($_SERVER['HTTPS']),
+            'secure' => AuthService::cookieSecure(),
             'samesite' => 'Lax'
         ]);
 
@@ -352,10 +405,10 @@ class AuthController
 
         $token = AuthService::createToken($user);
         @setcookie('auth_token', $token, [
-            'expires' => time() + 86400 * 7,
+            'expires' => time() + AuthService::TTL_SESSION,
             'path' => '/',
             'httponly' => true,
-            'secure' => !empty($_SERVER['HTTPS']),
+            'secure' => AuthService::cookieSecure(),
             'samesite' => 'Lax'
         ]);
 
@@ -409,7 +462,7 @@ class AuthController
             'expires' => time() - 3600,
             'path' => '/',
             'httponly' => true,
-            'secure' => !empty($_SERVER['HTTPS']),
+            'secure' => AuthService::cookieSecure(),
             'samesite' => 'Lax'
         ]);
 

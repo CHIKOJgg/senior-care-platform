@@ -102,9 +102,10 @@ docker exec senior_care_platform php tests/e2e_suite/run_e2e.php --strict
 # 5. Run Project Root Wrapper Entrypoint
 docker exec senior_care_platform php tests/test_e2e_comprehensive.php
 
-# 6. Run Baseline Tests
-docker exec senior_care_platform php tests/run_tests.php
-docker exec senior_care_platform php tests/test_api_requests.php
+# 6. Run Baseline Tests through the matrix runner (starts its own test server
+#    with APP_ENV=testing and the explicit cross-role test fixture)
+docker compose run --rm --entrypoint php app tests/run_all.php --filter=run_tests
+docker compose run --rm --entrypoint php app tests/run_all.php --filter=api_requests
 ```
 
 ### 4.2 Running Natively on Host
@@ -118,7 +119,7 @@ export DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3307 \
 php tests/run_all.php
 ```
 
-`tests/run_all.php` starts a PHP server, resets the MySQL database, runs migrations/seeds and executes all 21 suites.
+`tests/run_all.php` starts a PHP server, resets the MySQL database, runs migrations/seeds and executes all 23 suites.
 
 ### 4.3 CLI Options Reference
 
@@ -166,10 +167,13 @@ $harness->assertMilestone('M2', 'F08-01: BadgeService class exists', function() 
 ### 6.2 Rate Limiting Isolation
 The production platform limits requests via `RateLimiter::check("create_request:{$ip}", 20, 60)`. Running 250+ automated tests rapidly from `127.0.0.1` would cause cascading HTTP 429 throttling errors. The test harness isolates rate limiting by resetting IP counters via `RateLimiter::clear("create_request:127.0.0.1")` before automated fixture generation, preserving strict rate limit tests in Tier 2 (`T2-RAT-01..05`) without polluting the rest of the test suite.
 
-### 6.3 Local Environment Fallback Handling
-In `APP_ENV=local`, `AuthService::getCurrentUser()` defaults unauthenticated requests to the default admin profile for developer convenience. The test suite avoids relying on ambiguous unauthenticated state:
-- Unauthenticated / tampered token rejection is verified directly against `AuthService::verifyToken()`.
-- API-level RBAC enforcement is tested by providing genuine tokens for non-privileged roles (e.g., passing a verified volunteer token to `POST /api/admin/alerts`, confirming HTTP 403 Forbidden).
+### 6.3 Explicit Integration-Test Identity Fixture
+Local development and production never synthesize an identity for anonymous requests: `AuthService::getCurrentUser()` returns `null` unless a valid token, an explicitly enabled demo header (`ALLOW_DEMO_AUTH=true`), or the integration-test fixture is present.
+
+The matrix runner sets `APP_ENV=testing` and `ALLOW_ANONYMOUS_ADMIN=true` for **both** its PHP server and the suites. The fixture is additionally limited to the `cli`/`cli-server` SAPIs. This gives cross-role suites an admin identity without weakening local or production defaults.
+
+- `tests/test_auth_security.php` verifies that local/production anonymous requests stay anonymous and that the test fixture cannot escape the testing environment.
+- API-level RBAC enforcement is also tested with genuine tokens for non-privileged roles (e.g., passing a verified volunteer token to `POST /api/admin/alerts`, confirming HTTP 403 Forbidden).
 
 ### 6.4 AEAD Cryptographic Verification
 For sensitive data encryption tests, `CryptoService::decrypt()` relies on OpenSSL AES-256-GCM. Corrupted or tampered ciphertext payloads with `enc:v1:` prefix trigger OpenSSL authentication tag verification failures and throw `RuntimeException('DecryptionException...')`. The test assertions catch `Throwable` to confirm that AEAD tags strictly reject modified payloads.
