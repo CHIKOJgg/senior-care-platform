@@ -27,6 +27,7 @@ $suites = [
     'tests/run_tests.php',
     'tests/test_frontend_wcag.php',
     'tests/test_api_requests.php',
+    'tests/test_security_headers.php',
     'tests/test_privacy.php',
     'tests/test_badge.php',
     'tests/test_sos_geofence.php',
