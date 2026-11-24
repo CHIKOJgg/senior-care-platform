@@ -12,6 +12,7 @@ use App\Services\AuthService;
 use App\Services\BadgeService;
 use App\Services\Identity\IdentityProviderFactory;
 use App\Models\VolunteerProfile;
+use App\Models\VolunteerTrainingAssignment;
 use App\Models\User;
 
 class VolunteerController
@@ -85,6 +86,50 @@ class VolunteerController
             'verification_url' => $verificationUrl,
             'qr_svg' => $qrSvg,
             'badge_svg_url' => "/api/volunteers/badge/{$token}/svg"
+        ]);
+    }
+
+    /**
+     * Assigned retraining materials for the authenticated volunteer.
+     * Route: GET /api/volunteers/training
+     */
+    public function trainingMaterials(): void
+    {
+        $auth = AuthService::requireAuth(['volunteer']);
+        $materials = VolunteerTrainingAssignment::getForVolunteer((int)$auth['user_id']);
+
+        Router::json([
+            'success' => true,
+            'count' => count($materials),
+            'data' => $materials
+        ]);
+    }
+
+    /**
+     * Mark an assigned retraining material as completed.
+     * Route: POST /api/volunteers/training/{id}/complete
+     */
+    public function completeTrainingMaterial(string $materialId): void
+    {
+        $auth = AuthService::requireAuth(['volunteer']);
+        $volunteerId = (int)$auth['user_id'];
+        $materialId = (int)$materialId;
+
+        if (!VolunteerTrainingAssignment::isAssigned($volunteerId, $materialId)) {
+            Router::json(['error' => 'Материал не назначен этому волонтёру'], 404);
+        }
+
+        $completed = VolunteerTrainingAssignment::markCompleted($volunteerId, $materialId);
+        if ($completed) {
+            Logger::info("Volunteer #{$volunteerId} completed training material #{$materialId}");
+        }
+
+        Router::json([
+            'success' => true,
+            'material_id' => $materialId,
+            'message' => $completed
+                ? 'Материал отмечен как изученный'
+                : 'Материал уже отмечен как изученный'
         ]);
     }
 

@@ -130,6 +130,22 @@ CREATE TABLE IF NOT EXISTS educational_materials (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS volunteer_training_assignments (
+    id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    volunteer_id INT UNSIGNED NOT NULL,
+    material_id INT UNSIGNED NOT NULL,
+    assigned_by INT UNSIGNED NULL,
+    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_volunteer_training_material (volunteer_id, material_id),
+    KEY idx_training_volunteer (volunteer_id),
+    KEY idx_training_material (material_id),
+    CONSTRAINT fk_training_volunteer FOREIGN KEY (volunteer_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_training_material FOREIGN KEY (material_id) REFERENCES educational_materials(id) ON DELETE CASCADE,
+    CONSTRAINT fk_training_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS fraud_alerts (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     title VARCHAR(255) NOT NULL,

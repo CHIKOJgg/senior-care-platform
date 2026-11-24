@@ -30,9 +30,13 @@ class VolunteerProfile extends Model
 
     public static function getAllWithDetails(): array
     {
-        return self::query("SELECT vp.*, u.name, u.phone, u.created_at as registered_at 
-                            FROM volunteer_profiles vp 
-                            JOIN users u ON u.id = vp.user_id 
+        return self::query("SELECT vp.*, u.name, u.phone, u.created_at as registered_at,
+                                   (SELECT COUNT(*) FROM volunteer_training_assignments vta
+                                    WHERE vta.volunteer_id = vp.user_id) AS training_assigned,
+                                   (SELECT COUNT(*) FROM volunteer_training_assignments vta
+                                    WHERE vta.volunteer_id = vp.user_id AND vta.completed_at IS NOT NULL) AS training_completed
+                            FROM volunteer_profiles vp
+                            JOIN users u ON u.id = vp.user_id
                             ORDER BY vp.is_verified ASC, vp.points DESC");
     }
 

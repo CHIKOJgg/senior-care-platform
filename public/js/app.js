@@ -27,6 +27,7 @@ const Icons = {
     cross: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     clock: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
     star: `<svg class="ui-icon ui-icon-xs" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    book: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>`,
     trash: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
     alert: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
     volume: `<svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>`,
@@ -124,23 +125,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Auto-polling for live updates every 25 seconds (current role only)
-    setInterval(() => {
-        if (!currentUser) return;
-        if (currentRole === 'volunteer') {
-            loadVolunteerRequests();
-            loadVolunteerActiveTasks();
-        } else if (currentRole === 'admin') {
-            loadAdminAnalytics();
-            loadCoordinatorSosAlerts();
-            loadWatchdogTasks();
-        } else if (currentRole === 'user') {
-            loadAlerts();
-            loadElderlyRequests();
-            loadElderlySosState();
-        }
-    }, 25000);
+    // Live updates: new tasks and SOS signals should appear without a manual
+    // refresh. Poll the active role every 10 seconds and immediately when the
+    // tab becomes visible again.
+    setInterval(refreshCurrentRole, 10000);
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) refreshCurrentRole();
+    });
 });
+
+function refreshCurrentRole() {
+    if (!currentUser) return;
+    if (currentRole === 'volunteer') {
+        checkVolunteerStatus();
+        loadVolunteerRequests();
+        loadVolunteerActiveTasks();
+        loadVolunteerTrainingAssignments();
+    } else if (currentRole === 'admin') {
+        loadAdminAnalytics();
+        loadCoordinatorSosAlerts();
+        loadWatchdogTasks();
+    } else if (currentRole === 'user') {
+        loadAlerts();
+        loadElderlyRequests();
+        loadElderlySosState();
+    }
+}
 
 // =========================================================================
 // 1. Session Bootstrap
@@ -542,6 +552,7 @@ function loadRoleData() {
         checkVolunteerStatus();
         loadVolunteerRequests();
         loadVolunteerActiveTasks();
+        loadVolunteerTrainingAssignments();
         loadLeaderboard();
         loadVolunteerKnowledge();
     }
@@ -970,13 +981,19 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
 
             tbody.innerHTML = list.map(v => {
                 const status = parseInt(v.is_verified);
+                const verificationStatus = String(v.verification_status || '').toUpperCase();
                 const rating = parseFloat(v.rating || 0);
+                const trainingAssigned = parseInt(v.training_assigned || 0);
+                const trainingCompleted = parseInt(v.training_completed || 0);
                 let badge = '';
                 let actions = '';
 
                 if (status === 1) {
                     badge = `<span class="badge badge-verified" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.check} Верифицирован</span>`;
                     actions = `<button class="btn btn-outline btn-xs" style="color: var(--danger-color);" onclick="rejectVolunteer(${v.user_id})">${Icons.cross} Отозвать</button>`;
+                } else if (verificationStatus === 'REHABILITATION') {
+                    badge = `<span class="badge badge-warning" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.alert} На реабилитации</span>`;
+                    actions = `<button class="btn btn-success btn-xs" onclick="verifyVolunteer(${v.user_id})">${Icons.check} Завершить реабилитацию</button>`;
                 } else if (status === 0) {
                     badge = `<span class="badge badge-pending" style="display: inline-flex; align-items: center; gap: 4px;">${Icons.clock} Ожидает проверки</span>`;
                     actions = `
@@ -1018,7 +1035,10 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                         <td>${escapeHtml(v.phone)}</td>
                         <td>${escapeHtml(v.skills || 'Базовые')}</td>
                         <td><span style="display: inline-flex; align-items: center; gap: 4px;">${Icons.star} ${v.rating}</span> (${v.completed_tasks_count} заданий)</td>
-                        <td>${badge}</td>
+                        <td>
+                            ${badge}
+                            ${trainingAssigned > 0 ? `<div style="margin-top: 6px;"><button class="btn btn-outline btn-xs" onclick="showVolunteerTraining(${v.user_id})">${Icons.book} Обучение ${trainingCompleted}/${trainingAssigned}</button></div>` : ''}
+                        </td>
                         <td>${actions}</td>
                     </tr>
                 `;
@@ -1063,6 +1083,28 @@ async function rejectVolunteer(id) {
     }
 }
 
+async function showVolunteerTraining(id) {
+    try {
+        const res = await authFetch(`/api/coordinator/volunteers/${id}/training`);
+        const json = await res.json();
+        if (!res.ok) {
+            alert(json.error || 'Не удалось загрузить назначенные материалы');
+            return;
+        }
+        const items = Array.isArray(json.data) ? json.data : [];
+        if (items.length === 0) {
+            alert('Волонтёру ещё не назначены обучающие материалы.');
+            return;
+        }
+        const lines = items.map(item => `${item.completed_at ? '[изучено]' : '[назначено]'} ${item.title}`).join('\n');
+        alert(`Назначенные материалы (${items.length}):\n\n${lines}`);
+    } catch (e) {
+        console.error('Error loading volunteer training', e);
+        alert('Ошибка сети при загрузке материалов.');
+    }
+}
+window.showVolunteerTraining = showVolunteerTraining;
+
 // Rehabilitation track for volunteers with a low rating
 async function rehabilitateVolunteer(id) {
     if (!confirm('Направить волонтёра на реабилитацию? При низком рейтинге будет назначен набор обучающих материалов, рейтинг сброшен на 4.0, а доступ к заявкам приостановлен до повторной проверки.')) return;
@@ -1074,8 +1116,13 @@ async function rehabilitateVolunteer(id) {
         });
         const json = await res.json();
         if (json.success) {
-            const materials = Array.isArray(json.training_materials) ? json.training_materials.length : 0;
-            alert(json.message + `\nНазначено обучающих материалов: ${materials}.`);
+            const materials = Array.isArray(json.training_materials) ? json.training_materials : [];
+            if (json.needs_rehabilitation) {
+                const titles = materials.map(material => `• ${material.title || ('материал #' + material.material_id)}`).join('\n');
+                alert(json.message + `\n\nНазначено материалов: ${materials.length}.` + (titles ? `\n${titles}` : ''));
+            } else {
+                alert(json.message);
+            }
             loadAllVolunteers(volunteerFilterState.filter || 'all', volunteerFilterState.minRating);
             loadAdminAnalytics();
         } else {
@@ -1555,6 +1602,8 @@ async function loadVolunteerActiveTasks() {
     }
 }
 
+let lastVolunteerFeedSignature = null;
+
 async function loadVolunteerRequests() {
     const list = document.getElementById('volunteerRequestList');
     if (!list) return;
@@ -1570,45 +1619,125 @@ async function loadVolunteerRequests() {
             list.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить ленту заявок. Повторите попытку.</p>';
             return;
         }
-        if (json.data) {
-            if (json.data.length === 0) {
-                list.innerHTML = '<p class="text-muted">Сейчас нет открытых заявок в вашем районе.</p>';
-                return;
+
+        const items = Array.isArray(json.data) ? json.data : [];
+        const updatedEl = document.getElementById('volunteerFeedUpdatedAt');
+        if (updatedEl) {
+            updatedEl.textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU') + ' · автообновление каждые 10 секунд';
+        }
+
+        // Avoid rebuilding the DOM (and stealing focus) when nothing changed.
+        const signature = items.map(req => `${req.id}:${req.status}`).join('|');
+        if (signature === lastVolunteerFeedSignature) return;
+        lastVolunteerFeedSignature = signature;
+
+        if (items.length === 0) {
+            list.innerHTML = '<p class="text-muted">Сейчас нет открытых заявок в вашем районе.</p>';
+            return;
+        }
+
+        list.innerHTML = items.map(req => {
+            let actionBtn = `<button class="btn btn-primary btn-sm" onclick="acceptRequest(${req.id})">${Icons.volunteer} Взять заявку</button>`;
+            if (req.status === 'in_progress') {
+                actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (Код)</button>`;
             }
 
-            list.innerHTML = json.data.map(req => {
-                let actionBtn = `<button class="btn btn-primary btn-sm" onclick="acceptRequest(${req.id})">${Icons.volunteer} Взять заявку</button>`;
-                if (req.status === 'in_progress') {
-                    actionBtn = `<button class="btn btn-success btn-sm" onclick="completeRequestPrompt(${req.id})">${Icons.check} Завершить (Код)</button>`;
-                }
-
-                return `
-                    <div class="card card-accent-primary" style="margin-bottom: 12px;">
-                        <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 10px;">
-                            <div>
-                                <span style="display: inline-block; vertical-align: middle; margin-right: 6px;">${Icons.category(req.category_id)}</span>
-                                <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
-                                <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
-                                <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''}${req.distance_meters != null ? ' (расстояние: ~' + escapeHtml(String(req.distance_meters)) + ' м)' : ' (расстояние неизвестно)'}</span>
-                                </p>
-                                <p style="display: flex; align-items: center; gap: 6px;">
-                                    ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
-                                </p>
-                            </div>
-                            <div>
-                                ${actionBtn}
-                            </div>
+            return `
+                <div class="card card-accent-primary" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <span style="display: inline-block; vertical-align: middle; margin-right: 6px;">${Icons.category(req.category_id)}</span>
+                            <strong style="font-size: 20px;">${escapeHtml(req.title)}</strong>
+                            <p style="margin: 8px 0; color: var(--text-muted);">${escapeHtml(req.description || '')}</p>
+                            <p style="display: flex; align-items: center; gap: 6px;">
+                                ${Icons.mapPin} <span>Адрес: <strong>${escapeHtml(req.address)}</strong>${req.region_name ? ' • ' + escapeHtml(req.region_name) : ''}${req.distance_meters != null ? ' (расстояние: ~' + escapeHtml(String(req.distance_meters)) + ' м)' : ' (расстояние неизвестно)'}</span>
+                            </p>
+                            <p style="display: flex; align-items: center; gap: 6px;">
+                                ${Icons.user} <span>Подопечный: ${escapeHtml(req.elderly_name)} (${escapeHtml(req.elderly_phone)})</span>
+                            </p>
+                        </div>
+                        <div>
+                            ${actionBtn}
                         </div>
                     </div>
-                `;
-            }).join('');
-        }
+                </div>
+            `;
+        }).join('');
     } catch (e) {
         console.error(e);
         list.innerHTML = '<p style="color: var(--danger-color);">Ошибка сети при загрузке заявок.</p>';
     }
 }
+
+let lastTrainingSignature = null;
+
+async function loadVolunteerTrainingAssignments() {
+    const card = document.getElementById('volunteerTrainingCard');
+    const list = document.getElementById('volunteerTrainingList');
+    if (!card || !list) return;
+
+    try {
+        const res = await authFetch('/api/volunteers/training');
+        const json = await res.json();
+        if (!res.ok) {
+            card.style.display = 'none';
+            return;
+        }
+        const items = Array.isArray(json.data) ? json.data : [];
+        const signature = items.map(item => `${item.material_id}:${item.completed_at || ''}`).join('|');
+        if (signature === lastTrainingSignature) return;
+        lastTrainingSignature = signature;
+
+        if (items.length === 0) {
+            card.style.display = 'none';
+            list.innerHTML = '';
+            return;
+        }
+
+        card.style.display = 'block';
+        list.innerHTML = items.map(item => {
+            const completed = !!item.completed_at;
+            const preview = String(item.content || '').slice(0, 280);
+            return `
+                <div class="card" style="margin-bottom: 10px; border-left: 4px solid var(--warning-color, #d97706);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
+                        <div>
+                            <strong style="font-size: 1.05em;">${escapeHtml(item.title)}</strong>
+                            <div style="font-size: 0.85em; color: var(--text-muted); margin-top: 2px;">
+                                ${escapeHtml(item.category || '')}${item.type ? ' · ' + escapeHtml(item.type) : ''}
+                            </div>
+                        </div>
+                        ${completed
+                            ? '<span class="badge badge-verified">Изучено</span>'
+                            : `<button class="btn btn-outline btn-xs" onclick="completeTrainingMaterial(${item.material_id})">Отметить изученным</button>`}
+                    </div>
+                    <p style="margin: 8px 0 0; color: var(--text-muted);">${escapeHtml(preview)}${String(item.content || '').length > 280 ? '…' : ''}</p>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Error loading training assignments', e);
+        card.style.display = 'none';
+    }
+}
+window.loadVolunteerTrainingAssignments = loadVolunteerTrainingAssignments;
+
+async function completeTrainingMaterial(materialId) {
+    try {
+        const res = await authFetch(`/api/volunteers/training/${materialId}/complete`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            lastTrainingSignature = null;
+            loadVolunteerTrainingAssignments();
+        } else {
+            alert(data.error || 'Не удалось отметить материал изученным');
+        }
+    } catch (e) {
+        console.error('Error completing training material', e);
+        alert('Ошибка сети. Попробуйте ещё раз.');
+    }
+}
+window.completeTrainingMaterial = completeTrainingMaterial;
 
 async function acceptRequest(id) {
     try {
@@ -2468,6 +2597,23 @@ function showSosConfirmationModal(data) {
 // M4: Coordinator SOS Incident Console
 // =========================================================================
 
+let lastCoordinatorSosSignature = '';
+
+function formatSosTime(value) {
+    if (!value) return '';
+    const date = new Date(String(value).replace(' ', 'T'));
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleTimeString('ru-RU');
+}
+
+function sosSignalWord(count) {
+    const n = Math.abs(count) % 100;
+    const last = n % 10;
+    if (n > 10 && n < 20) return 'сигналов';
+    if (last === 1) return 'сигнал';
+    if (last >= 2 && last <= 4) return 'сигнала';
+    return 'сигналов';
+}
+
 async function loadCoordinatorSosAlerts() {
     const bannerContainer = document.getElementById('coordinatorSosBannerContainer');
     if (!bannerContainer) return;
@@ -2481,11 +2627,51 @@ async function loadCoordinatorSosAlerts() {
         }
 
         const alerts = data.alerts || data.data || [];
-        if (alerts.length > 0) {
-            const topAlert = alerts[0];
-            bannerContainer.style.display = 'block';
-            bannerContainer.innerHTML = `
-                <div class="sos-pulse-banner" style="background: #991b1b; color: #ffffff; padding: 16px 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        if (alerts.length === 0) {
+            lastCoordinatorSosSignature = '';
+            bannerContainer.style.display = 'none';
+            bannerContainer.innerHTML = '';
+            return;
+        }
+
+        // One incident card per senior: repeated SOS presses are grouped, so the
+        // coordinator resolves all signals from one person in a single action.
+        const groups = new Map();
+        for (const alert of alerts) {
+            const key = String(alert.elderly_id ?? 'unknown');
+            let group = groups.get(key);
+            if (!group) {
+                group = {
+                    elderlyId: alert.elderly_id,
+                    elderlyName: alert.elderly_name || ('ID #' + alert.elderly_id),
+                    address: alert.address || 'Республика Беларусь',
+                    count: 0,
+                    latest: alert
+                };
+                groups.set(key, group);
+            }
+            group.count += 1;
+            if (String(alert.created_at || '') > String(group.latest.created_at || '')) {
+                group.latest = alert;
+            }
+        }
+
+        const groupList = Array.from(groups.values()).sort(
+            (a, b) => String(b.latest.created_at || '').localeCompare(String(a.latest.created_at || ''))
+        );
+        const signature = groupList.map(g => `${g.elderlyId}:${g.count}:${g.latest.id}`).join('|');
+
+        bannerContainer.style.display = 'block';
+        if (signature === lastCoordinatorSosSignature) return;
+        lastCoordinatorSosSignature = signature;
+
+        bannerContainer.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                <strong>Активных сигналов SOS: ${alerts.length}</strong>
+                <span style="font-size: 0.9em; opacity: 0.9;">Подопечных с тревогой: ${groupList.length} · обновляется автоматически</span>
+            </div>
+            ${groupList.map(group => `
+                <div class="sos-pulse-banner" style="background: #991b1b; color: #ffffff; padding: 16px 20px; border-radius: 12px; margin-bottom: 14px; box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                     <div style="display: flex; align-items: center; gap: 14px;">
                         <div style="background: #ffffff; color: #991b1b; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
                             <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -2496,26 +2682,26 @@ async function loadCoordinatorSosAlerts() {
                         </div>
                         <div>
                             <div style="font-size: 1.15em; font-weight: 800; letter-spacing: 0.5px;">
-                                ПРИОРИТЕТ 0: ЭКСТРЕННЫЙ СИГНАЛ SOS (#${topAlert.id})
+                                ПРИОРИТЕТ 0: ЭКСТРЕННЫЙ СИГНАЛ SOS${group.count > 1 ? ` · ${group.count} ${sosSignalWord(group.count)}` : ''}
                             </div>
                             <div style="font-size: 0.95em; opacity: 0.95; margin-top: 2px;">
-                                Подопечный: <strong>${escapeHtml(topAlert.elderly_name || 'ID #' + topAlert.elderly_id)}</strong> |
-                                Адрес: <strong>${escapeHtml(topAlert.address || 'Республика Беларусь')}</strong> |
-                                Талон 112: <code>${escapeHtml(topAlert.emercom_ticket_id || 'Оповещен')}</code>
+                                Подопечный: <strong>${escapeHtml(group.elderlyName)}</strong> |
+                                Адрес: <strong>${escapeHtml(group.address)}</strong> |
+                                Талон 112: <code>${escapeHtml(group.latest.emercom_ticket_id || 'Оповещен')}</code>
+                            </div>
+                            <div style="font-size: 0.85em; opacity: 0.9; margin-top: 4px;">
+                                Последний сигнал: ${escapeHtml(formatSosTime(group.latest.created_at))}
                             </div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <button type="button" class="btn btn-success btn-sm" style="background: #15803d; border-color: #15803d; font-weight: 700;" onclick="resolveSosAlert(${topAlert.id})">
-                            ${Icons.check} Разрешить инцидент
+                        <button type="button" class="btn btn-success btn-sm" style="background: #15803d; border-color: #15803d; font-weight: 700;" onclick="resolveSosElderly(${group.elderlyId}, ${group.count})">
+                            ${Icons.check} Разрешить все (${group.count})
                         </button>
                     </div>
                 </div>
-            `;
-        } else {
-            bannerContainer.style.display = 'none';
-            bannerContainer.innerHTML = '';
-        }
+            `).join('')}
+        `;
     } catch (e) {
         console.error('Error loading active SOS alerts', e);
         if (bannerContainer) {
@@ -2526,6 +2712,26 @@ async function loadCoordinatorSosAlerts() {
 }
 window.loadCoordinatorSosAlerts = loadCoordinatorSosAlerts;
 
+async function resolveSosElderly(elderlyId, count) {
+    const label = count > 1 ? `все ${count} ${sosSignalWord(count)}` : 'активный сигнал';
+    if (!confirm(`Подтвердить принятие мер и разрешить ${label} SOS для этого подопечного?`)) return;
+    try {
+        const res = await authFetch(`/api/sos/elderly/${elderlyId}/resolve-all`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert(`Разрешено сигналов: ${data.resolved_count ?? 0}.`);
+            lastCoordinatorSosSignature = '';
+            loadCoordinatorSosAlerts();
+            loadAdminAnalytics();
+        } else {
+            alert('Ошибка разрешения тревоги: ' + (data.error || 'Неизвестная ошибка'));
+        }
+    } catch (e) {
+        console.error('Error resolving SOS alerts', e);
+    }
+}
+window.resolveSosElderly = resolveSosElderly;
+
 async function resolveSosAlert(id) {
     if (!confirm(`Подтвердить принятие мер и разрешить экстренную тревогу #${id}?`)) return;
     try {
@@ -2533,6 +2739,7 @@ async function resolveSosAlert(id) {
         const data = await res.json();
         if (data.success) {
             alert(`Экстренная тревога #${id} успешно разрешена.`);
+            lastCoordinatorSosSignature = '';
             loadCoordinatorSosAlerts();
             loadAdminAnalytics();
         } else {

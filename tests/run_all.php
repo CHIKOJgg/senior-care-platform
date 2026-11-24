@@ -31,6 +31,7 @@ $suites = [
     'tests/test_auth_security.php',
     'tests/test_privacy.php',
     'tests/test_badge.php',
+    'tests/test_rehabilitation_materials.php',
     'tests/test_sos_geofence.php',
     'tests/test_race_conditions.php',
     'tests/test_e2e_comprehensive.php',
@@ -39,6 +40,7 @@ $suites = [
     'tests/test_adversarial_m2.php',
     'tests/test_adversarial_m3_geofence.php',
     'tests/test_adversarial_m3_sos.php',
+    'tests/test_sos_grouping.php',
     'tests/test_adversarial_m4_ui_plan.php',
     'tests/test_adversarial_m4_wcag.php',
     'tests/test_adversarial_m5_suite.php',
@@ -316,6 +318,17 @@ foreach ($failed as $failure) {
     echo '  FAILED:   ' . $failure['suite'] . "\n";
 }
 echo "============================================================\n";
+
+// Leave the development database in a clean, seeded demo state. Stress suites
+// intentionally create bursts of SOS/requests; without this reset they leak
+// into the local UI (for example 20 active SOS from the same senior).
+echo "\nRestoring clean demo database after test run...\n";
+$cleanup = resetDatabase($env);
+if ($cleanup['ok']) {
+    echo "  [OK] Test data removed; demo state restored.\n";
+} else {
+    echo "  [WARN] Could not restore the demo database: " . $cleanup['output'] . "\n";
+}
 
 if (is_resource($serverProcess)) {
     proc_terminate($serverProcess);

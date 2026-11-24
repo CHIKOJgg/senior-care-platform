@@ -13,6 +13,7 @@ use App\Models\FraudAlert;
 use App\Models\SosAlert;
 use App\Models\Category;
 use App\Models\EducationalMaterial;
+use App\Models\VolunteerTrainingAssignment;
 use App\Services\TaskWatchdogService;
 
 class CoordinatorController
@@ -244,38 +245,89 @@ class CoordinatorController
         if (!$vp) {
             Router::json(['error' => 'Профиль волонтёра не найден'], 404);
         }
+        $input = Router::getJsonInput();
         $threshold = 3.5;
         $currentRating = (float)($vp['rating'] ?? 5.0);
         $needsRehab = $currentRating < $threshold;
 
-        // Assign educational materials set for retraining
+        // Resolve the requested materials (or a sensible default set) and persist
+        // them, so the assignment survives the request and is visible to the
+        // volunteer on their own dashboard.
         $materials = EducationalMaterial::all();
-        $rehabMaterials = array_slice($materials, 0, 5);
+        $materialIds = [];
+        foreach ($materials as $material) {
+            $materialIds[(int)$material['id']] = true;
+        }
 
-        // Reset rating to baseline and mark as pending re-verification if low
+        $requestedIds = [];
+        if (isset($input['material_ids']) && is_array($input['material_ids'])) {
+            foreach ($input['material_ids'] as $materialId) {
+                $requestedIds[] = (int)$materialId;
+            }
+        }
+        if ($requestedIds === []) {
+            $requestedIds = array_slice(array_keys($materialIds), 0, 5);
+        }
+
+        $validIds = [];
+        foreach (array_unique($requestedIds) as $materialId) {
+            if (isset($materialIds[$materialId])) {
+                $validIds[] = $materialId;
+            }
+        }
+        if ($validIds === []) {
+            $validIds = array_slice(array_keys($materialIds), 0, 5);
+        }
+
+        // Reset rating to baseline and mark as pending re-verification if low.
         if ($needsRehab) {
             VolunteerProfile::update($uid, [
                 'rating' => 4.0,
                 'verification_status' => 'REHABILITATION',
                 'is_verified' => 0
             ]);
+            VolunteerTrainingAssignment::assign($uid, $validIds, (int)$admin['user_id']);
         } else {
             VolunteerProfile::update($uid, [
                 'verification_status' => 'ACTIVE'
             ]);
         }
 
-        Logger::info("Volunteer #{$uid} rehabilitation initiated by Admin #{$admin['user_id']}. Rating was {$currentRating}");
+        $trainingMaterials = $needsRehab
+            ? VolunteerTrainingAssignment::getForVolunteer($uid)
+            : [];
+
+        $assignedCount = count($trainingMaterials);
+        Logger::info("Volunteer #{$uid} rehabilitation initiated by Admin #{$admin['user_id']}. Rating was {$currentRating}. Materials assigned: {$assignedCount}");
         Router::json([
             'success' => true,
             'volunteer_id' => $uid,
             'previous_rating' => $currentRating,
             'needs_rehabilitation' => $needsRehab,
             'new_status' => $needsRehab ? 'REHABILITATION' : 'ACTIVE',
-            'training_materials' => $rehabMaterials,
+            'training_materials' => $trainingMaterials,
+            'assigned_count' => $assignedCount,
             'message' => $needsRehab
                 ? 'Волонтёр направлен на переобучение (реабилитация). Назначены обучающие материалы.'
                 : 'Рейтинг в норме. Волонтёр остаётся активным.'
+        ]);
+    }
+
+    public function volunteerTraining(string $id): void
+    {
+        AuthService::requireAuth(['admin', 'coordinator']);
+        $uid = (int)$id;
+        $profile = VolunteerProfile::find($uid);
+        if (!$profile) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+
+        $materials = VolunteerTrainingAssignment::getForVolunteer($uid);
+        Router::json([
+            'success' => true,
+            'volunteer_id' => $uid,
+            'count' => count($materials),
+            'data' => $materials
         ]);
     }
 

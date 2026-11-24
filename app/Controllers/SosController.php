@@ -227,4 +227,38 @@ class SosController
             'resolved_at' => date('Y-m-d H:i:s')
         ]);
     }
+
+    /**
+     * Resolve all active SOS signals for one senior in one action.
+     *
+     * Routes:
+     *   POST /api/sos/elderly/{id}/resolve-all
+     *   POST /api/coordinator/sos-alerts/elderly/{id}/resolve-all
+     */
+    public function resolveAllForElderly(string $id): void
+    {
+        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $elderlyId = (int)$id;
+
+        $target = User::getWithProfile($elderlyId);
+        if (!$target || ($target['role_code'] ?? '') !== 'elderly') {
+            Router::json(['error' => 'Подопечный не найден'], 404);
+        }
+
+        $resolvedCount = SosAlert::resolveAllForElderly($elderlyId);
+        if ($resolvedCount > 0) {
+            Logger::security("Resolved {$resolvedCount} active SOS signal(s) for Elderly #{$elderlyId} by Admin/Coordinator #{$admin['user_id']}");
+        }
+
+        Router::json([
+            'success' => true,
+            'elderly_id' => $elderlyId,
+            'resolved_count' => $resolvedCount,
+            'status' => $resolvedCount > 0 ? 'RESOLVED' : 'NO_ACTIVE_ALERTS',
+            'message' => $resolvedCount > 0
+                ? "Разрешено сигналов SOS: {$resolvedCount}"
+                : 'Активных сигналов SOS для этого подопечного нет',
+            'resolved_at' => date('Y-m-d H:i:s')
+        ]);
+    }
 }
