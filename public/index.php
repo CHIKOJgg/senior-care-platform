@@ -91,6 +91,8 @@ $viewRole = match ($roleCode) {
     default => null,
 };
 $isAuthed = $viewRole !== null;
+$isAdmin = $roleCode === 'admin';
+$isCoordinator = $roleCode === 'coordinator';
 
 $homeByRole = [
     'elderly' => '/',
@@ -100,10 +102,13 @@ $homeByRole = [
 ];
 $homeUrl = $homeByRole[$roleCode] ?? '/login';
 $regionsList = \App\Services\RegionService::all();
-$profileRegion = (string)($sessionUser['profile']['region_code'] ?? 'MINSK_CITY');
+$profileRegion = $isCoordinator
+    ? (string)($sessionUser['region_code'] ?? 'MINSK_CITY')
+    : (string)($sessionUser['profile']['region_code'] ?? 'MINSK_CITY');
 if (!\App\Services\RegionService::exists($profileRegion)) {
     $profileRegion = 'MINSK_CITY';
 }
+$coordinatorRegionName = \App\Services\RegionService::name($profileRegion);
 
 // One URL per role: staff cannot open another role's workspace. "/login" is always
 // available (so staff can sign in from a device that is already senior-signed-in).
@@ -742,35 +747,42 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 <div>
                     <h2 style="display: flex; align-items: center; gap: 8px;">
                         <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M16 14h.01"/></svg>
-                        <span>Панель администратора ТЦСОН</span>
+                        <span><?php echo $isCoordinator ? 'Панель координатора ТЦСОН' : 'Панель администратора ТЦСОН'; ?></span>
                     </h2>
-                    <p style="color: var(--text-muted);">Управление заявками по всей Беларуси, верификация волонтёров и аналитика социальной обстановки</p>
+                    <p style="color: var(--text-muted);">
+                        <?php if ($isCoordinator): ?>
+                            Оперативная работа с заявками, волонтёрами и SOS в регионе: <strong><?php echo htmlspecialchars($coordinatorRegionName); ?></strong>.
+                        <?php else: ?>
+                            Управление заявками по всей Беларуси, верификация волонтёров и аналитика социальной обстановки.
+                        <?php endif; ?>
+                    </p>
                 </div>
-                <span class="admin-badge">РЕСПУБЛИКА БЕЛАРУСЬ</span>
+                <span class="admin-badge"><?php echo $isCoordinator ? htmlspecialchars($coordinatorRegionName) : 'РЕСПУБЛИКА БЕЛАРУСЬ'; ?></span>
             </div>
 
             <!-- Admin Sub-Navigation -->
             <div class="admin-subnav" role="group" aria-label="Разделы панели администратора">
                 <button class="admin-subnav-btn active" data-admin-tab="admin-analytics" id="btnAdminAnalytics">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Аналитика и отчёты
+                    <?php echo $isCoordinator ? 'Аналитика района' : 'Аналитика и отчёты'; ?>
                 </button>
                 <button class="admin-subnav-btn" data-admin-tab="admin-volunteers" id="btnAdminVolunteers">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg>
-                    Верификация волонтёров <span id="pendingCountBadge" class="badge badge-warning" style="margin-left: 4px;">0</span>
+                    <?php echo $isCoordinator ? 'Волонтёры района' : 'Верификация волонтёров'; ?> <span id="pendingCountBadge" class="badge badge-warning" style="margin-left: 4px;">0</span>
                 </button>
                 <button class="admin-subnav-btn" data-admin-tab="admin-requests" id="btnAdminRequests">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                    Управление заявками
+                    <?php echo $isCoordinator ? 'Заявки района' : 'Управление заявками'; ?>
                 </button>
                 <button class="admin-subnav-btn" data-admin-tab="admin-alerts" id="btnAdminAlerts">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
-                    Экстренные оповещения
+                    <?php echo $isCoordinator ? 'Оповещения района' : 'Экстренные оповещения'; ?>
                 </button>
                 <button class="admin-subnav-btn" data-admin-tab="admin-watchdog" id="btnAdminWatchdog">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     Контроль сроков (Watchdog) <span id="overdueTasksCountBadge" class="badge badge-cancelled" style="margin-left: 4px; display: none;">0</span>
                 </button>
+                <?php if ($isAdmin): ?>
                 <button class="admin-subnav-btn" data-admin-tab="admin-access" id="btnAdminAccess">
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     Доступ и пароли
@@ -779,10 +791,18 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <svg class="ui-icon ui-icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
                     Виды заявок и обучение
                 </button>
+                <?php endif; ?>
             </div>
 
             <!-- Tab 1: Analytics & Reports -->
             <div id="admin-analytics" class="admin-tab-pane">
+                <p style="color: var(--text-muted); margin: 0 0 12px 0;">
+                    <?php if ($isCoordinator): ?>
+                        Показатели региона: <strong><?php echo htmlspecialchars($coordinatorRegionName); ?></strong>.
+                    <?php else: ?>
+                        Показатели по всей Республике Беларусь.
+                    <?php endif; ?>
+                </p>
                 <div class="stat-grid" id="analyticsKpiGrid">
                     <div class="stat-card">
                         <div class="stat-num" id="statTotalRequests">-</div>
@@ -874,7 +894,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             <div id="admin-requests" class="admin-tab-pane" style="display: none;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
                     <div>
-                        <h3>Реестр заявок Республики Беларусь</h3>
+                        <h3><?php echo $isCoordinator ? 'Реестр заявок: ' . htmlspecialchars($coordinatorRegionName) : 'Реестр заявок Республики Беларусь'; ?></h3>
                         <p style="color: var(--text-muted); font-size: 0.9em;">Полный контроль исполнения обращений граждан</p>
                     </div>
                     <div style="display: flex; gap: 8px;">
@@ -882,12 +902,14 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('open')">Открытые</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('in_progress')">В работе</button>
                         <button class="btn btn-outline btn-sm" onclick="loadAdminRequests('completed')">Выполненные</button>
+                        <?php if ($isAdmin): ?>
                         <select id="adminRegionFilter" class="form-control" aria-label="Фильтр заявок по региону" style="max-width: 240px; min-height: 38px;" onchange="loadAdminRequests('all', this.value)">
                             <option value="">Вся Беларусь</option>
                             <?php foreach ($regionsList as $rg): ?>
                                 <option value="<?php echo htmlspecialchars($rg['code']); ?>"><?php echo htmlspecialchars($rg['name']); ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -1000,6 +1022,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
 
+            <?php if ($isAdmin): ?>
             <!-- Tab 6: Access Recovery (coordinator-issued one-time codes) -->
             <div id="admin-access" class="admin-tab-pane" style="display: none;">
                 <div style="max-width: 620px;">
@@ -1023,6 +1046,16 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         <div id="resetCodeValue" style="font-size: 2em; font-weight: 900; letter-spacing: 6px; text-align: center; margin: 12px 0; color: var(--accent-color);"></div>
                         <p id="resetCodeUser" style="text-align: center; color: var(--text-muted);"></p>
                         <p id="resetCodeTtl" style="text-align: center; color: var(--text-muted); font-size: 0.9em;"></p>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <h3>Координаторы и регионы</h3>
+                    <p style="color: var(--text-muted); font-size: 0.9em;">
+                        Назначьте координатору регион. Он будет видеть только заявки, волонтёров, SOS и оповещения этого региона.
+                    </p>
+                    <div id="coordinatorRegionsList">
+                        <p>Загрузка координаторов...</p>
                     </div>
                 </div>
             </div>
@@ -1141,6 +1174,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
     </div>
     <?php endif; ?>
@@ -1405,7 +1439,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
 <?php endif; ?>
 
 <div id="a11yLiveRegion" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => $viewRole ?? 'guest', 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
+<script>window.APP_CONFIG = <?php echo json_encode(['mode' => 'app', 'role' => $viewRole ?? 'guest', 'roleCode' => $roleCode, 'regionCode' => $profileRegion, 'demoAutologin' => false], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP); ?>;</script>
 <script src="/js/speech.js?v=<?php echo @filemtime(__DIR__ . '/js/speech.js') ?: time(); ?>"></script>
 <script src="/js/app.js?v=<?php echo @filemtime(__DIR__ . '/js/app.js') ?: time(); ?>"></script>
 </body>

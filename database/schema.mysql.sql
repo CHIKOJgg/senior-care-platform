@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(150) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     token_version INT NOT NULL DEFAULT 1,
+    region_code VARCHAR(32) NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_users_phone (phone),
@@ -155,6 +156,7 @@ CREATE TABLE IF NOT EXISTS fraud_alerts (
     title VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     severity VARCHAR(50) DEFAULT 'warning',
+    region_code VARCHAR(32) NULL,
     is_active INT DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)

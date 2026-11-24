@@ -6,7 +6,10 @@ namespace App\Controllers;
 
 use App\Core\Router;
 use App\Models\FraudAlert;
+use App\Models\User;
 use App\Services\AntiFraudService;
+use App\Services\AuthService;
+use App\Services\RegionService;
 
 class AntiFraudController
 {
@@ -37,10 +40,23 @@ class AntiFraudController
 
     public function alerts(): void
     {
-        // Public advisory feed: active anti-fraud warnings shown on the senior's home screen.
-        $alerts = FraudAlert::getActiveAlerts();
+        // Public advisory feed: global warnings plus warnings for the viewer's
+        // region. Coordinators only receive their own region + global alerts.
+        $user = AuthService::getCurrentUser();
+        $region = null;
+        if ($user) {
+            if (($user['role_code'] ?? '') === 'coordinator') {
+                $region = AuthService::regionScope($user);
+            } elseif (in_array($user['role_code'] ?? '', ['elderly', 'volunteer'], true)) {
+                $profile = User::getWithProfile((int)$user['user_id']);
+                $region = RegionService::normalize($profile['profile']['region_code'] ?? $user['region_code'] ?? null);
+            }
+        }
+
+        $alerts = FraudAlert::getActiveAlerts($region);
         Router::json([
             'success' => true,
+            'region' => $region,
             'data' => $alerts
         ]);
     }

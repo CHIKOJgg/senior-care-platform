@@ -213,7 +213,7 @@ class AuthController
      */
     public function requestPasswordReset(): void
     {
-        $admin = AuthService::requireAuth(['coordinator', 'admin']);
+        $admin = AuthService::requireAuth(['admin']);
         $adminId = (int)$admin['user_id'];
 
         if (!RateLimiter::check("reset_code:{$adminId}", 10, 300)) {

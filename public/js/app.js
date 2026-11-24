@@ -893,6 +893,7 @@ function initAdminSubnav() {
             if (targetId === 'admin-requests') loadAdminRequests();
             if (targetId === 'admin-alerts') loadAdminAlerts();
             if (targetId === 'admin-watchdog') loadWatchdogTasks();
+            if (targetId === 'admin-access') loadCoordinatorRegions();
             if (targetId === 'admin-content') loadAdminContent();
         });
     });
@@ -1216,6 +1217,79 @@ function showFormMessage(elementId, text, ok) {
     el.className = 'alert-banner ' + (ok ? 'alert-banner-success' : 'alert-banner-danger');
     el.style.display = 'block';
 }
+
+async function loadCoordinatorRegions() {
+    const container = document.getElementById('coordinatorRegionsList');
+    if (!container) return;
+
+    try {
+        const [coordinatorsRes, regionsRes] = await Promise.all([
+            authFetch('/api/admin/coordinators'),
+            fetch('/api/regions')
+        ]);
+        const coordinators = await coordinatorsRes.json();
+        const regions = await regionsRes.json();
+        const list = Array.isArray(coordinators.data) ? coordinators.data : [];
+        const regionList = Array.isArray(regions.data) ? regions.data : [];
+
+        if (!coordinatorsRes.ok) {
+            container.innerHTML = '<p style="color: var(--danger-color);">Не удалось загрузить координаторов.</p>';
+            return;
+        }
+        if (list.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-muted);">Координаторы не найдены.</p>';
+            return;
+        }
+
+        container.innerHTML = list.map(coordinator => {
+            const options = regionList.map(region => {
+                const selected = String(region.code).toUpperCase() === String(coordinator.region_code || '').toUpperCase();
+                return `<option value="${escapeHtml(region.code)}" ${selected ? 'selected' : ''}>${escapeHtml(region.name)}</option>`;
+            }).join('');
+            return `
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; border-bottom: 1px solid var(--border-color);">
+                    <div>
+                        <strong>${escapeHtml(coordinator.name)}</strong>
+                        <div style="color: var(--text-muted); font-size: 0.9em;">${escapeHtml(coordinator.phone || '')}</div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <select id="coordRegionSelect-${coordinator.id}" class="form-control" style="min-width: 220px; min-height: 38px;" aria-label="Регион координатора ${escapeHtml(coordinator.name)}">
+                            ${options}
+                        </select>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="saveCoordinatorRegion(${coordinator.id})">Сохранить</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Error loading coordinator regions', e);
+        container.innerHTML = '<p style="color: var(--danger-color);">Ошибка сети при загрузке координаторов.</p>';
+    }
+}
+window.loadCoordinatorRegions = loadCoordinatorRegions;
+
+async function saveCoordinatorRegion(userId) {
+    const select = document.getElementById(`coordRegionSelect-${userId}`);
+    if (!select) return;
+    try {
+        const res = await authFetch(`/api/admin/users/${userId}/region`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ region_code: select.value })
+        });
+        const json = await res.json();
+        if (res.ok && json.success) {
+            alert(`Регион координатора обновлён: ${json.region_name}.`);
+            loadCoordinatorRegions();
+        } else {
+            alert(json.error || 'Не удалось обновить регион');
+        }
+    } catch (e) {
+        console.error('Error saving coordinator region', e);
+        alert('Ошибка сети при сохранении региона');
+    }
+}
+window.saveCoordinatorRegion = saveCoordinatorRegion;
 
 function loadAdminContent() {
     loadAdminCategories();

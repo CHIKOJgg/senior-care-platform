@@ -82,6 +82,10 @@ try {
             $pdo->exec('ALTER TABLE users ADD COLUMN token_version INT NOT NULL DEFAULT 1');
             echo "[MIGRATE] Added column: users.token_version\n";
         }
+        if (!isset($userCols['region_code'])) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN region_code VARCHAR(32) NULL");
+            echo "[MIGRATE] Added column: users.region_code\n";
+        }
     }
 
     if ($tableExists('elderly_profiles')) {
@@ -121,6 +125,14 @@ try {
         }
     }
 
+    if ($tableExists('fraud_alerts')) {
+        $faCols = $getColumns('fraud_alerts');
+        if (!isset($faCols['region_code'])) {
+            $pdo->exec("ALTER TABLE fraud_alerts ADD COLUMN region_code VARCHAR(32) NULL");
+            echo "[MIGRATE] Added column: fraud_alerts.region_code\n";
+        }
+    }
+
     // 2. Apply the base schema. PDO MySQL needs statements executed one by one.
     $sql = (string)file_get_contents($schemaFile);
     $sql = (string)preg_replace('/^\s*--.*$/m', '', $sql);
@@ -131,6 +143,15 @@ try {
         }
     }
     echo "[MIGRATE] Base schema & indexes verified successfully (mysql).\n";
+
+    // Existing coordinator accounts need an explicit operating region. New
+    // coordinators are assigned one by an administrator in the access panel.
+    $pdo->exec("
+        UPDATE users u
+        JOIN roles r ON r.id = u.role_id
+        SET u.region_code = 'MINSK_CITY'
+        WHERE r.code = 'coordinator' AND (u.region_code IS NULL OR u.region_code = '')
+    ");
 
     // 2b. Backfill region_code from coordinates where missing.
     $regionBackfills = [

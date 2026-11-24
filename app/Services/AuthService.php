@@ -161,6 +161,7 @@ class AuthService
                 'role_code' => $fresh['role_code'],
                 'name' => $fresh['name'],
                 'phone' => $fresh['phone'],
+                'region_code' => $fresh['region_code'] ?? null,
                 'tv' => (int)($fresh['token_version'] ?? 1)
             ];
         }
@@ -175,7 +176,8 @@ class AuthService
                     'role_id' => (int)$user['role_id'],
                     'role_code' => $user['role_code'],
                     'name' => $user['name'],
-                    'phone' => $user['phone']
+                    'phone' => $user['phone'],
+                    'region_code' => $user['region_code'] ?? null
                 ];
             }
         }
@@ -194,7 +196,8 @@ class AuthService
                 'role_id' => 4,
                 'role_code' => 'admin',
                 'name' => 'Администратор Системы',
-                'phone' => '+375299999999'
+                'phone' => '+375299999999',
+                'region_code' => null
             ];
         }
 
@@ -229,5 +232,18 @@ class AuthService
         }
 
         return $user;
+    }
+
+    /**
+     * Region scope for the current user: null means all regions (admin),
+     * a region code means the coordinator is limited to that region.
+     */
+    public static function regionScope(?array $user = null): ?string
+    {
+        $user ??= self::getCurrentUser();
+        if (!$user || ($user['role_code'] ?? '') !== 'coordinator') {
+            return null;
+        }
+        return RegionService::normalize((string)($user['region_code'] ?? ''));
     }
 }

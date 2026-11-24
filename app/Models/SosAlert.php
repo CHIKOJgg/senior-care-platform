@@ -11,16 +11,21 @@ class SosAlert extends Model
 {
     protected static string $table = 'sos_alerts';
 
-    public static function getActiveAlerts(): array
+    public static function getActiveAlerts(?string $region = null): array
     {
         $sql = "SELECT s.*, u.name as elderly_name, u.phone as elderly_phone,
-                       ep.emergency_contact
+                       ep.emergency_contact, ep.region_code as elderly_region_code
                 FROM sos_alerts s
                 JOIN users u ON u.id = s.elderly_id
                 LEFT JOIN elderly_profiles ep ON ep.user_id = s.elderly_id
-                WHERE s.status IN ('ACTIVE', 'ACKNOWLEDGED')
-                ORDER BY s.priority ASC, s.created_at DESC";
-        return self::query($sql);
+                WHERE s.status IN ('ACTIVE', 'ACKNOWLEDGED')";
+        $params = [];
+        if ($region !== null) {
+            $sql .= " AND ep.region_code = :region";
+            $params['region'] = $region;
+        }
+        $sql .= " ORDER BY s.priority ASC, s.created_at DESC";
+        return self::query($sql, $params);
     }
 
     public static function resolveAlert(int $id): bool
