@@ -581,32 +581,28 @@ function initModals() {
 }
 
 function initUserFunctions() {
-    const btnRequest = document.getElementById('btnFuncRequest');
-    const btnSafety = document.getElementById('btnFuncSafety');
-    const paneRequest = document.getElementById('func-request');
-    const paneSafety = document.getElementById('func-safety');
+    const tabs = [
+        { key: 'request', button: 'btnFuncRequest', pane: 'func-request', speech: 'Открыт раздел: Заказ помощи' },
+        { key: 'safety', button: 'btnFuncSafety', pane: 'func-safety', speech: 'Открыт раздел: Проверка на мошенничество' },
+        { key: 'education', button: 'btnFuncEducation', pane: 'func-education', speech: 'Открыт раздел: Школа безопасности и обучающие материалы' }
+    ].map(tab => ({
+        ...tab,
+        buttonEl: document.getElementById(tab.button),
+        paneEl: document.getElementById(tab.pane)
+    })).filter(tab => tab.buttonEl && tab.paneEl);
 
-    if (btnRequest && btnSafety && paneRequest && paneSafety) {
-        btnRequest.setAttribute('aria-pressed', 'true');
-        btnSafety.setAttribute('aria-pressed', 'false');
-        btnRequest.addEventListener('click', () => {
-            btnRequest.classList.add('active');
-            btnSafety.classList.remove('active');
-            btnRequest.setAttribute('aria-pressed', 'true');
-            btnSafety.setAttribute('aria-pressed', 'false');
-            paneRequest.style.display = 'block';
-            paneSafety.style.display = 'none';
-            SpeechHelper.speak('Открыт раздел: Заказ помощи');
-        });
-
-        btnSafety.addEventListener('click', () => {
-            btnSafety.classList.add('active');
-            btnRequest.classList.remove('active');
-            btnSafety.setAttribute('aria-pressed', 'true');
-            btnRequest.setAttribute('aria-pressed', 'false');
-            paneSafety.style.display = 'block';
-            paneRequest.style.display = 'none';
-            SpeechHelper.speak('Открыт раздел: Школа безопасности и проверка на мошенничество');
+    if (tabs.length > 0) {
+        tabs.forEach((tab, index) => {
+            tab.buttonEl.setAttribute('aria-pressed', index === 0 ? 'true' : 'false');
+            tab.buttonEl.addEventListener('click', () => {
+                tabs.forEach(other => {
+                    const active = other === tab;
+                    other.buttonEl.classList.toggle('active', active);
+                    other.buttonEl.setAttribute('aria-pressed', active ? 'true' : 'false');
+                    other.paneEl.style.display = active ? 'block' : 'none';
+                });
+                SpeechHelper.speak(tab.speech);
+            });
         });
     }
 
@@ -796,6 +792,26 @@ async function loadElderlyRequests() {
                     statusBadge = `<span class="badge badge-cancelled">${Icons.cross} Отменено</span>`;
                 }
 
+                let ratingBlock = '';
+                if (req.status === 'completed' && req.volunteer_id) {
+                    if (!req.rating_score) {
+                        ratingBlock = `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);" role="group" aria-label="Оцените волонтёра">
+                                <strong>Оцените волонтёра от 1 до 5:</strong>
+                                <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                                    ${[1, 2, 3, 4, 5].map(n => `<button type="button" class="btn btn-outline btn-sm" onclick="rateVolunteer(${req.id}, ${n})" aria-label="Оценка ${n} из 5">${n}</button>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        ratingBlock = `
+                            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); color: var(--text-muted);">
+                                Ваша оценка волонтёру: <strong>${escapeHtml(String(req.rating_score))} / 5</strong>
+                            </div>
+                        `;
+                    }
+                }
+
                 return `
                     <div class="card card-accent-primary" style="margin-bottom: 14px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px;">
@@ -813,6 +829,7 @@ async function loadElderlyRequests() {
                                 <div style="font-size: 1.3em; font-weight: 900; color: var(--accent-color); letter-spacing: 1px;">«${escapeHtml(req.secret_code)}»</div>
                             </div>
                         </div>
+                        ${ratingBlock}
                     </div>
                 `;
             }).join('');
@@ -824,6 +841,32 @@ async function loadElderlyRequests() {
         container.innerHTML = '<p style="color: var(--danger-color);">Ошибка загрузки ваших заявок.</p>';
     }
 }
+
+async function rateVolunteer(requestId, rating) {
+    if (!confirm(`Поставить волонтёру оценку ${rating} из 5?`)) return;
+    try {
+        const res = await authFetch(`/api/requests/${requestId}/rate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            let message = `${data.message || 'Спасибо за оценку!'}\nСредний рейтинг волонтёра: ${data.volunteer_rating || '—'}.`;
+            if (data.volunteer_is_restricted) {
+                message += '\nНовые задания волонтёра ограничены до решения координатора.';
+            }
+            alert(message);
+            loadElderlyRequests();
+        } else {
+            alert(data.error || 'Не удалось сохранить оценку');
+        }
+    } catch (e) {
+        console.error('Rating error', e);
+        alert('Ошибка сети при сохранении оценки');
+    }
+}
+window.rateVolunteer = rateVolunteer;
 
 // =========================================================================
 // 4. Admin View: Management & Analytics
@@ -983,6 +1026,7 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                 const status = parseInt(v.is_verified);
                 const verificationStatus = String(v.verification_status || '').toUpperCase();
                 const rating = parseFloat(v.rating || 0);
+                const isRestricted = parseInt(v.is_restricted || 0) === 1 || rating < 3.0;
                 const trainingAssigned = parseInt(v.training_assigned || 0);
                 const trainingCompleted = parseInt(v.training_completed || 0);
                 let badge = '';
@@ -1015,6 +1059,13 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                         </button>
                     `;
                 }
+                if (isRestricted) {
+                    actions += `
+                        <button class="btn btn-warning btn-xs" style="margin-left: 6px;" onclick="unrestrictVolunteer(${v.user_id})">
+                            ${Icons.check} Снять ограничения
+                        </button>
+                    `;
+                }
 
                 const docStatus = v.masked_passport
                     ? `<span class="badge badge-success" style="font-size: 0.8em;">Паспорт: ${escapeHtml(v.masked_passport)}</span>`
@@ -1037,6 +1088,7 @@ async function loadAllVolunteers(filter = 'all', minRating = null) {
                         <td><span style="display: inline-flex; align-items: center; gap: 4px;">${Icons.star} ${v.rating}</span> (${v.completed_tasks_count} заданий)</td>
                         <td>
                             ${badge}
+                            ${isRestricted ? `<div style="margin-top: 6px;"><span class="badge badge-rejected">${Icons.alert} Новые задания ограничены</span></div>` : ''}
                             ${trainingAssigned > 0 ? `<div style="margin-top: 6px;"><button class="btn btn-outline btn-xs" onclick="showVolunteerTraining(${v.user_id})">${Icons.book} Обучение ${trainingCompleted}/${trainingAssigned}</button></div>` : ''}
                         </td>
                         <td>${actions}</td>
@@ -1104,6 +1156,25 @@ async function showVolunteerTraining(id) {
     }
 }
 window.showVolunteerTraining = showVolunteerTraining;
+
+async function unrestrictVolunteer(id) {
+    if (!confirm('Снять ограничение на получение новых заданий для этого волонтёра?')) return;
+    try {
+        const res = await authFetch(`/api/coordinator/volunteers/${id}/unrestrict`, { method: 'POST' });
+        const json = await res.json();
+        if (json.success) {
+            alert(json.message || 'Ограничения сняты.');
+            loadAllVolunteers(volunteerFilterState.filter || 'all', volunteerFilterState.minRating);
+            loadAdminAnalytics();
+        } else {
+            alert(json.error || 'Не удалось снять ограничения');
+        }
+    } catch (e) {
+        console.error('Unrestrict error', e);
+        alert('Ошибка сети при снятии ограничений');
+    }
+}
+window.unrestrictVolunteer = unrestrictVolunteer;
 
 // Rehabilitation track for volunteers with a low rating
 async function rehabilitateVolunteer(id) {
@@ -1281,9 +1352,9 @@ async function loadAdminEducation() {
                 <td>${escapeHtml(m.type || 'memo')}</td>
                 <td>${escapeHtml(m.category || 'Общее')}</td>
                 <td>
-                    <div style="display: flex; gap: 6px;">
-                        <button class="btn btn-outline btn-xs" onclick="editEducationMaterial(${m.id})">Изменить</button>
-                        <button class="btn btn-danger btn-xs" onclick="deleteEducationMaterial(${m.id})">Удалить</button>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button class="btn btn-primary btn-xs" onclick="editEducationMaterial(${m.id})" title="Заполнить форму для изменения материала">Изменить</button>
+                        <button class="btn btn-danger btn-xs" onclick="deleteEducationMaterial(${m.id})" title="Удалить материал">Удалить</button>
                     </div>
                 </td>
             </tr>
@@ -1531,11 +1602,36 @@ async function checkVolunteerStatus() {
         if (json.success && json.user) {
             const user = json.user;
             const isVerified = user.profile ? parseInt(user.profile.is_verified) : 0;
+            const profileRating = user.profile ? parseFloat(user.profile.rating || 5) : 5;
+            const isRestricted = user.profile
+                ? (parseInt(user.profile.is_restricted) === 1 || profileRating < 3.0)
+                : false;
             const badgeBtn = document.getElementById('btnOpenVolunteerBadge');
             const feed = document.getElementById('volunteerRequestList');
             const feedCard = feed ? feed.closest('.card') : null;
             if (badgeBtn) badgeBtn.disabled = isVerified !== 1;
             if (feedCard) feedCard.style.display = isVerified === 1 ? '' : 'none';
+
+            const restrictionNotice = document.getElementById('volunteerRestrictionNotice');
+            if (restrictionNotice) {
+                if (isRestricted) {
+                    const reason = user.profile && user.profile.restriction_reason
+                        ? escapeHtml(user.profile.restriction_reason)
+                        : 'Низкий рейтинг (ниже 3.0).';
+                    restrictionNotice.style.display = 'block';
+                    restrictionNotice.innerHTML = `
+                        <strong>Ограничение на получение новых заданий.</strong>
+                        <div style="margin-top: 4px;">${reason}</div>
+                        <div style="margin-top: 4px;">Пройдите назначенные обучающие материалы и попросите координатора ТЦСОН снять ограничение.</div>
+                        <button type="button" class="btn btn-outline btn-sm" style="margin-top: 8px;" onclick="document.getElementById('volunteerTrainingCard')?.scrollIntoView({behavior: 'smooth', block: 'start'})">
+                            Перейти к материалам
+                        </button>
+                    `;
+                } else {
+                    restrictionNotice.style.display = 'none';
+                    restrictionNotice.innerHTML = '';
+                }
+            }
             if (isVerified === 1) {
                 notice.style.borderLeftColor = 'var(--accent-color)';
                 notice.style.background = '#f0fdf4';
@@ -1748,9 +1844,10 @@ async function acceptRequest(id) {
         });
         const data = await res.json();
         if (data.success) {
-            alert(`Заявка принята!\n\nОБЯЗАТЕЛЬНО назовите подопечному проверочное кодовое слово у двери:\n«${data.secret_code}»`);
+            alert(`Заявка принята!\n\nОБЯЗАТЕЛЬНО назовите подопечному проверочное кодовое слово у двери:\n«${data.secret_code}»\n\nЗаявка добавлена в блок «Мои задания в работе» выше. Когда выполните визит, нажмите там «Завершить (Код)».`);
             loadVolunteerRequests();
             loadVolunteerActiveTasks();
+            document.getElementById('volunteerActiveTasksCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             loadElderlyRequests();
         } else {
             alert(data.error || 'Не удалось принять заявку');
@@ -2239,6 +2336,20 @@ function clearEducationSearch() {
     renderEducationCards(selectedEducationCategory);
 }
 
+function renderEducationMedia(item) {
+    if (!item || !item.audio_url) return '';
+    const url = escapeHtml(item.audio_url);
+    const type = String(item.type || '').toLowerCase();
+    if (type === 'video') {
+        const isYouTube = /youtube\.com|youtu\.be/i.test(String(item.audio_url));
+        if (isYouTube) {
+            return `<p style="margin-bottom: 12px;"><a class="btn btn-outline btn-sm" href="${url}" target="_blank" rel="noopener noreferrer">Смотреть видео</a></p>`;
+        }
+        return `<video controls preload="none" src="${url}" style="max-width: 100%; margin-bottom: 12px; border-radius: 8px;"></video>`;
+    }
+    return `<audio controls preload="none" src="${url}" style="width: 100%; margin-bottom: 12px;"></audio>`;
+}
+
 function renderEducationCards(category = 'all') {
     const container = document.getElementById('educationList');
     if (!container) return;
@@ -2283,9 +2394,7 @@ function renderEducationCards(category = 'all') {
                 <span class="badge badge-open" style="font-size: 0.8em;">${escapeHtml(item.category || 'Общее')}</span>
             </div>
             <p style="margin: 8px 0 12px 0; line-height: 1.5;">${escapeHtml(item.content)}</p>
-            ${item.audio_url ? (String(item.type).toLowerCase() === 'video'
-                ? `<video controls preload="none" src="${escapeHtml(item.audio_url)}" style="max-width: 100%; margin-bottom: 12px; border-radius: 8px;"></video>`
-                : `<audio controls preload="none" src="${escapeHtml(item.audio_url)}" style="width: 100%; margin-bottom: 12px;"></audio>`) : ''}
+            ${renderEducationMedia(item)}
             <button class="btn btn-outline btn-sm" onclick="SpeechHelper.speak(${jsString(item.title + '. ' + item.content)})">
                 ${Icons.volume} Прослушать памятку
             </button>
@@ -2377,6 +2486,13 @@ async function loadAlerts() {
     const titleEl = document.getElementById('alertTitle');
     const descEl = document.getElementById('alertDesc');
     if (!alertBox) return;
+
+    // Administrators create fraud alerts; showing their own alerts back to them
+    // as an unread citizen banner is noise. The management list stays available.
+    if (currentRole === 'admin') {
+        alertBox.style.display = 'none';
+        return;
+    }
 
     try {
         const res = await authFetch('/api/antifraud/alerts');

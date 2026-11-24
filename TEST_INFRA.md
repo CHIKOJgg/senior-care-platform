@@ -119,7 +119,7 @@ export DB_CONNECTION=mysql DB_HOST=127.0.0.1 DB_PORT=3307 \
 php tests/run_all.php
 ```
 
-`tests/run_all.php` starts a PHP server, resets the MySQL database, runs migrations/seeds and executes all 25 suites. After the matrix it restores a clean seeded demo database, so stress bursts do not leak into the local UI.
+`tests/run_all.php` starts a PHP server, resets the MySQL database, runs migrations/seeds and executes all 26 suites. After the matrix it restores a clean seeded demo database, so stress bursts do not leak into the local UI.
 
 ### 4.3 CLI Options Reference
 

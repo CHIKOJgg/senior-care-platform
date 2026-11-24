@@ -66,6 +66,7 @@ try {
             'assigned_at' => 'DATETIME NULL',
             'failed_attempts' => 'INT DEFAULT 0',
             'region_code' => "VARCHAR(32) DEFAULT 'MINSK_CITY'",
+            'rated_at' => 'DATETIME NULL',
         ];
         foreach ($hrAdditions as $col => $typeDef) {
             if (!isset($hrCols[strtolower($col)])) {
@@ -102,6 +103,9 @@ try {
             'badge_token' => 'VARCHAR(255) NULL',
             'badge_expires_at' => 'DATETIME NULL',
             'region_code' => "VARCHAR(32) DEFAULT 'MINSK_CITY'",
+            'is_restricted' => 'INT DEFAULT 0',
+            'restriction_reason' => 'VARCHAR(255) NULL',
+            'restricted_at' => 'DATETIME NULL',
         ];
         foreach ($vpAdditions as $col => $typeDef) {
             if (!isset($vpCols[strtolower($col)])) {

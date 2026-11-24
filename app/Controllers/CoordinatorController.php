@@ -313,6 +313,25 @@ class CoordinatorController
         ]);
     }
 
+    public function unrestrictVolunteer(string $id): void
+    {
+        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $uid = (int)$id;
+        $profile = VolunteerProfile::find($uid);
+        if (!$profile) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+
+        VolunteerProfile::unrestrict($uid);
+        Logger::info("Volunteer #{$uid} restrictions lifted by Admin/Coordinator #{$admin['user_id']}");
+
+        Router::json([
+            'success' => true,
+            'volunteer_id' => $uid,
+            'message' => 'Ограничения на новые задания сняты. Волонтёр снова может брать заявки.'
+        ]);
+    }
+
     public function volunteerTraining(string $id): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);

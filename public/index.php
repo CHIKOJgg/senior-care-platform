@@ -482,6 +482,15 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                     <div class="function-sub">Проверить подозрительный звонок, СМС и правила безопасности</div>
                 </div>
             </button>
+            <button class="function-card-btn" data-user-func="func-education" id="btnFuncEducation">
+                <span class="function-icon">
+                    <svg class="ui-icon ui-icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                </span>
+                <div>
+                    <div class="function-title">3. Школа безопасности</div>
+                    <div class="function-sub">Памятки, уроки и обучающие видео</div>
+                </div>
+            </button>
         </div>
 
         <!-- User Function 1: Help Request -->
@@ -643,22 +652,54 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </button>
                 
                 <div id="fraudResultBox" style="display: none; margin-top: 16px; padding: 16px; border-radius: 12px; border: 2px solid;"></div>
+                <p style="margin: 14px 0 0 0; font-size: 0.85em; color: var(--text-muted);">
+                    Режим ИИ: встроенный эвристический анализатор (работает без ключа). Переменные <code>AI_*</code> в <code>.env</code> зарезервированы для внешнего провайдера.
+                </p>
             </div>
 
+        </section>
+
+        <!-- User Function 3: Education & Safety School -->
+        <section id="func-education" class="user-func-pane" style="display: none;">
             <div class="card">
                 <h2 style="display: flex; align-items: center; gap: 8px;">
-                    <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+                    <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
                     <span>Памятки и уроки безопасности</span>
                 </h2>
                 <p style="margin-bottom: 16px;">Простые правила, которые защитят вас от телефонных и бытовых мошенников, подскажут как пользоваться телефоном и оказывать первую помощь:</p>
-                <div style="margin-bottom: 14px; display: flex; gap: 8px;">
-                    <input type="text" id="educationSearchInput" class="form-control" aria-label="Поиск по памяткам" placeholder="Поиск по памяткам (например: мошенники, давление, ЕРИП, перелом, лекарства)..." oninput="handleEducationSearch(this.value)">
+                <div style="margin-bottom: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+                    <input type="text" id="educationSearchInput" class="form-control" aria-label="Поиск по памяткам" placeholder="Поиск по памяткам (например: мошенники, давление, ЕРИП, перелом, лекарства)..." oninput="handleEducationSearch(this.value)" style="flex: 1; min-width: 220px;">
                     <button type="button" class="btn btn-outline btn-sm" onclick="clearEducationSearch()" title="Сбросить поиск">
                         Сброс
                     </button>
                 </div>
                 <div id="educationCategoryTabs" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;"></div>
                 <div id="educationList"></div>
+            </div>
+
+            <div class="card">
+                <h2 style="display: flex; align-items: center; gap: 8px;">
+                    <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m10 9 5 3-5 3Z"/></svg>
+                    <span>Обучающие видео</span>
+                </h2>
+                <p style="margin-bottom: 16px;">Короткие видеоматериалы о безопасности, здоровье и общении. Ссылки открываются в новой вкладке.</p>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
+                    <a class="card" href="https://www.youtube.com/results?search_query=как+распознать+телефонных+мошенников+пожилым" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; border-left: 4px solid var(--danger-color);">
+                        <strong style="display: block; margin-bottom: 6px;">Как распознать телефонного мошенника</strong>
+                        <p style="color: var(--text-muted); margin-bottom: 10px;">Подборка роликов о звонках «из банка», кодах из СМС и «безопасных счетах».</p>
+                        <span class="btn btn-outline btn-sm">Смотреть видео</span>
+                    </a>
+                    <a class="card" href="https://www.youtube.com/results?search_query=первая+помощь+пожилым+дома" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; border-left: 4px solid var(--accent-color);">
+                        <strong style="display: block; margin-bottom: 6px;">Первая помощь дома</strong>
+                        <p style="color: var(--text-muted); margin-bottom: 10px;">Что делать при давлении, падении и тревожных симптомах до приезда врача.</p>
+                        <span class="btn btn-outline btn-sm">Смотреть видео</span>
+                    </a>
+                    <a class="card" href="https://www.youtube.com/results?search_query=как+пользоваться+смартфоном+пожилым+людям" target="_blank" rel="noopener noreferrer" style="text-decoration: none; color: inherit; border-left: 4px solid var(--primary-color);">
+                        <strong style="display: block; margin-bottom: 6px;">Смартфон без страха</strong>
+                        <p style="color: var(--text-muted); margin-bottom: 10px;">Крупный шрифт, громкость, звонки и видеосвязь с родными.</p>
+                        <span class="btn btn-outline btn-sm">Смотреть видео</span>
+                    </a>
+                </div>
             </div>
         </section>
 
@@ -1077,7 +1118,11 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         </form>
                         <div id="educationFormMessage" class="alert-banner" role="status" aria-live="polite" style="display: none; margin-top: 14px;"></div>
 
-                        <div class="data-table-container" style="margin-top: 18px;">
+                        <p style="color: var(--text-muted); font-size: 0.9em; margin: 14px 0 0 0;">
+                            Чтобы изменить материал, нажмите «Изменить» в строке таблицы — данные подставятся в форму, затем нажмите «Сохранить изменения».
+                        </p>
+
+                        <div class="data-table-container" style="margin-top: 12px;">
                             <table class="data-table">
                                 <thead>
                                     <tr>
@@ -1128,6 +1173,9 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                 </div>
             </div>
         </div>
+
+        <!-- Low-rating restriction notice -->
+        <div id="volunteerRestrictionNotice" class="alert-banner alert-banner-warning" role="status" aria-live="polite" style="display: none; margin-bottom: 16px;"></div>
 
         <!-- Assigned retraining materials (volunteer rehabilitation) -->
         <div class="card card-accent-warning" id="volunteerTrainingCard" style="display: none;">
