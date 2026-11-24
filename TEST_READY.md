@@ -1,7 +1,7 @@
 # TEST_READY: «ЗаботаРядом» Opaque-Box E2E Test Suite
 
 > **2026-11-20 update:** the authoritative full run is `php tests/run_all.php`
-> (25 deterministic suites, fresh MySQL per suite). See
+> (26 deterministic suites, fresh MySQL per suite). See
 > [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md).
 
 **Status**: READY  

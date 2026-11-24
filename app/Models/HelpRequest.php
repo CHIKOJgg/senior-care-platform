@@ -129,6 +129,26 @@ class HelpRequest extends Model
      * Atomically record one wrong secret-word attempt and return the new count.
      * Concurrent guesses cannot race past the lock threshold.
      */
+    /**
+     * Atomically store a single post-visit rating. Returns false if the request
+     * was already rated or is not completed.
+     */
+    public static function rate(int $id, int $rating): bool
+    {
+        $db = \App\Core\Database::getConnection();
+        $stmt = $db->prepare("
+            UPDATE help_requests
+            SET rating_score = :rating, rated_at = :rated_at
+            WHERE id = :id AND rating_score IS NULL AND status = 'completed'
+        ");
+        $stmt->execute([
+            'rating' => $rating,
+            'rated_at' => date('Y-m-d H:i:s'),
+            'id' => $id,
+        ]);
+        return $stmt->rowCount() > 0;
+    }
+
     public static function registerFailedAttempt(int $id, int $max = 5): int
     {
         $db = Database::getConnection();

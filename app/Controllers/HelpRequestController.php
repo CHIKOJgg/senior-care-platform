@@ -272,6 +272,16 @@ class HelpRequestController
             ], 403);
         }
 
+        if ((int)($volunteer['is_restricted'] ?? 0) === 1 || (float)($volunteer['rating'] ?? 5.0) < 3.0) {
+            Logger::security("Restricted volunteer #{$volunteerId} tried to accept request #{$id}");
+            Router::json([
+                'error' => 'Новые задания временно ограничены: рейтинг ниже 3.0. '
+                    . 'Пройдите назначенные материалы и обратитесь к координатору ТЦСОН для снятия ограничения.',
+                'code' => 'VOLUNTEER_RESTRICTED',
+                'restriction_reason' => $volunteer['restriction_reason'] ?? null
+            ], 403);
+        }
+
         // Atomic claim: two simultaneous accepts must not overwrite each other.
         if (!HelpRequest::tryAccept((int)$id, (int)$volunteerId)) {
             Router::json(['error' => 'Заявка уже взята другим волонтёром или завершена'], 409);
@@ -430,6 +440,61 @@ class HelpRequestController
         }
 
         Router::json($response);
+    }
+
+    /**
+     * Rate the volunteer after a completed visit. Only the senior who owns the
+     * request may rate, and only once.
+     * Route: POST /api/requests/{id}/rate
+     */
+    public function rate(string $id): void
+    {
+        $currentUser = AuthService::requireAuth(['elderly']);
+        $userId = (int)$currentUser['user_id'];
+        $reqId = (int)$id;
+
+        $req = HelpRequest::find($reqId);
+        if (!$req) {
+            Router::json(['error' => 'Заявка не найдена'], 404);
+        }
+        if ((int)($req['elderly_id'] ?? 0) !== $userId) {
+            Router::json(['error' => 'Оценить волонтёра может только автор заявки'], 403);
+        }
+        if (($req['status'] ?? '') !== 'completed') {
+            Router::json(['error' => 'Оценить волонтёра можно только после выполнения заявки'], 409);
+        }
+        if (!empty($req['rating_score'])) {
+            Router::json(['error' => 'Эта заявка уже оценена'], 409);
+        }
+
+        $input = Router::getJsonInput();
+        $rating = (int)($input['rating'] ?? 0);
+        if ($rating < 1 || $rating > 5) {
+            Router::json(['error' => 'Оценка должна быть от 1 до 5'], 400);
+        }
+
+        $volunteerId = (int)($req['volunteer_id'] ?? 0);
+        if ($volunteerId <= 0) {
+            Router::json(['error' => 'У заявки нет волонтёра для оценки'], 409);
+        }
+
+        if (!HelpRequest::rate($reqId, $rating)) {
+            Router::json(['error' => 'Эта заявка уже оценена'], 409);
+        }
+
+        $ratingResult = VolunteerProfile::recalculateRating($volunteerId);
+        Logger::info("Request #{$reqId} rated {$rating}/5 by Elderly #{$userId}; volunteer #{$volunteerId} average is {$ratingResult['rating']}");
+
+        Router::json([
+            'success' => true,
+            'request_id' => $reqId,
+            'rating' => $rating,
+            'volunteer_rating' => $ratingResult['rating'],
+            'volunteer_is_restricted' => $ratingResult['is_restricted'],
+            'message' => $ratingResult['is_restricted']
+                ? 'Спасибо за оценку. Рейтинг волонтёра ниже 3.0 — новые задания временно ограничены до проверки координатором.'
+                : 'Спасибо за оценку!'
+        ]);
     }
 
     public function cancel(string $id): void

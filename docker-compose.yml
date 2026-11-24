@@ -23,6 +23,11 @@ services:
       - DB_PASSWORD=seniorpass
       - APP_ENV=local
       - APP_DEBUG=true
+      - AI_PROVIDER=${AI_PROVIDER:-heuristic}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-}
+      - AI_BASE_URL=${AI_BASE_URL:-}
+      - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-8}
       # Local demo only: enables X-Demo-User and the explicit "continue without
       # password" senior button. Never enable together with a public deployment.
       - ALLOW_DEMO_AUTH=true

@@ -59,6 +59,7 @@ $router->get('/api/requests/{id}', [HelpRequestController::class, 'show']);
 $router->post('/api/requests', [HelpRequestController::class, 'store']);
 $router->post('/api/requests/{id}/accept', [HelpRequestController::class, 'accept']);
 $router->post('/api/requests/{id}/complete', [HelpRequestController::class, 'complete']);
+$router->post('/api/requests/{id}/rate', [HelpRequestController::class, 'rate']);
 $router->post('/api/requests/{id}/cancel', [HelpRequestController::class, 'cancel']);
 
 // Anti-fraud routes
@@ -88,6 +89,7 @@ $router->post('/api/coordinator/categories', [CoordinatorController::class, 'cre
 $router->put('/api/coordinator/categories/{id}', [CoordinatorController::class, 'updateCategory']);
 $router->delete('/api/coordinator/categories/{id}', [CoordinatorController::class, 'deleteCategory']);
 $router->post('/api/coordinator/volunteers/{id}/rehabilitate', [CoordinatorController::class, 'rehabilitateVolunteer']);
+$router->post('/api/coordinator/volunteers/{id}/unrestrict', [CoordinatorController::class, 'unrestrictVolunteer']);
 $router->post('/api/coordinator/volunteers/{id}/verify', [CoordinatorController::class, 'verifyVolunteer']);
 $router->post('/api/coordinator/volunteers/{id}/reject', [CoordinatorController::class, 'rejectVolunteer']);
 $router->get('/api/coordinator/pending-volunteers', [CoordinatorController::class, 'pendingVolunteers']);
