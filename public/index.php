@@ -1129,6 +1129,16 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
             </div>
         </div>
 
+        <!-- Assigned retraining materials (volunteer rehabilitation) -->
+        <div class="card card-accent-warning" id="volunteerTrainingCard" style="display: none;">
+            <h2 style="display: flex; align-items: center; gap: 8px;">
+                <svg class="ui-icon ui-icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+                <span>Назначено для переобучения</span>
+            </h2>
+            <p style="color: var(--text-muted);">Материалы, назначенные координатором ТЦСОН. Отметьте изученные темы.</p>
+            <div id="volunteerTrainingList"></div>
+        </div>
+
         <!-- Volunteer Active Tasks in Progress -->
         <div class="card card-accent-warning" id="volunteerActiveTasksCard">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
@@ -1157,6 +1167,7 @@ $sessionRoleName = $isAuthed ? ($roleNames[$roleCode] ?? $roleCode) : '';
                         <span>Лента открытых заявок поблизости</span>
                     </h2>
                     <p style="color: var(--text-muted);">ИИ автоматически рассчитал расстояние от вашей текущей геоточки:</p>
+                    <p id="volunteerFeedUpdatedAt" style="color: var(--text-muted); font-size: 0.85em; margin-top: 4px;">Автообновление каждые 10 секунд</p>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                     <select id="volunteerRegionFilter" class="form-control" aria-label="Фильтр заявок по региону" style="max-width: 230px; min-height: 38px;" onchange="loadVolunteerRequests()">

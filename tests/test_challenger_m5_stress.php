@@ -540,6 +540,12 @@ assertStress(
     "Total in DB: {$totalAlertsInDb}/20"
 );
 
+// Leave the development database clean even when this stress suite is run
+// standalone (outside tests/run_all.php).
+$pdo->prepare("DELETE FROM sos_alerts WHERE elderly_id = :id")->execute(['id' => $uidSeniorSOS]);
+$pdo->prepare("DELETE FROM elderly_profiles WHERE user_id = :id")->execute(['id' => $uidSeniorSOS]);
+$pdo->prepare("DELETE FROM users WHERE id = :id")->execute(['id' => $uidSeniorSOS]);
+
 echo "\n--------------------------------------------------------\n";
 echo "CHALLENGER STRESS RESULTS: Total: {$total} | Passed: {$passed} | Failed: {$failed}\n";
 echo "========================================================\n\n";

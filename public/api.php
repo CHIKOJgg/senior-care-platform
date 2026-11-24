@@ -80,6 +80,7 @@ $router->post('/api/chat/{id}', [ChatController::class, 'send']);
 $router->get('/api/coordinator/stats', [CoordinatorController::class, 'stats']);
 $router->get('/api/coordinator/volunteers', [CoordinatorController::class, 'allVolunteers']);
 $router->get('/api/coordinator/volunteers/pending', [CoordinatorController::class, 'pendingVolunteers']);
+$router->get('/api/coordinator/volunteers/{id}/training', [CoordinatorController::class, 'volunteerTraining']);
 $router->get('/api/regions', [RegionController::class, 'index']);
 $router->get('/api/categories', [CoordinatorController::class, 'categories']);
 $router->get('/api/coordinator/categories', [CoordinatorController::class, 'categories']);
@@ -100,6 +101,8 @@ $router->get('/api/volunteers/leaderboard', [CoordinatorController::class, 'lead
 
 // Volunteer Dynamic Badge & Verification routes (Milestone 2)
 $router->get('/api/volunteers/my-badge', [VolunteerController::class, 'myBadge']);
+$router->get('/api/volunteers/training', [VolunteerController::class, 'trainingMaterials']);
+$router->post('/api/volunteers/training/{id}/complete', [VolunteerController::class, 'completeTrainingMaterial']);
 $router->get('/api/volunteers/badge/{token}', [VolunteerController::class, 'verifyPublicBadge']);
 $router->get('/api/volunteers/badge/{token}/svg', [VolunteerController::class, 'renderBadgeSvg']);
 $router->post('/api/volunteers/verify-identity', [VolunteerController::class, 'verifyIdentity']);
@@ -118,10 +121,12 @@ $router->get('/api/sos/my-active', [SosController::class, 'myActive']);
 $router->get('/api/sos/active', [SosController::class, 'activeAlerts']);
 $router->get('/api/sos/{id}', [SosController::class, 'show']);
 $router->post('/api/sos/{id}/resolve', [SosController::class, 'resolveAlert']);
+$router->post('/api/sos/elderly/{id}/resolve-all', [SosController::class, 'resolveAllForElderly']);
 
 // Coordinator SOS & Alerts Aliases
 $router->get('/api/coordinator/sos-alerts', [SosController::class, 'activeAlerts']);
 $router->post('/api/coordinator/sos-alerts/{id}/resolve', [SosController::class, 'resolveAlert']);
+$router->post('/api/coordinator/sos-alerts/elderly/{id}/resolve-all', [SosController::class, 'resolveAllForElderly']);
 $router->get('/api/coordinator/alerts', [CoordinatorController::class, 'alerts']);
 
 // Task Watchdog & Stale Monitor routes (Milestone 3)
