@@ -113,7 +113,8 @@ if ($seedDemoUsers && !User::findByPhone('+375295556677')) {
         'role_id' => 3,
         'phone' => '+375295556677',
         'name' => 'Светлана Михайловна (ТЦСОН)',
-        'password_hash' => $password
+        'password_hash' => $password,
+        'region_code' => 'MINSK_CITY'
     ]);
 }
 

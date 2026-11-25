@@ -40,7 +40,7 @@ class EducationController
 
     public function create(): void
     {
-        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $admin = AuthService::requireAuth(['admin']);
         $input = Router::getJsonInput();
         $title = trim((string)($input['title'] ?? ''));
         $type = trim((string)($input['type'] ?? 'memo'));
@@ -74,7 +74,7 @@ class EducationController
 
     public function update(string $id): void
     {
-        AuthService::requireAuth(['admin', 'coordinator']);
+        AuthService::requireAuth(['admin']);
         $mid = (int)$id;
         $m = EducationalMaterial::find($mid);
         if (!$m) {
@@ -111,7 +111,7 @@ class EducationController
 
     public function delete(string $id): void
     {
-        AuthService::requireAuth(['admin', 'coordinator']);
+        AuthService::requireAuth(['admin']);
         $mid = (int)$id;
         $m = EducationalMaterial::find($mid);
         if (!$m) {

@@ -9,11 +9,24 @@ use App\Core\Logger;
 use App\Core\RateLimiter;
 use App\Services\AuthService;
 use App\Services\Emergency\MchsEmergencyAdapter;
+use App\Services\RegionService;
+use App\Models\ElderlyProfile;
 use App\Models\SosAlert;
 use App\Models\User;
 
 class SosController
 {
+    private function requireElderlyInScope(int $elderlyId, ?string $region): void
+    {
+        if ($region === null) {
+            return;
+        }
+        $profile = ElderlyProfile::find($elderlyId);
+        if (!$profile || RegionService::normalize($profile['region_code'] ?? null) !== $region) {
+            Router::json(['error' => 'Сигнал относится к другому региону'], 403);
+        }
+    }
+
     /**
      * Trigger Priority 0 Emergency SOS Alert
      * Route: POST /api/sos
@@ -171,11 +184,13 @@ class SosController
     public function activeAlerts(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $region = AuthService::regionScope();
 
-        $alerts = SosAlert::getActiveAlerts();
+        $alerts = SosAlert::getActiveAlerts($region);
 
         Router::json([
             'success' => true,
+            'region' => $region,
             'count' => count($alerts),
             'data' => $alerts,
             'alerts' => $alerts
@@ -194,6 +209,7 @@ class SosController
         if (!$alert) {
             Router::json(['error' => 'Экстренное оповещение не найдено'], 404);
         }
+        $this->requireElderlyInScope((int)$alert['elderly_id'], AuthService::regionScope());
 
         Router::json([
             'success' => true,
@@ -214,6 +230,7 @@ class SosController
         if (!$alert) {
             Router::json(['error' => 'Экстренное оповещение не найдено'], 404);
         }
+        $this->requireElderlyInScope((int)$alert['elderly_id'], AuthService::regionScope());
 
         SosAlert::resolveAlert($alertId);
 
@@ -244,6 +261,7 @@ class SosController
         if (!$target || ($target['role_code'] ?? '') !== 'elderly') {
             Router::json(['error' => 'Подопечный не найден'], 404);
         }
+        $this->requireElderlyInScope($elderlyId, AuthService::regionScope());
 
         $resolvedCount = SosAlert::resolveAllForElderly($elderlyId);
         if ($resolvedCount > 0) {

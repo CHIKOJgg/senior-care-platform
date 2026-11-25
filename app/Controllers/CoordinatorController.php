@@ -14,15 +14,99 @@ use App\Models\SosAlert;
 use App\Models\Category;
 use App\Models\EducationalMaterial;
 use App\Models\VolunteerTrainingAssignment;
+use App\Models\User;
+use App\Services\RegionService;
 use App\Services\TaskWatchdogService;
 
 class CoordinatorController
 {
+    /**
+     * null = administrator (all regions), otherwise the coordinator's region.
+     */
+    private function scopeRegion(): ?string
+    {
+        return AuthService::regionScope();
+    }
+
+    private function filterByRegion(array $rows, ?string $region, string $key = 'region_code'): array
+    {
+        if ($region === null) {
+            return $rows;
+        }
+        return array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => RegionService::normalize($row[$key] ?? null) === $region
+        ));
+    }
+
+    private function requireVolunteerScope(int $userId, ?string $region): array
+    {
+        $profile = VolunteerProfile::find($userId);
+        if (!$profile) {
+            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
+        }
+        if ($region !== null && RegionService::normalize($profile['region_code'] ?? null) !== $region) {
+            Router::json(['error' => 'Волонтёр находится в другом регионе'], 403);
+        }
+        return $profile;
+    }
+
+    private function requireRequestScope(array $request, ?string $region): void
+    {
+        if ($region !== null && RegionService::normalize($request['region_code'] ?? null) !== $region) {
+            Router::json(['error' => 'Заявка находится в другом регионе'], 403);
+        }
+    }
+
+    public function coordinators(): void
+    {
+        AuthService::requireAuth(['admin']);
+        $rows = User::query("
+            SELECT u.id, u.name, u.phone, u.region_code
+            FROM users u
+            JOIN roles r ON r.id = u.role_id
+            WHERE r.code = 'coordinator'
+            ORDER BY u.name ASC
+        ");
+        Router::json([
+            'success' => true,
+            'count' => count($rows),
+            'data' => $rows
+        ]);
+    }
+
+    public function updateCoordinatorRegion(string $id): void
+    {
+        $admin = AuthService::requireAuth(['admin']);
+        $uid = (int)$id;
+        $user = User::getWithProfile($uid);
+        if (!$user || ($user['role_code'] ?? '') !== 'coordinator') {
+            Router::json(['error' => 'Координатор не найден'], 404);
+        }
+
+        $input = Router::getJsonInput();
+        $region = strtoupper(trim((string)($input['region_code'] ?? '')));
+        if (!RegionService::exists($region)) {
+            Router::json(['error' => 'Некорректный регион'], 400);
+        }
+
+        User::update($uid, ['region_code' => $region]);
+        Logger::info("Coordinator #{$uid} region changed to {$region} by Admin #{$admin['user_id']}");
+
+        Router::json([
+            'success' => true,
+            'user_id' => $uid,
+            'region_code' => $region,
+            'region_name' => RegionService::name($region)
+        ]);
+    }
+
     public function stats(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $region = $this->scopeRegion();
 
-        $allRequests = HelpRequest::all();
+        $allRequests = $this->filterByRegion(HelpRequest::all(), $region);
         $totalRequests = count($allRequests);
         $activeCount = 0;
         $completedCount = 0;
@@ -38,7 +122,7 @@ class CoordinatorController
             }
         }
 
-        $volunteers = VolunteerProfile::all();
+        $volunteers = $this->filterByRegion(VolunteerProfile::all(), $region);
         $totalVolunteers = count($volunteers);
         $verifiedCount = 0;
         $pendingCount = 0;
@@ -55,24 +139,30 @@ class CoordinatorController
             }
         }
 
-        // Category breakdown: single query to prevent N+1 overhead
-        $categoryStats = Category::query(
-            "SELECT c.id, c.code, c.title, c.icon, COUNT(r.id) AS count
+        // Category breakdown: single query to prevent N+1 overhead.
+        // Coordinators only see counts for their own region.
+        $categorySql = "SELECT c.id, c.code, c.title, c.icon, COUNT(r.id) AS count
              FROM categories c
-             LEFT JOIN help_requests r ON r.category_id = c.id
-             GROUP BY c.id, c.code, c.title, c.icon
-             ORDER BY c.title ASC"
-        );
+             LEFT JOIN help_requests r ON r.category_id = c.id";
+        $categoryParams = [];
+        if ($region !== null) {
+            $categorySql .= " AND r.region_code = :region";
+            $categoryParams['region'] = $region;
+        }
+        $categorySql .= " GROUP BY c.id, c.code, c.title, c.icon ORDER BY c.title ASC";
+        $categoryStats = Category::query($categorySql, $categoryParams);
         foreach ($categoryStats as &$cs) {
             $cs['id'] = (int)$cs['id'];
             $cs['count'] = (int)$cs['count'];
         }
         unset($cs);
 
-        $activeAlerts = count(FraudAlert::getActiveAlerts());
+        $activeAlerts = count(FraudAlert::getActiveAlerts($region));
 
         Router::json([
             'success' => true,
+            'region' => $region,
+            'region_name' => $region !== null ? RegionService::name($region) : null,
             'stats' => [
                 'total_requests' => $totalRequests,
                 'active_requests' => $activeCount,
@@ -91,12 +181,18 @@ class CoordinatorController
     public function pendingVolunteers(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
-        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at 
-                FROM volunteer_profiles vp 
-                JOIN users u ON u.id = vp.user_id 
-                WHERE vp.is_verified = 0 OR vp.verification_status = 'PENDING'
-                ORDER BY u.created_at DESC";
-        $list = VolunteerProfile::query($sql);
+        $region = $this->scopeRegion();
+        $sql = "SELECT vp.*, u.name, u.phone, u.created_at as registered_at
+                FROM volunteer_profiles vp
+                JOIN users u ON u.id = vp.user_id
+                WHERE (vp.is_verified = 0 OR vp.verification_status = 'PENDING')";
+        $params = [];
+        if ($region !== null) {
+            $sql .= " AND vp.region_code = :region";
+            $params['region'] = $region;
+        }
+        $sql .= " ORDER BY u.created_at DESC";
+        $list = VolunteerProfile::query($sql, $params);
         foreach ($list as &$item) {
             if (empty($item['police_clearance_status'])) {
                 $item['police_clearance_status'] = 'NOT_SUBMITTED';
@@ -114,8 +210,9 @@ class CoordinatorController
     public function allVolunteers(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $region = $this->scopeRegion();
         $minRating = (isset($_GET['min_rating']) && is_numeric($_GET['min_rating'])) ? (float)$_GET['min_rating'] : null;
-        $list = VolunteerProfile::getAllWithDetails();
+        $list = $this->filterByRegion(VolunteerProfile::getAllWithDetails(), $region);
         if ($minRating !== null) {
             $list = array_values(array_filter($list, function ($v) use ($minRating) {
                 return (float)($v['rating'] ?? 0) >= $minRating;
@@ -149,7 +246,7 @@ class CoordinatorController
 
     public function createCategory(): void
     {
-        $admin = AuthService::requireAuth(['admin', 'coordinator']);
+        $admin = AuthService::requireAuth(['admin']);
         $input = Router::getJsonInput();
         $code = trim((string)($input['code'] ?? ''));
         $title = trim((string)($input['title'] ?? ''));
@@ -181,7 +278,7 @@ class CoordinatorController
 
     public function updateCategory(string $id): void
     {
-        AuthService::requireAuth(['admin', 'coordinator']);
+        AuthService::requireAuth(['admin']);
         $catId = (int)$id;
         $cat = Category::find($catId);
         if (!$cat) {
@@ -221,7 +318,7 @@ class CoordinatorController
 
     public function deleteCategory(string $id): void
     {
-        AuthService::requireAuth(['admin', 'coordinator']);
+        AuthService::requireAuth(['admin']);
         $catId = (int)$id;
         $cat = Category::find($catId);
         if (!$cat) {
@@ -241,10 +338,7 @@ class CoordinatorController
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
         $uid = (int)$id;
-        $vp = VolunteerProfile::find($uid);
-        if (!$vp) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
+        $vp = $this->requireVolunteerScope($uid, $this->scopeRegion());
         $input = Router::getJsonInput();
         $threshold = 3.5;
         $currentRating = (float)($vp['rating'] ?? 5.0);
@@ -317,10 +411,7 @@ class CoordinatorController
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
         $uid = (int)$id;
-        $profile = VolunteerProfile::find($uid);
-        if (!$profile) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
+        $this->requireVolunteerScope($uid, $this->scopeRegion());
 
         VolunteerProfile::unrestrict($uid);
         Logger::info("Volunteer #{$uid} restrictions lifted by Admin/Coordinator #{$admin['user_id']}");
@@ -336,10 +427,7 @@ class CoordinatorController
     {
         AuthService::requireAuth(['admin', 'coordinator']);
         $uid = (int)$id;
-        $profile = VolunteerProfile::find($uid);
-        if (!$profile) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
+        $this->requireVolunteerScope($uid, $this->scopeRegion());
 
         $materials = VolunteerTrainingAssignment::getForVolunteer($uid);
         Router::json([
@@ -354,10 +442,7 @@ class CoordinatorController
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
         $uid = (int)$id;
-        $vp = VolunteerProfile::find($uid);
-        if (!$vp) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
+        $vp = $this->requireVolunteerScope($uid, $this->scopeRegion());
 
         VolunteerProfile::update($uid, [
             'is_verified' => 1,
@@ -377,10 +462,7 @@ class CoordinatorController
     {
         $admin = AuthService::requireAuth(['admin', 'coordinator']);
         $uid = (int)$id;
-        $vp = VolunteerProfile::find($uid);
-        if (!$vp) {
-            Router::json(['error' => 'Профиль волонтёра не найден'], 404);
-        }
+        $vp = $this->requireVolunteerScope($uid, $this->scopeRegion());
 
         $input = Router::getJsonInput();
         $reason = (string)($input['reason'] ?? 'Отклонено координатором по результатам проверки документов');
@@ -408,20 +490,24 @@ class CoordinatorController
         $status = $_GET['status'] ?? null;
         $requests = HelpRequest::getAllWithDetails($status);
 
-        $region = isset($_GET['region']) ? strtoupper(trim((string)$_GET['region'])) : '';
-        if ($region !== '' && \App\Services\RegionService::exists($region)) {
-            $requests = array_values(array_filter(
-                $requests,
-                fn($r) => \App\Services\RegionService::normalize($r['region_code'] ?? null) === $region
-            ));
+        // A coordinator is always forced to their own region; an administrator
+        // may narrow the list through ?region=... or see all regions.
+        $region = $this->scopeRegion();
+        if ($region === null) {
+            $requestedRegion = isset($_GET['region']) ? strtoupper(trim((string)$_GET['region'])) : '';
+            $region = RegionService::exists($requestedRegion) ? $requestedRegion : null;
         }
+        $requests = $this->filterByRegion($requests, $region);
+
         foreach ($requests as &$req) {
-            $req['region_name'] = \App\Services\RegionService::name($req['region_code'] ?? null);
+            $req['region_name'] = RegionService::name($req['region_code'] ?? null);
         }
         unset($req);
 
         Router::json([
             'success' => true,
+            'region' => $region,
+            'region_name' => $region !== null ? RegionService::name($region) : null,
             'count' => count($requests),
             'data' => $requests
         ]);
@@ -435,6 +521,7 @@ class CoordinatorController
         if (!$req) {
             Router::json(['error' => 'Заявка не найдена'], 404);
         }
+        $this->requireRequestScope($req, $this->scopeRegion());
 
         $input = Router::getJsonInput();
         $status = $input['status'] ?? '';
@@ -469,6 +556,11 @@ class CoordinatorController
         $title = is_string($input['title'] ?? null) ? trim($input['title']) : '';
         $description = is_string($input['description'] ?? null) ? trim($input['description']) : '';
         $severity = is_string($input['severity'] ?? null) ? (string)$input['severity'] : 'warning';
+        $region = $this->scopeRegion();
+        if ($region === null) {
+            $requestedRegion = isset($input['region_code']) ? strtoupper(trim((string)$input['region_code'])) : '';
+            $region = RegionService::exists($requestedRegion) ? $requestedRegion : null;
+        }
 
         if (!$title || !$description) {
             Router::json(['error' => 'Заполните заголовок и текст предупреждения'], 400);
@@ -484,6 +576,7 @@ class CoordinatorController
             'title' => $title,
             'description' => $description,
             'severity' => $severity,
+            'region_code' => $region,
             'is_active' => 1
         ]);
 
@@ -504,6 +597,13 @@ class CoordinatorController
         if (!$alert) {
             Router::json(['error' => 'Оповещение не найдено'], 404);
         }
+        $region = $this->scopeRegion();
+        if ($region !== null) {
+            $alertRegion = $alert['region_code'] ?? null;
+            if ($alertRegion === null || $alertRegion === '' || RegionService::normalize($alertRegion) !== $region) {
+                Router::json(['error' => 'Оповещение относится к другому региону или является общим'], 403);
+            }
+        }
 
         FraudAlert::deactivate($alertId);
         Logger::info("Security alert #{$alertId} deactivated by Admin #{$admin['user_id']}");
@@ -516,13 +616,18 @@ class CoordinatorController
 
     public function leaderboard(): void
     {
+        $region = $this->scopeRegion();
         $sql = "SELECT vp.user_id, vp.points, vp.rating, vp.completed_tasks_count, u.name
                 FROM volunteer_profiles vp
                 JOIN users u ON u.id = vp.user_id
-                WHERE vp.is_verified = 1
-                ORDER BY vp.points DESC
-                LIMIT 10";
-        $top = VolunteerProfile::query($sql);
+                WHERE vp.is_verified = 1";
+        $params = [];
+        if ($region !== null) {
+            $sql .= " AND vp.region_code = :region";
+            $params['region'] = $region;
+        }
+        $sql .= " ORDER BY vp.points DESC LIMIT 10";
+        $top = VolunteerProfile::query($sql, $params);
 
         Router::json([
             'success' => true,
@@ -537,11 +642,13 @@ class CoordinatorController
     public function alerts(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
-        $fraudAlerts = FraudAlert::getActiveAlerts();
-        $sosAlerts = SosAlert::getActiveAlerts();
+        $region = $this->scopeRegion();
+        $fraudAlerts = FraudAlert::getActiveAlerts($region);
+        $sosAlerts = SosAlert::getActiveAlerts($region);
 
         Router::json([
             'success' => true,
+            'region' => $region,
             'count' => count($fraudAlerts) + count($sosAlerts),
             'fraud_alerts' => $fraudAlerts,
             'sos_alerts' => $sosAlerts,
@@ -556,11 +663,13 @@ class CoordinatorController
     public function watchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $region = $this->scopeRegion();
         TaskWatchdogService::checkOverdueTasks();
-        $overdue = TaskWatchdogService::getOverdueTasks();
+        $overdue = $this->filterByRegion(TaskWatchdogService::getOverdueTasks(), $region);
 
         Router::json([
             'success' => true,
+            'region' => $region,
             'count' => count($overdue),
             'data' => $overdue,
             'overdue_tasks' => $overdue
@@ -574,7 +683,11 @@ class CoordinatorController
     public function runWatchdog(): void
     {
         AuthService::requireAuth(['admin', 'coordinator']);
+        $region = $this->scopeRegion();
         $result = TaskWatchdogService::checkOverdueTasks();
+        if ($region !== null) {
+            $result['overdue_tasks'] = $this->filterByRegion($result['overdue_tasks'] ?? [], $region);
+        }
         Router::json($result);
     }
 
@@ -591,6 +704,7 @@ class CoordinatorController
         if (!$req) {
             Router::json(['error' => 'Заявка не найдена'], 404);
         }
+        $this->requireRequestScope($req, $this->scopeRegion());
 
         $res = TaskWatchdogService::reassignTask($reqId, (int)$admin['user_id']);
         Router::json($res);

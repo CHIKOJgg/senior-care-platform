@@ -199,7 +199,7 @@ class PrivacyController
 
     public function anonymizeElderly(string $id): void
     {
-        $user = AuthService::requireAuth(['coordinator', 'admin']);
+        $user = AuthService::requireAuth(['admin']);
         $targetId = (int)$id;
         $input = Router::getJsonInput();
 

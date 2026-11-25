@@ -78,6 +78,8 @@ $router->get('/api/chat/{id}', [ChatController::class, 'messages']);
 $router->post('/api/chat/{id}', [ChatController::class, 'send']);
 
 // Coordinator, Admin & Gamification routes (Canonical RESTful + Legacy Aliases)
+$router->get('/api/admin/coordinators', [CoordinatorController::class, 'coordinators']);
+$router->put('/api/admin/users/{id}/region', [CoordinatorController::class, 'updateCoordinatorRegion']);
 $router->get('/api/coordinator/stats', [CoordinatorController::class, 'stats']);
 $router->get('/api/coordinator/volunteers', [CoordinatorController::class, 'allVolunteers']);
 $router->get('/api/coordinator/volunteers/pending', [CoordinatorController::class, 'pendingVolunteers']);

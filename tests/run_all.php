@@ -33,6 +33,7 @@ $suites = [
     'tests/test_badge.php',
     'tests/test_rehabilitation_materials.php',
     'tests/test_volunteer_rating.php',
+    'tests/test_role_region_separation.php',
     'tests/test_sos_geofence.php',
     'tests/test_race_conditions.php',
     'tests/test_e2e_comprehensive.php',
